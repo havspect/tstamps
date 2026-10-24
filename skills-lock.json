@@ -36,6 +36,16 @@
       "sourceType": "github",
       "skillPath": "skills/engineering/setup-matt-pocock-skills/SKILL.md",
       "computedHash": "1d35d0afa3ded88c9324d38db08b2cff91cd03e0e11d64786bee41385cd7b9fb"
+    },
+    "webawesome": {
+      "source": "./web/node_modules/@awesome.me/webawesome/dist/skills/webawesome",
+      "sourceType": "local",
+      "computedHash": "091d6052e02b5f81ed27a092b15f9ba0b19070d1ff93a1bade70a57a803a163a"
+    },
+    "webawesome-design": {
+      "source": "./web/node_modules/@awesome.me/webawesome/dist/skills/webawesome-design",
+      "sourceType": "local",
+      "computedHash": "2626a8bd7f21918d1ab0104c3abf0b060a8b2da2676fe14e499e3c36214af612"
     }
   }
 }
