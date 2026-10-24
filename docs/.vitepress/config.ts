@@ -32,7 +32,17 @@ export default defineConfig({
           { text: 'Timeline', link: '/timeline' },
           { text: 'Reports', link: '/reports' },
           { text: 'CLI reference', link: '/cli' },
+        ],
+      },
+      {
+        text: 'Agents',
+        items: [
           { text: 'MCP', link: '/mcp' },
+          { text: 'Agent skill', link: '/agents/' },
+          { text: 'Claude', link: '/agents/claude' },
+          { text: 'Codex', link: '/agents/codex' },
+          { text: 'Langdock', link: '/agents/langdock' },
+          { text: 'OpenCode', link: '/agents/opencode' },
         ],
       },
       {

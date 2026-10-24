@@ -2,7 +2,7 @@
 
 `tstamps mcp` is an MCP server over stdio. It uses the same config file and token as the CLI, and it talks to the same HTTP API as the timeline. It never opens the database.
 
-Use it when an agent should start, stop, correct or read entries with the permissions of the token you gave it.
+Use it when an agent should start, stop, correct or read entries with the permissions of the token you gave it. The shipped agent skill wraps this setup for Amp, Claude, Codex, Langdock and OpenCode: see [Agents](./agents/index.md).
 
 ## Give the agent its own token
 

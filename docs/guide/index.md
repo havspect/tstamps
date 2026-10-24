@@ -65,13 +65,14 @@ Or open the timeline in the browser after signing in and drag on a lane. The [ti
 
 ## What it deliberately leaves out
 
-Approvals, leave and holidays, invoicing and rates, reminders, a mobile app, screenshots, Jira/Linear sync, realtime co-editing, project budgets, a team-wide timeline, SSO, an audit log, i18n, and drafting entries from coding-agent history.
+Approvals, leave and holidays, invoicing and rates, reminders, a mobile app, screenshots, Jira/Linear sync, realtime co-editing, project budgets, a team-wide timeline, SSO, an audit log, and i18n. Drafting entries from coding-agent history is not in the server either; the [agent skill](./agents/index.md) does that on the client.
 
 If you need any of those, choose something else. [The spec](https://github.com/havspect/tstamps/blob/main/docs/SPEC.md) is the full list.
 
 ## Next
 
 - [Install the CLI](./install-cli.md) on Linux, macOS or Windows.
+- [Give an agent the skill](./agents/index.md) for Amp, Claude, Codex, Langdock or OpenCode.
 - [Run the server](./server.md) on a Linux host.
 - [Host several companies](./workspaces.md) as separate workspaces.
 - [Back up and upgrade](./backup-upgrade.md) without losing hours.
