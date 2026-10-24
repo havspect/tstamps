@@ -140,11 +140,11 @@ The server and the CLI are two binaries ([ADR-0008](./adr/0008-user-cli-and-serv
 tstamps-server serve [--addr :8080] [--db ./tstamps.db]   # runs one workspace (web UI + API)
 tstamps-server serve [--workspace-dir ./workspaces]       # hosted mode: /w/{slug}/ URLs
 tstamps-server admin create --email x --name y            # bootstraps the first admin, prints an initial password
-tstamps-server workspace create koeber.com --workspace-dir ./workspaces --email x --name y
+tstamps-server workspace create example.com --workspace-dir ./workspaces --email x --name y
 tstamps-server backup [--db path | --workspace-dir dir] <destination>
 tstamps-server openapi                                    # the OpenAPI document, for the web build
 tstamps login --url https://tstamps.example.com      # password prompt, stores a personal token
-tstamps login --url https://tstamps.example.com/w/koeber.com  # hosted workspace
+tstamps login --url https://tstamps.example.com/w/example.com  # hosted workspace
 tstamps whoami
 tstamps start <project> [--note "..."]             # project matched by name, then id
 tstamps stop [--note "..."]

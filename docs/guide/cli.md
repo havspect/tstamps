@@ -2,7 +2,7 @@
 
 `tstamps` talks to the server's HTTP API. It never opens the database. Every client command accepts `--url` and `--token`; settings resolve as flags, then `TSTAMPS_URL` / `TSTAMPS_TOKEN`, then the config file written by `tstamps login`.
 
-On an operator-hosted server the saved URL carries the workspace: `https://time.example.com/w/koeber.com`. Every command then reaches that workspace and no other. See [Hosted workspaces](./workspaces.md).
+On an operator-hosted server the saved URL carries the workspace: `https://time.example.com/w/example.com`. Every command then reaches that workspace and no other. See [Hosted workspaces](./workspaces.md).
 
 The commands are identical on Linux, macOS and Windows, so the three tabs below repeat the same line. Installation and config paths are the parts that differ; they are on [Install the CLI](./install-cli.md).
 
@@ -47,7 +47,7 @@ tstamps login --url https://time.example.com
 On a hosted server, log in to one workspace by putting its slug in the URL:
 
 ```sh
-tstamps login --url https://time.example.com/w/koeber.com
+tstamps login --url https://time.example.com/w/example.com
 ```
 
 The config file keeps that URL. Logging in again with another workspace URL replaces it.

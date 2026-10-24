@@ -64,7 +64,7 @@ func TestLogin(t *testing.T) {
 
 func TestWorkspaceBaseURL(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "workspaces")
-	password, err := workspace.Create(dir, "koeber.com", "ada@example.com", "Ada Lovelace")
+	password, err := workspace.Create(dir, "example.com", "ada@example.com", "Ada Lovelace")
 	if err != nil {
 		t.Fatalf("create workspace: %v", err)
 	}
@@ -78,7 +78,7 @@ func TestWorkspaceBaseURL(t *testing.T) {
 		_ = host.Close()
 	})
 
-	c := New(Config{URL: srv.URL + "/w/koeber.com/"})
+	c := New(Config{URL: srv.URL + "/w/example.com/"})
 	me, err := c.Login("ada@example.com", password)
 	if err != nil {
 		t.Fatalf("login through workspace URL: %v", err)

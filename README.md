@@ -52,7 +52,7 @@ tstamps whoami
 ```
 
 On an operator-hosted server the URL names the workspace, for example
-`https://time.example.com/w/koeber.com`. All three platforms, checksums and
+`https://time.example.com/w/example.com`. All three platforms, checksums and
 config paths: [Install the CLI](docs/guide/install-cli.md).
 
 ## Run a workspace
@@ -77,8 +77,8 @@ users and memberships under **/admin**. Deployment with systemd and Caddy is in
 the URL:
 
 ```sh
-tstamps-server workspace create koeber.com \
-  --workspace-dir ./workspaces --email you@koeber.com --name "Your Name"
+tstamps-server workspace create example.com \
+  --workspace-dir ./workspaces --email you@example.com --name "Your Name"
 tstamps-server serve --addr :8080 --workspace-dir ./workspaces
 ```
 

@@ -179,16 +179,16 @@ func TestBackup(t *testing.T) {
 func TestWorkspaceCreate(t *testing.T) {
 	dir := t.TempDir()
 	var stdout, stderr bytes.Buffer
-	code := run([]string{"workspace", "create", "koeber.com", "--email", "ada@example.com", "--name", "Ada Lovelace", "--workspace-dir", dir}, &stdout, &stderr)
+	code := run([]string{"workspace", "create", "example.com", "--email", "ada@example.com", "--name", "Ada Lovelace", "--workspace-dir", dir}, &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("exit %d, want 0 (stderr %q)", code, stderr.String())
 	}
-	if !strings.Contains(stdout.String(), "koeber.com") || strings.Count(stdout.String(), "\n") != 1 {
+	if !strings.Contains(stdout.String(), "example.com") || strings.Count(stdout.String(), "\n") != 1 {
 		t.Fatalf("stdout = %q, want one line naming the workspace", stdout.String())
 	}
 	password := passwordFrom(t, stdout.String())
 
-	st, err := store.Open(filepath.Join(dir, "koeber.com.db"))
+	st, err := store.Open(filepath.Join(dir, "example.com.db"))
 	if err != nil {
 		t.Fatalf("open workspace: %v", err)
 	}

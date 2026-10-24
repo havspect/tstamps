@@ -27,7 +27,7 @@ Vocabulary is [GLOSSARY.md](https://github.com/havspect/tstamps/blob/main/GLOSSA
 
 ## Quick start
 
-If your workspace is already running, install the [CLI](./install-cli.md) and log in. On an operator-hosted server the URL names your workspace, for example `https://time.example.com/w/koeber.com`; see [Hosted workspaces](./workspaces.md). The commands below are the same in both shapes. They are also the same on all three platforms; the tabs exist because the manual shows every command for every platform.
+If your workspace is already running, install the [CLI](./install-cli.md) and log in. On an operator-hosted server the URL names your workspace, for example `https://time.example.com/w/example.com`; see [Hosted workspaces](./workspaces.md). The commands below are the same in both shapes. They are also the same on all three platforms; the tabs exist because the manual shows every command for every platform.
 
 ::: code-group
 ```sh [Linux]

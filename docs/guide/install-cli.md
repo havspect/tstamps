@@ -85,7 +85,7 @@ It prompts for your email and password, then prints `logged in as Name <email>`.
 On an operator-hosted server, the URL names the workspace and nothing else changes:
 
 ```sh
-tstamps login --url https://time.example.com/w/koeber.com
+tstamps login --url https://time.example.com/w/example.com
 ```
 
 The config file stores that URL, so every later command stays in the workspace. Log in again with another URL to switch. See [Hosted workspaces](./workspaces.md).

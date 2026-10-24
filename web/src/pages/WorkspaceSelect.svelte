@@ -9,7 +9,7 @@
     event.preventDefault()
     const name = slug.trim().toLowerCase()
     if (!/^[a-z0-9](?:[a-z0-9.-]{0,61}[a-z0-9])?$/.test(name) || name.includes('..')) {
-      error = 'Enter a workspace such as koeber.com.'
+      error = 'Enter a workspace such as example.com.'
       return
     }
     location.assign(`/w/${encodeURIComponent(name)}/login`)
@@ -25,7 +25,7 @@
     id="workspace"
     label="Workspace"
     bind:value={slug}
-    placeholder="koeber.com"
+    placeholder="example.com"
     required
     autofocus
     autocapitalize="none"

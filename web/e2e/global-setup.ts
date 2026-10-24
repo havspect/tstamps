@@ -10,7 +10,7 @@ const port = Number(process.env.TSTAMPS_E2E_PORT ?? 8098)
 const hostedPort = Number(process.env.TSTAMPS_E2E_HOSTED_PORT ?? port + 1)
 const baseURL = `http://127.0.0.1:${port}`
 const hostedURL = `http://127.0.0.1:${hostedPort}`
-const workspaceSlug = 'koeber.com'
+const workspaceSlug = 'example.com'
 
 // Bootstraps a throwaway legacy workspace and a hosted workspace with the real
 // server binary, and leaves both running for the specs.

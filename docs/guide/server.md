@@ -39,12 +39,12 @@ The first command prints an initial password. Open `http://localhost:8080`, sign
 Hosted mode keeps one SQLite file per workspace and selects it by slug in the URL. Create the first workspace, then serve the directory:
 
 ```sh
-tstamps-server workspace create koeber.com --workspace-dir ./workspaces \
+tstamps-server workspace create example.com --workspace-dir ./workspaces \
   --email you@example.com --name "Your Name"
 tstamps-server serve --addr :8080 --workspace-dir ./workspaces
 ```
 
-The first command prints the workspace admin's initial password and creates the directory if needed. Open `http://localhost:8080/`, enter `koeber.com`, and sign in. `--db` and `--workspace-dir` are mutually exclusive. The full shape is on [Hosted workspaces](./workspaces.md).
+The first command prints the workspace admin's initial password and creates the directory if needed. Open `http://localhost:8080/`, enter `example.com`, and sign in. `--db` and `--workspace-dir` are mutually exclusive. The full shape is on [Hosted workspaces](./workspaces.md).
 
 ## Deploy on a VM
 

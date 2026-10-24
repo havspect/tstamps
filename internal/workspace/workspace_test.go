@@ -12,12 +12,12 @@ import (
 )
 
 func TestValidateSlug(t *testing.T) {
-	for _, slug := range []string{"a", "koeber.com", "team-1.example"} {
+	for _, slug := range []string{"a", "example.com", "team-1.example"} {
 		if err := ValidateSlug(slug); err != nil {
 			t.Errorf("ValidateSlug(%q) = %v, want nil", slug, err)
 		}
 	}
-	for _, slug := range []string{"", "Koeber", ".hidden", "trailing.", "a..b", "../x", "a/b", strings.Repeat("a", 64)} {
+	for _, slug := range []string{"", "Example.com", ".hidden", "trailing.", "a..b", "../x", "a/b", strings.Repeat("a", 64)} {
 		if err := ValidateSlug(slug); !errors.Is(err, ErrInvalidSlug) {
 			t.Errorf("ValidateSlug(%q) = %v, want ErrInvalidSlug", slug, err)
 		}
@@ -26,11 +26,11 @@ func TestValidateSlug(t *testing.T) {
 
 func TestCreateMakesAdmin(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "workspaces")
-	password, err := Create(dir, "koeber.com", "ada@example.com", "Ada Lovelace")
+	password, err := Create(dir, "example.com", "ada@example.com", "Ada Lovelace")
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
-	db, err := DatabasePath(dir, "koeber.com")
+	db, err := DatabasePath(dir, "example.com")
 	if err != nil {
 		t.Fatalf("DatabasePath: %v", err)
 	}
@@ -54,7 +54,7 @@ func TestCreateMakesAdmin(t *testing.T) {
 		t.Fatal("printed password does not verify")
 	}
 
-	if _, err := Create(dir, "koeber.com", "other@example.com", "Other"); err == nil {
+	if _, err := Create(dir, "example.com", "other@example.com", "Other"); err == nil {
 		t.Fatal("second Create overwrote or accepted an existing workspace")
 	}
 }

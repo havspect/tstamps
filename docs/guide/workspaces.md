@@ -20,12 +20,12 @@ For one company, stay on `--db`. It is one less directory to operate, the URLs s
 On the server host, as the user that runs the service:
 
 ```sh
-sudo -u tstamps tstamps-server workspace create koeber.com \
+sudo -u tstamps tstamps-server workspace create example.com \
   --workspace-dir /var/lib/tstamps/workspaces \
-  --email you@koeber.com --name "Your Name"
+  --email you@example.com --name "Your Name"
 ```
 
-It prints `created workspace koeber.com with admin you@koeber.com and initial password: ...`. Copy the password; like every initial password in Tstamps it is shown once, and the admin changes it at first sign-in.
+It prints `created workspace example.com with admin you@example.com and initial password: ...`. Copy the password; like every initial password in Tstamps it is shown once, and the admin changes it at first sign-in.
 
 The command writes the database and its first admin under a temporary name and links it into place when complete, so a half-created workspace is never served. Creating a workspace while the server runs is safe; it is picked up on the next request. An existing slug is refused.
 
@@ -41,7 +41,7 @@ The directory must exist before `serve` starts; the first `workspace create` cre
 
 ## The slug
 
-The slug is the workspace's name in the URL and the name of its database file: `koeber.com` is stored as `koeber.com.db` and served at `/w/koeber.com/`.
+The slug is the workspace's name in the URL and the name of its database file: `example.com` is stored as `example.com.db` and served at `/w/example.com/`.
 
 It is an operator-chosen identifier, not a DNS name — no subdomain or certificate is involved. Use a short, stable, lowercase label that tells you which company it is. The rules:
 
@@ -83,7 +83,7 @@ One process serves all workspaces, so SQLite's single-writer limit applies per f
 The workspace lives in the base URL, not in a flag:
 
 ```sh
-tstamps login --url https://time.example.com/w/koeber.com
+tstamps login --url https://time.example.com/w/example.com
 ```
 
 The config file keeps that URL, so every later command stays in the workspace. Run `tstamps login` again with another URL to switch. For MCP, the same form goes in `TSTAMPS_URL`; see [MCP](./mcp.md).
