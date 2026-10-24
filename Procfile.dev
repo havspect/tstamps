@@ -1,2 +1,3 @@
 api: air
 web: pnpm --dir web dev
+docs: pnpm --dir docs dev

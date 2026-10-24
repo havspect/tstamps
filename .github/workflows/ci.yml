@@ -26,9 +26,9 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
-          cache-dependency-path: web/pnpm-lock.yaml
+          cache-dependency-path: pnpm-lock.yaml
 
-      - run: pnpm --dir web install --frozen-lockfile
+      - run: pnpm install --frozen-lockfile
 
       - run: go vet ./...
       - run: go test -race ./...
@@ -38,6 +38,7 @@ jobs:
 
       # Both artifacts the release and the deploy expect to exist.
       - run: pnpm --dir web build
+      - run: pnpm --dir docs build
       - run: go build -tags web -o tstamps-server ./cmd/tstamps-server
       - run: go build -o tstamps ./cmd/tstamps
 

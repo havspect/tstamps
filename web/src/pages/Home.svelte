@@ -19,6 +19,7 @@
       <a href="#reports">Reports</a>
       <a href="#cli">CLI &amp; agents</a>
       <a href="#self-host">Self-host</a>
+      <a href="/docs/">Docs</a>
     </nav>
     <Link href="/login" class="nav-signin">Sign in</Link>
   </div>
@@ -261,6 +262,7 @@ tstamps login --url https://time.example.com</code></pre>
   <div class="wrap foot-inner">
     <span class="foot-brand"><span class="logo" aria-hidden="true"></span>Tstamps</span>
     <nav aria-label="Project links">
+      <a href="/docs/">Docs</a>
       <a href="https://github.com/havspect/tstamps">GitHub</a>
       <a href="https://github.com/havspect/tstamps/blob/main/docs/SPEC.md">Specification</a>
       <a href="https://github.com/havspect/tstamps/blob/main/GLOSSARY.md">Glossary</a>

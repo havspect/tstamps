@@ -80,6 +80,17 @@ func TestSecurityHeaders(t *testing.T) {
 	}
 }
 
+func TestSecurityHeadersAllowInlineDocsData(t *testing.T) {
+	rec := get(t, "/docs/")
+	if got := rec.Header().Get("Content-Security-Policy"); !strings.Contains(got, "script-src 'self' 'unsafe-inline'") {
+		t.Errorf("/docs/ CSP = %q, want inline scripts allowed", got)
+	}
+	rec = get(t, "/api/v1/unknown")
+	if got := rec.Header().Get("Content-Security-Policy"); strings.Contains(got, "script-src") {
+		t.Errorf("/api/ CSP = %q, must not allow inline scripts", got)
+	}
+}
+
 type openAPI struct {
 	OpenAPI string `json:"openapi"`
 	Info    struct {

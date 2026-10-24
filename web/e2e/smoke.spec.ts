@@ -27,6 +27,7 @@ test('homepage introduces the product and links to sign in', async ({ page }) =>
   await expect(description).toHaveCount(1)
   expect(await description.getAttribute('content')).toBeTruthy()
   await expect(page.locator('link[rel="canonical"]')).toHaveAttribute('href', '/')
+  await expect(page.getByRole('link', { name: 'Docs' }).first()).toBeVisible()
 
   const robots = await page.request.get('/robots.txt')
   expect(robots.status()).toBe(200)
@@ -47,9 +48,17 @@ test('homepage introduces the product and links to sign in', async ({ page }) =>
 
   const login = await page.request.get('/login')
   expect(login.headers()['x-robots-tag']).toContain('noindex')
-
   await page.getByRole('link', { name: 'Sign in' }).first().click()
   await expect(page.getByRole('heading', { name: 'Sign in' })).toBeVisible()
+})
+
+test('the manual is public at /docs', async ({ page }) => {
+  await page.goto('/docs/')
+  await expect(page.getByRole('heading', { level: 1, name: 'Tstamps' })).toBeVisible()
+  await page.getByRole('link', { name: 'CLI reference' }).click()
+  await expect(page.getByRole('heading', { level: 1, name: 'CLI reference' })).toBeVisible()
+  await expect(page.locator('label[data-title="Linux"]').first()).toBeVisible()
+  await expect(page.locator('label[data-title="Windows"]').first()).toBeVisible()
 })
 
 test('login, log an entry, read the report and export CSV', async ({ page }) => {

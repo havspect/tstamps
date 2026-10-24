@@ -5,7 +5,8 @@
 *.db-wal
 *.db-shm
 web/dist/
-web/node_modules/
+node_modules/
+docs/.vitepress/cache/
 web/openapi.json
 web/src/lib/api/schema.d.ts
 web/e2e/.state.json

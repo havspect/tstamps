@@ -16,6 +16,10 @@ export default defineConfig({
           })
         },
       },
+      '/docs': {
+        target: 'http://localhost:5174',
+        changeOrigin: true,
+      },
     },
   },
   test: {

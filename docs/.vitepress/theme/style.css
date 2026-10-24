@@ -1,0 +1,54 @@
+/* The app's palette, from docs/design/homepage.md. No webfonts, no dark mode. */
+:root {
+  --vp-font-family-base: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --vp-font-family-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+  --vp-c-bg: #f6f6f3;
+  --vp-c-bg-alt: #ffffff;
+  --vp-c-bg-soft: #efefe9;
+  --vp-c-bg-elv: #ffffff;
+  --vp-c-text-1: #1d1d1a;
+  --vp-c-text-2: #4a4a44;
+  --vp-c-text-3: #6b6b63;
+  --vp-c-divider: #d9d9d1;
+  --vp-c-border: #d9d9d1;
+  --vp-c-gutter: #d9d9d1;
+
+  --vp-c-brand-1: #2f5d50;
+  --vp-c-brand-2: #24483e;
+  --vp-c-brand-3: #2f5d50;
+  --vp-c-brand-soft: rgb(47 93 80 / 14%);
+
+  --vp-button-brand-bg: #2f5d50;
+  --vp-button-brand-hover-bg: #24483e;
+  --vp-button-brand-active-bg: #24483e;
+  --vp-button-brand-border: transparent;
+  --vp-button-brand-text: #ffffff;
+
+  --vp-custom-block-tip-border: #2f5d50;
+  --vp-custom-block-tip-text: #1d1d1a;
+  --vp-custom-block-tip-bg: rgb(47 93 80 / 8%);
+  --vp-custom-block-warning-border: #a4602c;
+  --vp-custom-block-warning-bg: rgb(164 96 44 / 8%);
+}
+
+.vp-doc h1,
+.vp-doc h2,
+.vp-doc h3 {
+  letter-spacing: -0.02em;
+}
+
+.vp-doc h1 {
+  font-weight: 650;
+}
+
+.vp-doc a {
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
+}
+
+/* The last column of the role table is the one people scan; keep it readable. */
+.vp-doc table {
+  display: table;
+  width: 100%;
+}

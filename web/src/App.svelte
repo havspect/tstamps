@@ -94,6 +94,7 @@
         {#if user.is_admin}
           <Link href="/admin/users">Admin</Link>
         {/if}
+        <a href="/docs/">Docs</a>
       </nav>
       <div class="who">
         <span>{user.name} · {user.timezone}</span>
