@@ -5,6 +5,7 @@
   import { session } from './lib/session.svelte'
   import Link from './lib/Link.svelte'
   import Button from './lib/ui/Button.svelte'
+  import Home from './pages/Home.svelte'
   import Login from './pages/Login.svelte'
   import NotFound from './pages/NotFound.svelte'
   import Password from './pages/Password.svelte'
@@ -16,6 +17,7 @@
   import AdminUsers from './pages/AdminUsers.svelte'
 
   const routes: Record<string, Component> = {
+    '/': Home,
     '/login': Login,
     '/password': Password,
     '/timeline': Timeline,
@@ -43,9 +45,9 @@
   // Do not mount a page the shell is about to redirect away from: it would
   // fetch with the wrong role and flash its content for a frame.
   const allowed = $derived.by(() => {
-    if (!user) return router.path === '/login'
+    if (!user) return router.path === '/login' || router.path === '/'
     if (session.mustChangePassword) return router.path === '/password'
-    if (router.path === '/login' || router.path === '/password') return false
+    if (router.path === '/login' || router.path === '/password' || router.path === '/') return false
     if (router.path.startsWith('/admin')) return user.is_admin
     if (router.path === '/reports') return user.is_admin || leads
     return true
@@ -57,14 +59,14 @@
     if (!ready) return
     const path = router.path
     if (!user) {
-      if (path !== '/login') router.navigate('/login', { replace: true })
+      if (path !== '/login' && path !== '/') router.navigate('/login', { replace: true })
     } else if (session.mustChangePassword) {
       if (path !== '/password') router.navigate('/password', { replace: true })
     } else if (path.startsWith('/admin') && !user.is_admin) {
       router.navigate('/timeline', { replace: true })
     } else if (path === '/reports' && !user.is_admin && !leads) {
       router.navigate('/timeline', { replace: true })
-    } else if (path === '/login' || path === '/password') {
+    } else if (path === '/login' || path === '/password' || path === '/') {
       router.navigate('/timeline', { replace: true })
     }
   })
@@ -75,27 +77,33 @@
   }
 </script>
 
-<header>
-  <Link href="/timeline" class="brand">Tstamps</Link>
-  {#if user && !session.mustChangePassword}
-    <nav>
-      <Link href="/timeline">Timeline</Link>
-      {#if user.is_admin || leads}
-        <Link href="/reports">Reports</Link>
-      {/if}
-      {#if user.is_admin}
-        <Link href="/admin/users">Admin</Link>
-      {/if}
-    </nav>
-    <div class="who">
-      <span>{user.name} · {user.timezone}</span>
-      <Button variant="secondary" onclick={logout}>Log out</Button>
-    </div>
-  {/if}
-</header>
-
-<main class:wide={router.path === '/timeline'}>
+{#if router.path === '/'}
   {#if ready && allowed}
     <Page />
   {/if}
-</main>
+{:else}
+  <header>
+    <Link href={user ? '/timeline' : '/'} class="brand">Tstamps</Link>
+    {#if user && !session.mustChangePassword}
+      <nav>
+        <Link href="/timeline">Timeline</Link>
+        {#if user.is_admin || leads}
+          <Link href="/reports">Reports</Link>
+        {/if}
+        {#if user.is_admin}
+          <Link href="/admin/users">Admin</Link>
+        {/if}
+      </nav>
+      <div class="who">
+        <span>{user.name} · {user.timezone}</span>
+        <Button variant="secondary" onclick={logout}>Log out</Button>
+      </div>
+    {/if}
+  </header>
+
+  <main class:wide={router.path === '/timeline'}>
+    {#if ready && allowed}
+      <Page />
+    {/if}
+  </main>
+{/if}

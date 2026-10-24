@@ -9,6 +9,13 @@ const baseURL = `http://127.0.0.1:${state.port}`
 
 test.use({ baseURL })
 
+test('homepage introduces the product and links to sign in', async ({ page }) => {
+  await page.goto('/')
+  await expect(page.getByRole('heading', { level: 1 })).toContainText('Your week')
+  await page.getByRole('link', { name: 'Sign in' }).first().click()
+  await expect(page.getByRole('heading', { name: 'Sign in' })).toBeVisible()
+})
+
 test('login, log an entry, read the report and export CSV', async ({ page }) => {
   await page.goto('/login')
   await page.getByLabel('Email').fill('admin@example.com')
