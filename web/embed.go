@@ -28,15 +28,22 @@ func Handler() http.Handler {
 		if name == "" || name == "." {
 			name = "index.html"
 		}
+		fallback := false
 		if _, err := fs.Stat(sub, name); err != nil {
 			if strings.HasPrefix(name, "assets/") || path.Ext(name) != "" {
 				http.NotFound(w, r)
 				return
 			}
 			name = "index.html"
+			fallback = true
 		}
 		r = r.Clone(r.Context())
 		if name == "index.html" {
+			// Only the landing page is meant to be indexed; every other client
+			// route is the same shell, so keep crawlers out of it.
+			if fallback {
+				w.Header().Set("X-Robots-Tag", "noindex, nofollow")
+			}
 			// FileServer redirects a /index.html path to its directory, so serve
 			// the directory itself and keep client routes on their own URL.
 			w.Header().Set("Cache-Control", "no-store")

@@ -134,6 +134,48 @@ func TestUnknownAPIPathIsProblemJSON(t *testing.T) {
 	}
 }
 
+func TestSitemapAndRobots(t *testing.T) {
+	sitemap := get(t, "/sitemap.xml")
+	if sitemap.Code != http.StatusOK {
+		t.Fatalf("sitemap status = %d, want 200", sitemap.Code)
+	}
+	if ct := sitemap.Header().Get("Content-Type"); ct != "application/xml" {
+		t.Fatalf("sitemap content type = %q, want application/xml", ct)
+	}
+	body := sitemap.Body.String()
+	if !strings.Contains(body, `<loc>http://example.com/</loc>`) {
+		t.Fatalf("sitemap = %q, want the request origin", body)
+	}
+	if strings.Contains(body, "/timeline") {
+		t.Fatalf("sitemap = %q, want only the indexable homepage", body)
+	}
+
+	robots := get(t, "/robots.txt")
+	if robots.Code != http.StatusOK {
+		t.Fatalf("robots status = %d, want 200", robots.Code)
+	}
+	if ct := robots.Header().Get("Content-Type"); !strings.HasPrefix(ct, "text/plain") {
+		t.Fatalf("robots content type = %q, want text/plain", ct)
+	}
+	lines := robots.Body.String()
+	for _, want := range []string{"Allow: /", "Disallow: /api/", "Sitemap: http://example.com/sitemap.xml"} {
+		if !strings.Contains(lines, want) {
+			t.Errorf("robots.txt missing %q:\n%s", want, lines)
+		}
+	}
+}
+
+func TestSitemapUsesTheForwardedScheme(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/sitemap.xml", nil)
+	req.RemoteAddr = "127.0.0.1:1234"
+	req.Header.Set("X-Forwarded-Proto", "https")
+	rec := httptest.NewRecorder()
+	handler().ServeHTTP(rec, req)
+	if body := rec.Body.String(); !strings.Contains(body, `<loc>https://example.com/</loc>`) {
+		t.Fatalf("sitemap = %q, want an https location", body)
+	}
+}
+
 func TestWebServesTheAppShell(t *testing.T) {
 	// The stub build answers every non-API path with the same page; the embedded
 	// build answers index.html for both. Either way the shell must load.

@@ -16,6 +16,14 @@
   } = $props()
 </script>
 
-<button class="{variant} {className}" {type} aria-pressed={active} {...rest}>
+<wa-button
+  variant={variant === 'danger' ? 'danger' : variant === 'primary' || active ? 'brand' : 'neutral'}
+  appearance={active ? 'filled' : variant === 'secondary' ? 'outlined' : 'accent'}
+  {type}
+  size="s"
+  aria-pressed={active}
+  class={className}
+  {...rest}
+>
   {@render children()}
-</button>
+</wa-button>

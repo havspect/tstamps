@@ -1,9 +1,9 @@
+<script lang="ts">
+  import Link from '../lib/Link.svelte'
+</script>
+
 <svelte:head>
   <title>Tstamps — your week, in a few drags</title>
-  <meta
-    name="description"
-    content="Tstamps is self-hosted team time tracking built around a timeline. Drag to log, read the week, or log from the CLI. One Go binary, one SQLite file, yours to run."
-  />
 </svelte:head>
 
 <a class="skip" href="#main">Skip to content</a>
@@ -20,7 +20,7 @@
       <a href="#cli">CLI &amp; agents</a>
       <a href="#self-host">Self-host</a>
     </nav>
-    <a href="/login" class="nav-signin">Sign in</a>
+    <Link href="/login" class="nav-signin">Sign in</Link>
   </div>
 </header>
 
@@ -35,7 +35,7 @@
         to run.
       </p>
       <div class="actions">
-        <a href="/login" class="btn primary">Sign in <span aria-hidden="true">→</span></a>
+        <Link href="/login" class="btn primary">Sign in <span aria-hidden="true">→</span></Link>
         <a class="btn ghost" href="#loop">See the timeline <span aria-hidden="true">↓</span></a>
       </div>
       <ul class="trust" aria-label="At a glance">
@@ -247,7 +247,7 @@ tstamps login --url https://time.example.com</code></pre>
         <p>If your server is already running, the timeline is one sign-in away.</p>
       </div>
       <div class="actions">
-        <a href="/login" class="btn primary">Sign in <span aria-hidden="true">→</span></a>
+        <Link href="/login" class="btn primary">Sign in <span aria-hidden="true">→</span></Link>
         <a
           class="btn ghost"
           href="https://github.com/havspect/tstamps/blob/main/docs/SPEC.md">Read the specification</a
@@ -300,7 +300,7 @@ tstamps login --url https://time.example.com</code></pre>
   }
 
   .site-head {
-    padding-block: 0;
+    padding: 0;
     border-bottom: 1px solid var(--border);
   }
 
@@ -374,7 +374,10 @@ tstamps login --url https://time.example.com</code></pre>
     text-decoration: none;
   }
 
-  .nav-signin {
+  /* The three /login anchors are <Link> components: their root <a> carries no
+     page scope class, so these two classes are styled globally. Both names exist
+     only on this page. */
+  :global(.nav-signin) {
     display: inline-flex;
     align-items: center;
     min-height: 2rem;
@@ -387,7 +390,7 @@ tstamps login --url https://time.example.com</code></pre>
     font-weight: 600;
   }
 
-  .nav-signin:hover {
+  :global(.nav-signin):hover {
     border-color: var(--accent);
     color: var(--accent);
     text-decoration: none;
@@ -458,7 +461,7 @@ tstamps login --url https://time.example.com</code></pre>
     gap: 0.75rem;
   }
 
-  .btn {
+  :global(.btn) {
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -476,27 +479,27 @@ tstamps login --url https://time.example.com</code></pre>
       transform 0.15s ease;
   }
 
-  .btn:hover {
+  :global(.btn):hover {
     text-decoration: none;
     transform: translateY(-1px);
   }
 
-  .btn.primary {
+  :global(.btn.primary) {
     background: var(--accent);
     color: #fff;
   }
 
-  .btn.primary:hover {
+  :global(.btn.primary):hover {
     background: var(--accent-strong);
   }
 
-  .btn.ghost {
+  :global(.btn.ghost) {
     border-color: var(--border);
     background: var(--surface);
     color: var(--text);
   }
 
-  .btn.ghost:hover {
+  :global(.btn.ghost):hover {
     border-color: var(--accent);
     color: var(--accent);
   }
@@ -1093,7 +1096,7 @@ tstamps login --url https://time.example.com</code></pre>
       display: none;
     }
 
-    .nav-signin {
+    :global(.nav-signin) {
       margin-left: auto;
     }
 
@@ -1191,6 +1194,13 @@ tstamps login --url https://time.example.com</code></pre>
 
     .foot nav {
       margin-left: 0;
+    }
+
+    .foot nav a,
+    .text-link {
+      display: inline-flex;
+      align-items: center;
+      min-height: 44px;
     }
   }
 </style>

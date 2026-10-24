@@ -15,8 +15,11 @@
   } = $props()
 </script>
 
-<div class="field">
-  <label for={id}>{label}</label>
-  <textarea {id} bind:value {...rest}></textarea>
-  {#if hint}<span class="hint">{hint}</span>{/if}
-</div>
+<wa-textarea
+  {id}
+  {label}
+  hint={hint || undefined}
+  {value}
+  oninput={(event) => (value = event.currentTarget.value)}
+  {...rest}
+></wa-textarea>

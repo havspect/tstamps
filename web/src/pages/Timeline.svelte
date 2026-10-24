@@ -65,7 +65,7 @@
 
   let scrollEl = $state<HTMLDivElement>()
   let bodyEl = $state<HTMLDivElement>()
-  let pickerEl = $state<HTMLDialogElement>()
+  let pickerOpen = $state(false)
   let pickerFilter = $state('')
 
   const dayStart = $derived(wallTimeToInstant(tz, `${day}T00:00`))
@@ -603,7 +603,7 @@
 
   function openPicker() {
     pickerFilter = ''
-    pickerEl?.showModal()
+    pickerOpen = true
   }
 
   function addLane(projectID: number) {
@@ -612,7 +612,7 @@
       rememberLanes()
     }
     lastProject = projectID
-    pickerEl?.close()
+    pickerOpen = false
     // The new lane is the last one; bring it into view.
     void tick().then(() => {
       if (scrollEl) scrollEl.scrollLeft = scrollEl.scrollWidth
@@ -637,8 +637,8 @@
       return
     }
     const target = event.target
-    // Let native Space activation work on buttons and links.
-    if (target instanceof HTMLElement && target.closest('input, select, textarea, button, a, dialog')) return
+    // Let typing and Space activation work inside controls.
+    if (target instanceof HTMLElement && target.closest('input, select, textarea, button, a, dialog, wa-input, wa-select, wa-textarea, wa-checkbox, wa-button, wa-dialog')) return
     if (panelMode !== null) return
 
     if (event.key === ' ') {
@@ -816,10 +816,10 @@
             disabled={pending}
           >
             {#if panelEntry && !projectByID.has(panelEntry.project_id)}
-              <option value={String(panelEntry.project_id)}>Archived project</option>
+              <wa-option value={String(panelEntry.project_id)}>Archived project</wa-option>
             {/if}
             {#each choices as project (project.id)}
-              <option value={String(project.id)}>{project.name}</option>
+              <wa-option value={String(project.id)}>{project.name}</wa-option>
             {/each}
           </Select>
           <Input
@@ -870,8 +870,12 @@
   </div>
 </div>
 
-<dialog class="project-picker" bind:this={pickerEl} aria-label="Add project">
-  <h2>Add project</h2>
+<wa-dialog
+  class="project-picker"
+  label="Add project"
+  open={pickerOpen}
+  onwa-after-hide={() => (pickerOpen = false)}
+>
   <Input
     id="picker-search"
     label="Search projects"
@@ -894,6 +898,6 @@
     </ul>
   {/if}
   <div class="row-actions">
-    <Button variant="secondary" onclick={() => pickerEl?.close()}>Cancel</Button>
+    <Button variant="secondary" onclick={() => (pickerOpen = false)}>Cancel</Button>
   </div>
-</dialog>
+</wa-dialog>

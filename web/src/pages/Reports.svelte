@@ -134,12 +134,12 @@
     bind:value={preset}
     onchange={(event) => choosePreset(event.currentTarget.value)}
   >
-    <option value="this-week">This week</option>
-    <option value="last-week">Last week</option>
-    <option value="this-month">This month</option>
-    <option value="last-month">Last month</option>
-    <option value="this-year">This year</option>
-    <option value="custom">Custom…</option>
+    <wa-option value="this-week">This week</wa-option>
+    <wa-option value="last-week">Last week</wa-option>
+    <wa-option value="this-month">This month</wa-option>
+    <wa-option value="last-month">Last month</wa-option>
+    <wa-option value="this-year">This year</wa-option>
+    <wa-option value="custom">Custom…</wa-option>
   </Select>
   {#if preset === 'custom'}
     <Input id="report-from" label="From" type="date" bind:value={from} required />
@@ -153,9 +153,9 @@
       bind:value={teamID}
       onchange={(event) => { teamID = event.currentTarget.value; void load() }}
     >
-      <option value="">All teams</option>
+      <wa-option value="">All teams</wa-option>
       {#each teams as team (team.id)}
-        <option value={String(team.id)}>{team.name}{team.archived ? ' (archived)' : ''}</option>
+        <wa-option value={String(team.id)}>{team.name}{team.archived ? ' (archived)' : ''}</wa-option>
       {/each}
     </Select>
   {/if}

@@ -240,25 +240,22 @@
                 <div class="member-list">
                   {#each users as user (user.id)}
                     <div class="member">
-                      <input
-                        id={`member-${team.id}-${user.id}`}
-                        type="checkbox"
+                      <wa-checkbox
                         checked={drafts[team.id]?.[user.id] !== undefined}
                         onchange={(event) =>
                           toggleMember(team.id, user.id, event.currentTarget.checked)}
-                      />
-                      <label for={`member-${team.id}-${user.id}`}>
+                      >
                         {user.name} <span class="hint">{user.email}</span>
-                      </label>
-                      <select
+                      </wa-checkbox>
+                      <wa-select
                         aria-label={`Role for ${user.name}`}
                         value={drafts[team.id]?.[user.id] ?? 'member'}
                         onchange={(event) => setRole(team.id, user.id, event.currentTarget.value)}
                         disabled={drafts[team.id]?.[user.id] === undefined}
                       >
-                        <option value="member">member</option>
-                        <option value="lead">lead</option>
-                      </select>
+                        <wa-option value="member">member</wa-option>
+                        <wa-option value="lead">lead</wa-option>
+                      </wa-select>
                     </div>
                   {/each}
                 </div>

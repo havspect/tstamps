@@ -43,11 +43,12 @@
   const leads = $derived(user?.memberships?.some((m) => m.role === 'lead') ?? false)
   const Page = $derived(routes[router.path] ?? NotFound)
   // Do not mount a page the shell is about to redirect away from: it would
-  // fetch with the wrong role and flash its content for a frame.
+  // fetch with the wrong role and flash its content for a frame. The homepage
+  // is public, so it skips this check entirely.
   const allowed = $derived.by(() => {
     if (!user) return router.path === '/login' || router.path === '/'
     if (session.mustChangePassword) return router.path === '/password'
-    if (router.path === '/login' || router.path === '/password' || router.path === '/') return false
+    if (router.path === '/login' || router.path === '/password') return false
     if (router.path.startsWith('/admin')) return user.is_admin
     if (router.path === '/reports') return user.is_admin || leads
     return true
@@ -55,6 +56,7 @@
 
   // One guard for the whole shell: no session -> login; a reset password ->
   // the password screen; a signed-in user on an auth screen -> the timeline.
+  // The homepage is public for everyone, signed in or not.
   $effect(() => {
     if (!ready) return
     const path = router.path
@@ -66,7 +68,7 @@
       router.navigate('/timeline', { replace: true })
     } else if (path === '/reports' && !user.is_admin && !leads) {
       router.navigate('/timeline', { replace: true })
-    } else if (path === '/login' || path === '/password' || path === '/') {
+    } else if (path === '/login' || path === '/password') {
       router.navigate('/timeline', { replace: true })
     }
   })
@@ -78,9 +80,8 @@
 </script>
 
 {#if router.path === '/'}
-  {#if ready && allowed}
-    <Page />
-  {/if}
+  <!-- Public page: never wait on the session or the shell's redirect guard. -->
+  <Page />
 {:else}
   <header>
     <Link href={user ? '/timeline' : '/'} class="brand">Tstamps</Link>

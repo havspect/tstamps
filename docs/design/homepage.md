@@ -1,6 +1,6 @@
 # Homepage — design document
 
-Status: agreed direction, implemented at `/` for signed-out visitors.
+Status: agreed direction, implemented at `/` for every visitor.
 Owner: web. Date: 2026-10-24.
 
 ## 1. What we are selling
@@ -12,7 +12,7 @@ distinctive idea is small enough to say in one sentence:
 
 The homepage has to make that idea visible before asking for a login. It is
 **not** a dashboard and it is not a second product: it is the front door of the
-same single binary, shown only when nobody is signed in.
+same single binary, served to everyone, signed in or not.
 
 ### Goals
 
@@ -251,23 +251,57 @@ Built with Go and Svelte.
   own dimensions to avoid layout shift.
 - Colour contrast: ink on paper 13.9:1; muted on paper 5.2:1; white on accent
   7.4:1. The accent block behind “few drags” uses white text.
-- Focus: the app's 2px accent ring, with `scroll-margin-top` on targets.
+- Focus: the app's 2px accent ring (`a:focus-visible`, 2px offset).
 - Motion respects `prefers-reduced-motion`.
-- Static HTML/CSS after hydration: no API call, no new dependency, ~100 KB of
-  images (WebP), both served from the embedded SPA. No external requests.
-- Signed-in visitors are redirected to `/timeline`; signed-out visitors on any
-  other route still land on `/login`.
+- The shell paints immediately: `/` renders without waiting for the session
+  check, so there is no blank frame while `/me` is in flight. The page has no
+  data and makes no API call of its own; the only request is that background
+  session check, which answers 401 for an anonymous visitor.
+- The homepage adds no dependency of its own — it is Svelte and CSS. The bundle
+  it ships in already carries Web Awesome and Lit (see ADR 0010).
+- ~100 KB of images (WebP), served from the embedded SPA. No external requests.
+
+### SEO and indexing
+
+- `web/index.html` carries the title, description, canonical, Open Graph and
+  Twitter card tags as static markup, so a crawler or a link unfurler sees them
+  without running JavaScript. `Home.svelte` then swaps in its own shorter title
+  once it mounts. The `<noscript>` block is a one-paragraph product summary, so
+  a no-JS visitor still reads what Tstamps is.
+- `/robots.txt` allows `/` and disallows `/login`, `/password`, `/timeline`,
+  `/reports`, `/admin/` and `/api/`, and points at the sitemap.
+- Only `/` is meant to be indexed. `web/embed.go` sends
+  `X-Robots-Tag: noindex, nofollow` on client-route fallbacks and leaves `/` and
+  real static files alone, so a deep link does not put someone's hours in a
+  search result.
+- `/sitemap.xml` is generated per request rather than checked in, because the
+  deployment origin differs per install. It lists only `/`, the public
+  homepage. The same handler builds `robots.txt` so its `Sitemap:` line carries
+  the right origin; both live in `internal/api/server.go`.
+- This is not server-side rendering or prerendering. The marketing content is
+  still client-rendered; the static tags and the noscript block cover the
+  crawl-and-unfurl case, not the no-JS case.
 
 ## 7. Implementation notes
 
 - New route `/` → `web/src/pages/Home.svelte`, styles scoped to that component.
-- `App.svelte` renders `Home` without the app header/main; the auth guard lets
-  anonymous users stay on `/` and sends signed-in users to `/timeline`.
+- `App.svelte` renders `Home` without the app header/main. `/` does not wait for
+  the session check or the route guard: it renders on first paint for everyone.
+  Every other route still waits for the check, and a signed-out visitor on any
+  of them lands on `/login`.
+- A signed-in visitor stays on `/`; the three sign-in CTAs are `Link`
+  components, so they route client-side to `/login`, where the existing guard
+  forwards a signed-in user on to `/timeline`.
 - Assets in `web/public/screenshots/` (Vite copies them into `web/dist` and
   `go:embed` carries them).
-- The page is public: no session, no API, no data.
-- E2E: assert the landing page shows the H1 and a sign-in link, and that signing
-  in still reaches the timeline.
+- The page is public: no data, no page API call, no session requirement. The
+  background `/me` check is the only request.
+- E2E, three Playwright tests: (a) `/` is public and ships its static SEO
+  markup, `robots.txt`, `sitemap.xml` and the `X-Robots-Tag` split, and `Sign
+  in` reaches the login screen; (b) a signed-in visitor gets the public `/`,
+  then logs an entry, reads the report and downloads the CSV; (c) the admin
+  controls bind — the Admin checkbox on user creation, and a team member's role
+  set to lead and verified over the API.
 - Design screenshots live in `docs/design/screenshots/` and are not shipped.
 
 ## 8. Acceptance
@@ -278,7 +312,16 @@ Built with Go and Svelte.
 - [ ] Lighthouse: no contrast or landmark failures; CLS < 0.05; images < 150 KB.
 - [ ] Anonymous `/` renders with no uncaught JS errors (the expected anonymous
       `/me` 401 is the only failed request).
-- [ ] Signed-in `/` redirects to `/timeline`; `/login` still works.
+- [ ] Signed-in `/` renders the homepage; `Sign in` reaches `/timeline`.
+- [ ] `web/index.html` ships title, description and canonical (plus Open Graph
+      and Twitter card) as static markup, with a `<noscript>` product summary.
+- [ ] `/robots.txt` answers 200, allows `/` and disallows `/login`, `/password`,
+      `/timeline`, `/reports`, `/admin/` and `/api/`, and its `Sitemap:` line is
+      the request origin.
+- [ ] `/sitemap.xml` answers 200, is valid XML, and its only `<loc>` is the
+      request origin's `/`.
+- [ ] `/` and real static files answer without `X-Robots-Tag`; client routes
+      answer `X-Robots-Tag: noindex, nofollow`.
 
 ## 9. Result
 

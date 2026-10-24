@@ -4,7 +4,9 @@ package api
 
 import (
 	"encoding/json"
+	"encoding/xml"
 	"fmt"
+	"html"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -77,11 +79,37 @@ func New(st *store.Store, clk clock.Clock) http.Handler {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", s.health)
+	// The origin is per install, so these are built per request rather than
+	// checked in as static files.
+	mux.HandleFunc("GET /robots.txt", robots)
+	mux.HandleFunc("GET /sitemap.xml", sitemap)
 	// Only the API subtree needs a session: the SPA shell must load so a user
 	// with must_change_password can reach the password screen.
 	mux.Handle("/api/", s.withAccessLog(s.withRequest(apiMux)))
 	mux.Handle("/", web.Handler())
 	return securityHeaders(mux)
+}
+
+// origin is the scheme://host a crawler reached us on. It trusts the proxy's
+// X-Forwarded-Proto only from a loopback peer, like the session cookie does.
+func origin(r *http.Request) string {
+	if isHTTPS(r) {
+		return "https://" + r.Host
+	}
+	return "http://" + r.Host
+}
+
+// robots points crawlers at the per-install sitemap and keeps them out of
+// everything behind the login.
+func robots(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	_, _ = fmt.Fprintf(w, "User-agent: *\nAllow: /\nDisallow: /login\nDisallow: /password\nDisallow: /timeline\nDisallow: /reports\nDisallow: /admin/\nDisallow: /api/\n\nSitemap: %s/sitemap.xml\n", origin(r))
+}
+
+// sitemap lists the only indexable page: the public homepage.
+func sitemap(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/xml")
+	_, _ = fmt.Fprintf(w, xml.Header+`<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"><url><loc>%s/</loc></url></urlset>`+"\n", html.EscapeString(origin(r)))
 }
 
 // Spec returns the generated OpenAPI document, for `tstamps openapi`.
@@ -119,7 +147,7 @@ func (s *Server) health(w http.ResponseWriter, _ *http.Request) {
 func securityHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		h := w.Header()
-		h.Set("Content-Security-Policy", "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'")
+		h.Set("Content-Security-Policy", "default-src 'self'; connect-src 'self' data:; style-src 'self' 'unsafe-inline'; img-src 'self' data:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'")
 		h.Set("X-Content-Type-Options", "nosniff")
 		h.Set("Referrer-Policy", "same-origin")
 		next.ServeHTTP(w, r)

@@ -150,9 +150,9 @@
 <form class="toolbar" onsubmit={create}>
   <Input id="new-project" label="Name" bind:value={name} required />
   <Select id="new-project-team" label="Team" bind:value={teamID} required>
-    <option value="" disabled>Choose a team</option>
+    <wa-option value="" disabled>Choose a team</wa-option>
     {#each activeTeams as team (team.id)}
-      <option value={String(team.id)}>{team.name}</option>
+      <wa-option value={String(team.id)}>{team.name}</wa-option>
     {/each}
   </Select>
   <Input id="new-project-color" label="Color" class="color" type="color" bind:value={color} />
@@ -237,9 +237,9 @@
                   hint="A project can only change team while it has no entries."
                 >
                   {#each teams as team (team.id)}
-                    <option value={String(team.id)}>
+                    <wa-option value={String(team.id)}>
                       {team.name}{team.archived_at ? ' (archived)' : ''}
-                    </option>
+                    </wa-option>
                   {/each}
                 </Select>
                 <Input

@@ -10,6 +10,14 @@
   --success-bg: #e7f2ec;
   --danger-bg: #f8e8e4;
   --radius: 6px;
+  /* Web Awesome's brand scale follows the app accent. */
+  --wa-color-brand: var(--accent);
+  --wa-color-brand-95: #e7f2ec;
+  --wa-color-brand-90: #d8e9e1;
+  --wa-color-brand-80: #b9d6c9;
+  --wa-color-brand-60: var(--accent);
+  --wa-color-brand-50: var(--accent);
+  --wa-color-brand-40: var(--accent-strong);
   --space-1: 0.25rem;
   --space-2: 0.5rem;
   --space-3: 1rem;
@@ -107,14 +115,7 @@ main {
   border-radius: var(--radius);
 }
 
-.auth label {
-  display: block;
-  margin-bottom: var(--space-1);
-  font-size: 0.875rem;
-  font-weight: 600;
-}
-
-.auth input {
+.auth wa-input {
   margin-bottom: var(--space-3);
 }
 
@@ -129,41 +130,6 @@ button {
 button:disabled {
   opacity: 0.6;
   cursor: progress;
-}
-
-.primary {
-  background: var(--accent);
-  color: #fff;
-}
-
-.primary:hover:not(:disabled) {
-  background: var(--accent-strong);
-}
-
-.secondary {
-  background: transparent;
-  border-color: var(--border);
-  color: var(--text);
-  padding: var(--space-1) var(--space-2);
-}
-
-.secondary:hover:not(:disabled) {
-  background: var(--bg);
-}
-
-.secondary[aria-pressed='true'] {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: #fff;
-}
-
-.secondary[aria-pressed='true']:hover:not(:disabled) {
-  background: var(--accent-strong);
-}
-
-.danger {
-  background: var(--danger);
-  color: #fff;
 }
 
 input,
@@ -235,37 +201,27 @@ tr:last-child td {
 
 .tabs {
   display: flex;
+  align-items: center;
   gap: var(--space-3);
   margin: 0 0 var(--space-3);
   border-bottom: 1px solid var(--border);
 }
 
-.tabs a,
-.tabs button {
-  background: transparent;
-  border: 0;
-  border-bottom: 2px solid transparent;
-  border-radius: 0;
+.tabs a {
   padding: var(--space-2) var(--space-1);
+  border-bottom: 2px solid transparent;
   color: var(--muted);
 }
 
-.tabs a:hover,
-.tabs button:hover {
+.tabs a:hover {
   color: var(--text);
   text-decoration: none;
 }
 
-.tabs [aria-current='page'],
-.tabs [aria-pressed='true'] {
-  background: transparent;
-  color: var(--text);
+.tabs a[aria-current='page'] {
   border-bottom-color: var(--accent);
+  color: var(--text);
   font-weight: 600;
-}
-
-.tabs button[aria-pressed='true']:hover:not(:disabled) {
-  background: transparent;
 }
 
 .badge {
@@ -310,17 +266,6 @@ tr:last-child td {
 .field > label {
   font-size: 0.875rem;
   font-weight: 600;
-}
-
-.field.check {
-  flex-direction: row;
-  align-items: center;
-  gap: var(--space-1);
-  padding-bottom: var(--space-2);
-}
-
-.field.check label {
-  font-weight: 400;
 }
 
 .row-actions {
@@ -368,12 +313,12 @@ tr:last-child td {
 
 .member {
   display: grid;
-  grid-template-columns: auto 1fr auto;
+  grid-template-columns: 1fr auto;
   align-items: center;
   gap: var(--space-2);
 }
 
-.member select {
+.member wa-select {
   width: auto;
 }
 
@@ -654,27 +599,12 @@ main.wide {
   pointer-events: none;
 }
 
-/* The add-project picker is a native dialog: focus and Esc come for free. */
-dialog.project-picker {
-  width: 24rem;
-  max-width: calc(100vw - 2rem);
-  padding: var(--space-3);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--surface);
-  color: var(--text);
+/* The add-project picker is a Web Awesome dialog: focus trap and Esc come for free. */
+.project-picker {
+  --width: 24rem;
 }
 
-dialog.project-picker::backdrop {
-  background: rgb(0 0 0 / 35%);
-}
-
-dialog.project-picker h2 {
-  margin: 0 0 var(--space-2);
-  font-size: 1rem;
-}
-
-dialog.project-picker ul {
+.project-picker ul {
   list-style: none;
   margin: var(--space-2) 0 0;
   padding: 0;
@@ -682,7 +612,7 @@ dialog.project-picker ul {
   overflow: auto;
 }
 
-dialog.project-picker li button {
+.project-picker li button {
   display: flex;
   align-items: center;
   gap: var(--space-2);
@@ -696,11 +626,11 @@ dialog.project-picker li button {
   text-align: left;
 }
 
-dialog.project-picker li button:hover {
+.project-picker li button:hover {
   background: var(--bg);
 }
 
-dialog.project-picker .row-actions {
+.project-picker .row-actions {
   justify-content: flex-end;
   margin-top: var(--space-3);
 }
@@ -717,7 +647,10 @@ dialog.project-picker .row-actions {
   font-size: 1rem;
 }
 
-.entry-panel .field {
+.entry-panel wa-select,
+.entry-panel wa-input,
+.entry-panel wa-textarea {
+  display: block;
   margin-bottom: var(--space-2);
 }
 

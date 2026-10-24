@@ -18,8 +18,13 @@
   } = $props()
 </script>
 
-<div class="field">
-  <label for={id}>{label}</label>
-  <select {id} bind:value {...rest}>{@render children()}</select>
-  {#if hint}<span class="hint">{hint}</span>{/if}
-</div>
+<wa-select
+  {id}
+  {label}
+  hint={hint || undefined}
+  {value}
+  oninput={(event) => (value = event.currentTarget.value)}
+  {...rest}
+>
+  {@render children()}
+</wa-select>
