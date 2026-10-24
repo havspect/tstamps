@@ -11,6 +11,7 @@ import (
 	"github.com/havspect/tstamps/internal/auth"
 	"github.com/havspect/tstamps/internal/clock"
 	"github.com/havspect/tstamps/internal/store"
+	"github.com/havspect/tstamps/internal/workspace"
 )
 
 const testPassword = "correct horse battery staple"
@@ -58,6 +59,35 @@ func TestLogin(t *testing.T) {
 	}
 	if !strings.Contains(apiErr.Error(), "incorrect") {
 		t.Fatalf("error %q does not carry the server detail", apiErr)
+	}
+}
+
+func TestWorkspaceBaseURL(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "workspaces")
+	password, err := workspace.Create(dir, "koeber.com", "ada@example.com", "Ada Lovelace")
+	if err != nil {
+		t.Fatalf("create workspace: %v", err)
+	}
+	host, err := workspace.New(dir, clock.System{})
+	if err != nil {
+		t.Fatalf("workspace host: %v", err)
+	}
+	srv := httptest.NewServer(host)
+	t.Cleanup(func() {
+		srv.Close()
+		_ = host.Close()
+	})
+
+	c := New(Config{URL: srv.URL + "/w/koeber.com/"})
+	me, err := c.Login("ada@example.com", password)
+	if err != nil {
+		t.Fatalf("login through workspace URL: %v", err)
+	}
+	if me.Email != "ada@example.com" {
+		t.Fatalf("me = %+v", me)
+	}
+	if _, err := c.Me(); err != nil {
+		t.Fatalf("me through saved cookie: %v", err)
 	}
 }
 

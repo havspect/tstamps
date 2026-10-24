@@ -88,7 +88,7 @@ func New(st *store.Store, clk clock.Clock) http.Handler {
 	// with must_change_password can reach the password screen.
 	mux.Handle("/api/", s.withAccessLog(s.withRequest(apiMux)))
 	mux.Handle("/", web.Handler())
-	return securityHeaders(mux)
+	return SecurityHeaders(mux)
 }
 
 // origin is the scheme://host a crawler reached us on. It trusts the proxy's
@@ -143,9 +143,9 @@ func (s *Server) health(w http.ResponseWriter, _ *http.Request) {
 	}{"ok", version})
 }
 
-// securityHeaders are set here rather than in the proxy so the binary alone is
+// SecurityHeaders are set here rather than in the proxy so the binary alone is
 // still safe; HSTS stays with TLS termination.
-func securityHeaders(next http.Handler) http.Handler {
+func SecurityHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		h := w.Header()
 		csp := "default-src 'self'; connect-src 'self' data:; style-src 'self' 'unsafe-inline'; img-src 'self' data:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'"

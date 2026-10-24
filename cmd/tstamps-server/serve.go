@@ -16,6 +16,7 @@ import (
 	"github.com/havspect/tstamps/internal/clock"
 	"github.com/havspect/tstamps/internal/config"
 	"github.com/havspect/tstamps/internal/store"
+	"github.com/havspect/tstamps/internal/workspace"
 )
 
 func serve(args []string, stderr io.Writer) int {
@@ -27,21 +28,33 @@ func serve(args []string, stderr io.Writer) int {
 	log := slog.New(slog.NewTextHandler(stderr, &slog.HandlerOptions{Level: cfg.LogLevel}))
 	slog.SetDefault(log)
 
-	st, err := store.Open(cfg.DB)
-	if err != nil {
-		log.Error("open database", "db", cfg.DB, "error", err)
-		return 1
-	}
-	defer st.Close()
+	var handler http.Handler
+	if cfg.WorkspaceDir != "" {
+		host, err := workspace.New(cfg.WorkspaceDir, clock.System{})
+		if err != nil {
+			log.Error("open workspace directory", "dir", cfg.WorkspaceDir, "error", err)
+			return 1
+		}
+		defer host.Close()
+		handler = host
+	} else {
+		st, err := store.Open(cfg.DB)
+		if err != nil {
+			log.Error("open database", "db", cfg.DB, "error", err)
+			return 1
+		}
+		defer st.Close()
 
-	if err := st.Migrate(); err != nil {
-		log.Error("migrate database", "db", cfg.DB, "error", err)
-		return 1
+		if err := st.Migrate(); err != nil {
+			log.Error("migrate database", "db", cfg.DB, "error", err)
+			return 1
+		}
+		handler = api.New(st, clock.System{})
 	}
 
 	srv := &http.Server{
 		Addr:              cfg.Addr,
-		Handler:           api.New(st, clock.System{}),
+		Handler:           handler,
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       30 * time.Second,
 		WriteTimeout:      60 * time.Second,
@@ -57,7 +70,11 @@ func serve(args []string, stderr io.Writer) int {
 		return 1
 	}
 
-	log.Info("serving", "addr", ln.Addr().String(), "db", cfg.DB)
+	attrs := []any{"addr", ln.Addr().String(), "mode", "one-workspace", "db", cfg.DB}
+	if cfg.WorkspaceDir != "" {
+		attrs = []any{"addr", ln.Addr().String(), "mode", "hosted", "workspace_dir", cfg.WorkspaceDir}
+	}
+	log.Info("serving", attrs...)
 
 	listenErr := make(chan error, 1)
 	go func() { listenErr <- srv.Serve(ln) }()

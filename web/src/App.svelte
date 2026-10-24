@@ -10,6 +10,7 @@
   import NotFound from './pages/NotFound.svelte'
   import Password from './pages/Password.svelte'
   import Reports from './pages/Reports.svelte'
+  import WorkspaceSelect from './pages/WorkspaceSelect.svelte'
   import Timeline from './pages/Timeline.svelte'
   import AdminEntries from './pages/AdminEntries.svelte'
   import AdminProjects from './pages/AdminProjects.svelte'
@@ -29,12 +30,15 @@
   }
 
   let ready = $state(false)
+  const selectingWorkspace = $derived(router.hosted && router.base === '')
 
   onMount(async () => {
-    try {
-      await session.load()
-    } catch {
-      // Offline: show the login screen rather than guess at a session.
+    if (!selectingWorkspace) {
+      try {
+        await session.load()
+      } catch {
+        // Offline: show the login screen rather than guess at a session.
+      }
     }
     ready = true
   })
@@ -46,9 +50,10 @@
   // fetch with the wrong role and flash its content for a frame. The homepage
   // is public, so it skips this check entirely.
   const allowed = $derived.by(() => {
-    if (!user) return router.path === '/login' || router.path === '/'
+    if (selectingWorkspace) return router.path === '/'
+    if (!user) return router.path === '/login' || (router.path === '/' && !router.hosted)
     if (session.mustChangePassword) return router.path === '/password'
-    if (router.path === '/login' || router.path === '/password') return false
+    if (router.path === '/login' || router.path === '/password' || (router.path === '/' && router.hosted)) return false
     if (router.path.startsWith('/admin')) return user.is_admin
     if (router.path === '/reports') return user.is_admin || leads
     return true
@@ -60,15 +65,18 @@
   $effect(() => {
     if (!ready) return
     const path = router.path
-    if (!user) {
-      if (path !== '/login' && path !== '/') router.navigate('/login', { replace: true })
+    if (selectingWorkspace) {
+      if (path !== '/') router.navigate('/', { replace: true })
+    } else if (!user) {
+      const publicHome = path === '/' && !router.hosted
+      if (path !== '/login' && !publicHome) router.navigate('/login', { replace: true })
     } else if (session.mustChangePassword) {
       if (path !== '/password') router.navigate('/password', { replace: true })
     } else if (path.startsWith('/admin') && !user.is_admin) {
       router.navigate('/timeline', { replace: true })
     } else if (path === '/reports' && !user.is_admin && !leads) {
       router.navigate('/timeline', { replace: true })
-    } else if (path === '/login' || path === '/password') {
+    } else if (path === '/login' || path === '/password' || (path === '/' && router.hosted)) {
       router.navigate('/timeline', { replace: true })
     }
   })
@@ -79,8 +87,10 @@
   }
 </script>
 
-{#if router.path === '/'}
-  <!-- Public page: never wait on the session or the shell's redirect guard. -->
+{#if selectingWorkspace}
+  <WorkspaceSelect />
+{:else if router.path === '/' && !router.hosted}
+  <!-- Public homepage: never wait on the session or the shell's redirect guard. -->
   <Page />
 {:else}
   <header>

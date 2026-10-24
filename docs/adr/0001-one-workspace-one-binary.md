@@ -1,6 +1,6 @@
 # One workspace per install, shipped as one binary
 
-Status: the one-workspace-per-install decision will be superseded by [ADR-0011](0011-host-workspaces-as-separate-sqlite-files.md) once multi-workspace hosting ships (ADR-0011 is proposed, not implemented). The "one binary" claim is amended by [ADR-0008](0008-user-cli-and-server-are-two-binaries.md) — the workspace still ships without a database, cache or frontend host, but client commands are now a separate `tstamps` artifact.
+Status: the one-workspace-per-install decision is superseded by [ADR-0011](0011-host-workspaces-as-separate-sqlite-files.md). The "one binary" claim is amended by [ADR-0008](0008-user-cli-and-server-are-two-binaries.md) — the workspace still ships without a database, cache or frontend host, but client commands are now a separate `tstamps` artifact.
 
 A workspace is one company. The Go binary serves the HTTP API, the embedded web UI and an embedded SQLite file; there is no separate database, cache or frontend host. Self-hosting is `tstamps serve --db ./tstamps.db`, and a backup is a file copy.
 
