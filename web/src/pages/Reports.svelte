@@ -2,12 +2,13 @@
   import { onMount } from 'svelte'
   import { api, problemMessage } from '../lib/api'
   import type { components } from '../lib/api/schema'
-  import { deviceTimezone, formatDuration } from '../lib/format'
+  import { deviceTimezone, formatDuration, todayIn } from '../lib/format'
   import {
     bucketRange,
     csvHref,
     pivot,
     presetRange,
+    summarize,
     type BucketBy,
     type RangePreset,
     type ReportRow,
@@ -47,6 +48,8 @@
   )
   const buckets = $derived(bucketRange(from, to, by))
   const grouped = $derived(pivot(rows))
+  const summary = $derived(summarize(grouped))
+  const today = todayIn(zone)
   const columns = $derived(
     buckets.map((bucket) => grouped.reduce((sum, project) => sum + (project.cells[bucket.key] ?? 0), 0)),
   )
@@ -122,11 +125,44 @@
   <p class="error" role="alert">{error}</p>
 {/if}
 
+{#if !loading || grouped.length > 0}
+  <dl class="kpis" aria-label="Report summary">
+    <div>
+      <dt>Total logged</dt>
+      <dd>{formatDuration(summary.total)}</dd>
+    </div>
+    <div>
+      <dt>People</dt>
+      <dd>{summary.people}<span class="kpi-note">with hours</span></dd>
+    </div>
+    <div>
+      <dt>Average per person</dt>
+      <dd>{formatDuration(summary.perPerson)}</dd>
+    </div>
+    <div>
+      <dt>Busiest project</dt>
+      <dd>
+        {#if summary.busiest}
+          <span class="kpi-project">
+            {summary.busiest.project}{#if summary.busiest.archived}<span class="badge">archived</span>{/if}
+          </span>
+          <span class="kpi-note">{Math.round(summary.busiest.share * 100)}% of hours</span>
+        {:else}
+          <span class="kpi-empty">—</span>
+        {/if}
+      </dd>
+    </div>
+  </dl>
+{/if}
+
 <form class="toolbar" onsubmit={(event) => { event.preventDefault(); void load() }}>
-  <div class="tabs" role="group" aria-label="Group by">
-    <Button variant="secondary" active={by === 'day'} onclick={() => { by = 'day'; void load() }}>Day</Button>
-    <Button variant="secondary" active={by === 'week'} onclick={() => { by = 'week'; void load() }}>Week</Button>
-    <Button variant="secondary" active={by === 'month'} onclick={() => { by = 'month'; void load() }}>Month</Button>
+  <div class="field">
+    <span class="field-label">Group by</span>
+    <div class="tabs" role="group" aria-label="Group by">
+      <Button variant="secondary" active={by === 'day'} onclick={() => { by = 'day'; void load() }}>Day</Button>
+      <Button variant="secondary" active={by === 'week'} onclick={() => { by = 'week'; void load() }}>Week</Button>
+      <Button variant="secondary" active={by === 'month'} onclick={() => { by = 'month'; void load() }}>Month</Button>
+    </div>
   </div>
   <Select
     id="report-range"
@@ -167,78 +203,231 @@
 {:else if grouped.length === 0}
   <p>No hours in this range.</p>
 {:else}
-  <table class="report">
-    <thead>
-      <tr>
-        <th scope="col">Project</th>
-        {#each buckets as bucket (bucket.key)}
-          <th scope="col" class="num">{bucket.label}</th>
-        {/each}
-        <th scope="col" class="num">Total</th>
-      </tr>
-    </thead>
-    <tbody>
-      {#each grouped as project (project.project_id)}
+  <div class="scroll">
+    <table class="report">
+      <thead>
         <tr>
-          <th scope="row">
-            <button
-              type="button"
-              class="project"
-              aria-expanded={open.includes(project.project_id)}
-              onclick={() => toggle(project.project_id)}
-            >
-              <span class="caret" aria-hidden="true">{open.includes(project.project_id) ? '▾' : '▸'}</span>
-              <span class="swatch" style:background={colors.get(project.project_id) ?? 'var(--muted)'}></span>
-              {project.project}
-              {#if project.archived}<span class="badge">archived</span>{/if}
-            </button>
-          </th>
+          <th scope="col">Project</th>
           {#each buckets as bucket (bucket.key)}
-            <td class="num">{cell(project.cells[bucket.key])}</td>
+            <th scope="col" class="num" class:today={bucket.key === today}>{bucket.label}</th>
           {/each}
-          <td class="num">{formatDuration(project.total)}</td>
+          <th scope="col" class="num">Total</th>
         </tr>
-        {#if open.includes(project.project_id)}
-          {#each project.people as person (person.user_id)}
-            <tr class="person">
-              <td>{person.user}</td>
-              {#each buckets as bucket (bucket.key)}
-                <td class="num">{cell(person.cells[bucket.key])}</td>
-              {/each}
-              <td class="num">{formatDuration(person.total)}</td>
-            </tr>
-          {/each}
-        {/if}
-      {/each}
-    </tbody>
-    <tfoot>
-      <tr>
-        <th scope="row">Total</th>
-        {#each columns as seconds, index (buckets[index].key)}
-          <td class="num">{cell(seconds)}</td>
+      </thead>
+      <tbody>
+        {#each grouped as project (project.project_id)}
+          <tr>
+            <th scope="row">
+              <button
+                type="button"
+                class="project"
+                aria-expanded={open.includes(project.project_id)}
+                onclick={() => toggle(project.project_id)}
+              >
+                <span class="caret" aria-hidden="true">{open.includes(project.project_id) ? '▾' : '▸'}</span>
+                <span class="swatch" style:background={colors.get(project.project_id) ?? 'var(--muted)'}></span>
+                {project.project}
+                {#if project.archived}<span class="badge">archived</span>{/if}
+              </button>
+            </th>
+            {#each buckets as bucket (bucket.key)}
+              <td class="num">{cell(project.cells[bucket.key])}</td>
+            {/each}
+            <td class="num total">{formatDuration(project.total)}</td>
+          </tr>
+          {#if open.includes(project.project_id)}
+            {#each project.people as person (person.user_id)}
+              <tr class="person">
+                <td>{person.user}</td>
+                {#each buckets as bucket (bucket.key)}
+                  <td class="num">{cell(person.cells[bucket.key])}</td>
+                {/each}
+                <td class="num total">{formatDuration(person.total)}</td>
+              </tr>
+            {/each}
+          {/if}
         {/each}
-        <td class="num">{formatDuration(grand)}</td>
-      </tr>
-    </tfoot>
-  </table>
+      </tbody>
+      <tfoot>
+        <tr>
+          <th scope="row">Total</th>
+          {#each columns as seconds, index (buckets[index].key)}
+            <td class="num">{cell(seconds)}</td>
+          {/each}
+          <td class="num">{formatDuration(grand)}</td>
+        </tr>
+      </tfoot>
+    </table>
+  </div>
 {/if}
 
 <style>
+  .kpis {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+    margin: 0 0 var(--space-3);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+  }
+
+  .kpis > div {
+    padding: var(--space-3);
+    border-left: 1px solid var(--border);
+  }
+
+  .kpis > div:first-child {
+    border-left: 0;
+  }
+
+  .kpis dt {
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+
+  .kpis dd {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: var(--space-2);
+    margin: var(--space-1) 0 0;
+    font-size: 1.5rem;
+    font-weight: 650;
+    font-variant-numeric: tabular-nums;
+    line-height: 1.2;
+  }
+
+  .kpi-note {
+    font-size: 0.8125rem;
+    font-weight: 400;
+    color: var(--muted);
+  }
+
+  .kpi-project {
+    overflow-wrap: anywhere;
+  }
+
+  .kpi-empty {
+    color: var(--muted);
+  }
+
+  @media (max-width: 48rem) {
+    .kpis {
+      grid-template-columns: 1fr 1fr;
+    }
+
+    .kpis > div {
+      border-top: 1px solid var(--border);
+    }
+
+    .kpis > div:nth-child(odd) {
+      border-left: 0;
+    }
+
+    .kpis > div:nth-child(-n + 2) {
+      border-top: 0;
+    }
+  }
+
   .csv {
-    align-self: end;
+    align-self: center;
     margin-left: auto;
-    padding-bottom: var(--space-2);
+    padding: var(--space-2) var(--space-3);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--surface);
+    font-size: 0.875rem;
+    white-space: nowrap;
+  }
+
+  .csv:hover {
+    border-color: var(--accent);
+    text-decoration: none;
+  }
+
+  .toolbar .tabs {
+    align-self: end;
+    align-items: center;
+    min-height: 2.75rem;
+    margin: 0;
+    border-bottom: 0;
+  }
+
+  .field-label {
+    font-size: 0.875rem;
+    font-weight: 600;
+  }
+
+  .scroll {
+    overflow: auto;
+    max-height: 70vh;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+  }
+
+  .report {
+    border: 0;
   }
 
   .report .num {
     text-align: right;
     white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .report .total {
+    font-weight: 600;
+  }
+
+  /* A long range scrolls sideways; keep the header and project names in view. */
+  .report thead th {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    background: var(--surface);
+    box-shadow: inset 0 -1px 0 var(--border);
+  }
+
+  .report th:first-child,
+  .report td:first-child {
+    position: sticky;
+    left: 0;
+    background: var(--surface);
+    box-shadow: inset -1px 0 0 var(--border);
+  }
+
+  .report th:first-child {
+    min-width: 12rem;
+  }
+
+  .report tbody th {
+    white-space: nowrap;
+  }
+
+  .report thead th:first-child {
+    z-index: 3;
+    box-shadow: inset -1px 0 0 var(--border), inset 0 -1px 0 var(--border);
+  }
+
+  .report thead th.today {
+    color: var(--accent);
+    box-shadow: inset 0 -2px 0 var(--accent);
+  }
+
+  .report tbody tr:hover > th,
+  .report tbody tr:hover > td {
+    background: var(--bg);
   }
 
   .report tfoot th,
   .report tfoot td {
     border-top: 2px solid var(--text);
     border-bottom: 0;
+    background: var(--bg);
     font-weight: 650;
   }
 

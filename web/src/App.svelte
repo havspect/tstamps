@@ -103,7 +103,7 @@
     {/if}
   </header>
 
-  <main class:wide={router.path === '/timeline'}>
+  <main class:wide={router.path === '/timeline' || router.path === '/reports'}>
     {#if ready && allowed}
       <Page />
     {/if}

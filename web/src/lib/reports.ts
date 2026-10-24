@@ -53,12 +53,17 @@ export function bucketRange(from: string, to: string, by: BucketBy): Bucket[] {
 
   const step = by === 'day' ? 1 : 7
   const cursor = new Date(start)
+  // A day label needs its month only when the range crosses one; otherwise
+  // "Mon 19" is enough and the header stays short.
+  const last = new Date(end.getTime() - DAY_MS)
+  const monthSpans = start.getUTCMonth() !== last.getUTCMonth() || start.getUTCFullYear() !== last.getUTCFullYear()
   if (by === 'week') cursor.setUTCDate(cursor.getUTCDate() - ((cursor.getUTCDay() + 6) % 7))
   for (; cursor < end; cursor.setUTCDate(cursor.getUTCDate() + step)) {
     if (by === 'day') {
+      const day = `${DAY_NAMES[(cursor.getUTCDay() + 6) % 7]} ${cursor.getUTCDate()}`
       buckets.push({
         key: cursor.toISOString().slice(0, 10),
-        label: `${DAY_NAMES[(cursor.getUTCDay() + 6) % 7]} ${cursor.getUTCDate()}`,
+        label: monthSpans ? `${day} ${MONTH_NAMES[cursor.getUTCMonth()]}` : day,
       })
     } else {
       const week = isoWeekKey(cursor)
@@ -121,6 +126,34 @@ export function pivot(rows: ReportRow[]): ReportProject[] {
   for (const project of out) project.people.sort((a, b) => b.total - a.total || a.user.localeCompare(b.user))
   out.sort((a, b) => Number(a.archived) - Number(b.archived) || b.total - a.total || a.project.localeCompare(b.project))
   return out
+}
+
+export type ReportSummary = {
+  total: number
+  people: number
+  perPerson: number
+  busiest: { project: string; archived: boolean; share: number } | null
+}
+
+// summarize reads the same pivot the table shows, so the KPI band and the
+// grand total can never disagree. Archived projects count like any other.
+export function summarize(projects: ReportProject[]): ReportSummary {
+  const people = new Set<number>()
+  let total = 0
+  let busiest: ReportProject | null = null
+  for (const project of projects) {
+    total += project.total
+    for (const person of project.people) people.add(person.user_id)
+    if (!busiest || project.total > busiest.total) busiest = project
+  }
+  return {
+    total,
+    people: people.size,
+    perPerson: people.size ? Math.round(total / people.size) : 0,
+    busiest: busiest && total > 0
+      ? { project: busiest.project, archived: busiest.archived, share: busiest.total / total }
+      : null,
+  }
 }
 
 export type RangePreset = 'this-week' | 'last-week' | 'this-month' | 'last-month' | 'this-year' | 'custom'

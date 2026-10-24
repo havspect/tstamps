@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { bucketRange, csvHref, pivot, presetRange } from './reports'
+import { bucketRange, csvHref, pivot, presetRange, summarize } from './reports'
 import type { ReportRow } from './reports'
 
 // row builds a report row; user 1 is Ada, user 2 is Grace.
@@ -60,6 +60,13 @@ describe('bucketRange', () => {
     expect(bucketRange('2026-10-19', '2026-10-19', 'day')).toEqual([])
     expect(bucketRange('2026-10-26', '2026-10-19', 'day')).toEqual([])
   })
+
+  it('adds the month to day labels only when the range crosses one', () => {
+    const days = bucketRange('2026-10-26', '2026-11-03', 'day')
+
+    expect(days[0].label).toBe('Mon 26 Oct')
+    expect(days.find((day) => day.key === '2026-11-01')?.label).toBe('Sun 1 Nov')
+  })
 })
 
 describe('pivot', () => {
@@ -93,6 +100,34 @@ describe('pivot', () => {
 
   it('returns nothing for no rows', () => {
     expect(pivot([])).toEqual([])
+  })
+})
+
+describe('summarize', () => {
+  it('totals hours, counts people once across projects and averages per head', () => {
+    const summary = summarize(
+      pivot([
+        row('2026-10-19', 1, 1, 3600),
+        row('2026-10-20', 2, 1, 1800),
+        row('2026-10-20', 1, 2, 600),
+      ]),
+    )
+
+    expect(summary.total).toBe(6000)
+    expect(summary.people).toBe(2)
+    expect(summary.perPerson).toBe(3000)
+    expect(summary.busiest?.project).toBe('Site')
+    expect(summary.busiest?.share).toBeCloseTo(0.9)
+  })
+
+  it('lets an archived project be the busiest, as the table counts it', () => {
+    const summary = summarize(pivot([row('2026-10-19', 1, 1, 600), row('2026-10-19', 1, 2, 3600, true)]))
+
+    expect(summary.busiest).toEqual({ project: 'App', archived: true, share: 3600 / 4200 })
+  })
+
+  it('has no busiest project and no average when nothing was logged', () => {
+    expect(summarize([])).toEqual({ total: 0, people: 0, perPerson: 0, busiest: null })
   })
 })
 
