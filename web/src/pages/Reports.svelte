@@ -3,6 +3,7 @@
   import { api, problemMessage } from '../lib/api'
   import type { components } from '../lib/api/schema'
   import { deviceTimezone, formatDuration, todayIn } from '../lib/format'
+  import { router } from '../lib/router.svelte'
   import {
     bucketRange,
     csvHref,
@@ -56,7 +57,7 @@
   const grand = $derived(grouped.reduce((sum, project) => sum + project.total, 0))
   // Project colors are the timeline's, so the same project reads the same in both views.
   const colors = $derived(new Map(projects.map((project) => [project.id, project.color])))
-  const csv = $derived(csvHref({ from, to, teamID }))
+  const csv = $derived(csvHref({ from, to, teamID }, router.base))
   const filename = $derived(`reports-${from}-to-${to}.csv`)
 
   function rangeError(left: string, right: string): string {

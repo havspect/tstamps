@@ -1,6 +1,7 @@
 package web
 
 import (
+	"bytes"
 	"io/fs"
 	"net/http"
 	"path"
@@ -11,8 +12,18 @@ import (
 // missing path with an extension or under /assets/ is a real 404, so a missing
 // hashed asset never answers with HTML. /docs is served from the VitePress
 // build in dist/docs and never falls back to the SPA.
-func handler(sub fs.FS) http.Handler {
+func handler(sub fs.FS, hosted bool) http.Handler {
 	files := http.FileServerFS(sub)
+	var index []byte
+	if hosted {
+		var err error
+		index, err = fs.ReadFile(sub, "index.html")
+		if err != nil {
+			panic(err)
+		}
+		index = bytes.Replace(index, []byte("</head>"),
+			[]byte(`<meta name="tstamps-hosted" content="1"></head>`), 1)
+	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		name := strings.TrimPrefix(path.Clean(r.URL.Path), "/")
 		if name == "" || name == "." {
@@ -50,6 +61,11 @@ func handler(sub fs.FS) http.Handler {
 			// FileServer redirects an explicit index.html path to its directory,
 			// which would loop with clean URLs. Serve the directory instead.
 			w.Header().Set("Cache-Control", "no-store")
+			if hosted && name == "index.html" {
+				w.Header().Set("Content-Type", "text/html; charset=utf-8")
+				_, _ = w.Write(index)
+				return
+			}
 			r.URL.Path = "/" + strings.TrimSuffix(name, "index.html")
 		} else {
 			if strings.HasPrefix(name, "assets/") || strings.HasPrefix(name, "docs/assets/") {

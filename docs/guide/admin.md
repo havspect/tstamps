@@ -1,8 +1,8 @@
 # Admin console
 
-Admins manage the workspace under `/admin`: **Users**, **Teams**, **Projects** and **Entries**. The screens are tables with inline create and edit. There is no separate settings page.
+Admins manage one workspace under `/admin`: **Users**, **Teams**, **Projects** and **Entries**. The screens are tables with inline create and edit. There is no separate settings page. On an operator-hosted server the console lives at `/w/{slug}/admin` and manages only that workspace; there is no screen that reaches another company.
 
-The first admin is created from the server host, not the web UI: see [Server on Linux](./server.md). After that, everything below happens in the browser.
+The first admin of each workspace is created from the server host, not the web UI: `admin create` for a one-workspace server, `workspace create` for a hosted one. See [Server on Linux](./server.md) and [Hosted workspaces](./workspaces.md). After that, everything below happens in the browser.
 
 ## Users
 

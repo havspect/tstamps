@@ -1,15 +1,13 @@
 package main
 
 import (
-	"errors"
 	"flag"
 	"fmt"
 	"io"
 	"os"
 
-	"github.com/havspect/tstamps/internal/auth"
 	"github.com/havspect/tstamps/internal/config"
-	"github.com/havspect/tstamps/internal/store"
+	"github.com/havspect/tstamps/internal/workspace"
 )
 
 func admin(args []string, stdout, stderr io.Writer) int {
@@ -33,58 +31,17 @@ func admin(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "tstamps admin create: %v\n", err)
 		return 2
 	}
-	if *email == "" || *name == "" {
+	if *email == "" || *name == "" || *db == "" {
 		return adminUsage(stderr)
 	}
 
-	// admin create opens the database directly: there is no running server to authenticate against yet.
-	st, err := store.Open(*db)
+	password, err := workspace.AddAdmin(*db, *email, *name)
 	if err != nil {
-		fmt.Fprintf(stderr, "tstamps admin create: open %s: %v\n", *db, err)
-		return 1
-	}
-	defer st.Close()
-
-	if err := st.Migrate(); err != nil {
-		fmt.Fprintf(stderr, "tstamps admin create: migrate %s: %v\n", *db, err)
-		return 1
-	}
-
-	_, err = st.UserByEmail(*email)
-	if err == nil {
-		fmt.Fprintf(stderr, "tstamps admin create: %s already exists\n", *email)
-		return 1
-	}
-	if !errors.Is(err, store.ErrNotFound) {
 		fmt.Fprintf(stderr, "tstamps admin create: %v\n", err)
 		return 1
 	}
 
-	password, err := auth.GeneratePassword()
-	if err != nil {
-		fmt.Fprintf(stderr, "tstamps admin create: generate password: %v\n", err)
-		return 1
-	}
-	hash, err := auth.HashPassword(password)
-	if err != nil {
-		fmt.Fprintf(stderr, "tstamps admin create: hash password: %v\n", err)
-		return 1
-	}
-
-	u := &store.User{
-		Email:        *email,
-		Name:         *name,
-		PasswordHash: hash,
-		Timezone:     "UTC",
-		IsAdmin:      true,
-		Active:       true,
-	}
-	if err := st.CreateUser(u); err != nil {
-		fmt.Fprintf(stderr, "tstamps admin create: %v\n", err)
-		return 1
-	}
-
-	fmt.Fprintf(stdout, "created admin %s with initial password: %s\n", u.Email, password)
+	fmt.Fprintf(stdout, "created admin %s with initial password: %s\n", *email, password)
 	return 0
 }
 

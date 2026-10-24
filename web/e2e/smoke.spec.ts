@@ -43,7 +43,7 @@ test('homepage introduces the product and links to sign in', async ({ page }) =>
   const home = await page.request.get('/')
   const html = await home.text()
   expect(html).toContain('<noscript>')
-  expect(html).toContain('self-hosted team time tracking')
+  expect(html).toContain('self-hosted or hosted team time tracking')
   expect(home.headers()['x-robots-tag']).toBeUndefined()
 
   const login = await page.request.get('/login')
@@ -75,6 +75,9 @@ test('login, log an entry, read the report and export CSV', async ({ page }) => 
   // The App guard still sends a signed-in user from /login to /timeline.
   await page.getByRole('link', { name: 'Sign in' }).first().click()
   await expect(page.getByRole('heading', { name: 'Timeline' })).toBeVisible()
+  // Web Awesome hosts don't forward aria-label, so the stepper names are slotted text.
+  await expect(page.getByRole('button', { name: 'Previous day' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Next day' })).toBeVisible()
 
   // Seed the workspace over the API; the admin screens are not what this covers.
   const origin = { Origin: baseURL }
@@ -117,6 +120,8 @@ test('login, log an entry, read the report and export CSV', async ({ page }) => 
 
   await page.goto('/reports')
   await expect(page.getByRole('rowheader', { name: /Smoke Project/ })).toBeVisible()
+  // The selected period is announced even though wa-button drops aria-pressed.
+  await expect(page.getByRole('button', { name: /Day.*selected/ })).toBeVisible()
 
   const download = page.waitForEvent('download')
   await page.getByRole('link', { name: 'Download CSV' }).click()
@@ -160,9 +165,11 @@ test('admin controls bind the custom elements to the forms', async ({ page }) =>
 
   const member = page.locator('.member', { hasText: email })
   await expect(member).toBeVisible()
+  // Native select: its aria-label is exposed, unlike a label on a custom-element host.
+  const roleSelect = member.getByRole('combobox', { name: /Role for/ })
+  await expect(roleSelect).toBeVisible()
   await member.locator('wa-checkbox').click()
-  await member.locator('wa-select').click()
-  await page.getByRole('option', { name: 'lead' }).click()
+  await roleSelect.selectOption('lead')
 
   const saved = page.waitForResponse(
     (response) =>

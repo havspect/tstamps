@@ -1,10 +1,10 @@
 # Tstamps
 
-**Team time tracking for one company: log time by dragging on a timeline;
-whoever needs the numbers reads a report.** One server binary holding the
-SQLite database, the web timeline and the REST API, plus a CLI that every user
-installs on their own machine and points at that server. No per-seat
-subscription.
+**Team time tracking: log time by dragging on a timeline; whoever needs the
+numbers reads a report.** One server binary holding the web timeline, the REST
+API and one SQLite database per workspace, plus a CLI that every user installs
+on their own machine and points at that server. Run it for one company, or host
+several companies as separate workspaces. No per-seat subscription.
 
 The manual lives in [docs/guide](docs/guide) and ships inside the server at
 `/docs`. This README is the front door.
@@ -25,11 +25,13 @@ The manual lives in [docs/guide](docs/guide) and ships inside the server at
   ([ADR-0004](docs/adr/0004-archive-projects-delete-entries.md)).
 - **Yours to run.** One `tstamps-server` process on one VM, behind Caddy on the
   same host, and a backup that is a file copy
-  ([ADR-0009](docs/adr/0009-deploy-on-one-vm.md)).
+  ([ADR-0009](docs/adr/0009-deploy-on-one-vm.md)). Hosted deployments keep one
+  SQLite file per workspace, so backup and isolation stay per company
+  ([ADR-0011](docs/adr/0011-host-workspaces-as-separate-sqlite-files.md)).
 
-Not for you if you need approvals, leave, invoicing or rates; a hosted
-service, SSO or an audit log; per-user erasure; several companies per install;
-or realtime co-editing. The full scope is [docs/SPEC.md](docs/SPEC.md).
+Not for you if you need approvals, leave, invoicing or rates; a managed
+service, SSO or an audit log; per-user erasure; several companies inside one
+workspace; or realtime co-editing. The full scope is [docs/SPEC.md](docs/SPEC.md).
 
 ## Install the CLI
 
@@ -49,7 +51,9 @@ tstamps login --url https://time.example.com
 tstamps whoami
 ```
 
-All three platforms, checksums and config paths: [Install the CLI](docs/guide/install-cli.md).
+On an operator-hosted server the URL names the workspace, for example
+`https://time.example.com/w/koeber.com`. All three platforms, checksums and
+config paths: [Install the CLI](docs/guide/install-cli.md).
 
 ## Run a workspace
 
@@ -67,6 +71,23 @@ Open `http://localhost:8080`, change the initial password, then create teams,
 users and memberships under **/admin**. Deployment with systemd and Caddy is in
 [Server on Linux](docs/guide/server.md).
 
+### Host several companies
+
+`--workspace-dir` keeps one SQLite file per workspace and selects it by slug in
+the URL:
+
+```sh
+tstamps-server workspace create koeber.com \
+  --workspace-dir ./workspaces --email you@koeber.com --name "Your Name"
+tstamps-server serve --addr :8080 --workspace-dir ./workspaces
+```
+
+`--db` and `--workspace-dir` are mutually exclusive. Each workspace has its own
+users and data at `/w/{slug}/`; the same email in two workspaces is two
+accounts. Operators create, suspend and delete workspaces; there is no
+self-service signup. The full shape is in
+[Hosted workspaces](docs/guide/workspaces.md).
+
 ## The manual
 
 | Page | What it covers |
@@ -79,6 +100,7 @@ users and memberships under **/admin**. Deployment with systemd and Caddy is in
 | [MCP](docs/guide/mcp.md) | Agent setup, tools and permissions |
 | [Admin console](docs/guide/admin.md) | Users, teams, projects, restore |
 | [Server on Linux](docs/guide/server.md) | Build, systemd, Caddy, settings |
+| [Hosted workspaces](docs/guide/workspaces.md) | One workspace per company, slugs, backup |
 | [Backup and upgrade](docs/guide/backup-upgrade.md) | Snapshots, restore, schema versions |
 
 Vocabulary is [GLOSSARY.md](GLOSSARY.md); decisions worth not reversing are in
@@ -91,7 +113,7 @@ Vocabulary is [GLOSSARY.md](GLOSSARY.md); decisions worth not reversing are in
 pnpm install     # web and docs workspaces
 just check       # go vet, go test, svelte-check, vitest, docs build
 just dev         # API, Vite and the manual, all hot reloading
-just e2e         # build the server, then one Playwright smoke walk
+just e2e         # build the server, then the legacy and hosted Playwright walks
 ```
 
 `just docs-dev` previews the manual at `http://localhost:5174/docs/`.

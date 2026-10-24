@@ -1,7 +1,10 @@
 import createClient from 'openapi-fetch'
 import type { paths } from './api/schema'
 
-export const api = createClient<paths>({ baseUrl: '' })
+const workspace = /^\/w\/([^/]+)/.exec(location.pathname)
+export const workspaceBase = workspace ? `/w/${workspace[1]}` : ''
+
+export const api = createClient<paths>({ baseUrl: workspaceBase })
 
 // URNs are the stable part of a problem response; detail may be reworded.
 const urnMessages: Record<string, string> = {

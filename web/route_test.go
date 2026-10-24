@@ -3,6 +3,7 @@ package web
 import (
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"testing/fstest"
 )
@@ -37,7 +38,7 @@ func TestHandlerServesDocsWithoutSPAFallback(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.path, func(t *testing.T) {
 			rec := httptest.NewRecorder()
-			handler(sub).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, tt.path, nil))
+			handler(sub, false).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, tt.path, nil))
 			if rec.Code != tt.status {
 				t.Fatalf("status = %d, want %d", rec.Code, tt.status)
 			}
@@ -51,5 +52,30 @@ func TestHandlerServesDocsWithoutSPAFallback(t *testing.T) {
 				t.Fatalf("robots = %q, want %q", got, tt.robots)
 			}
 		})
+	}
+}
+
+func TestHostedHandlerMarksOnlyTheShell(t *testing.T) {
+	sub := fstest.MapFS{
+		"index.html":      {Data: []byte("<head></head>")},
+		"docs/index.html": {Data: []byte("docs home")},
+	}
+
+	rec := httptest.NewRecorder()
+	handler(sub, true).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
+	if !strings.Contains(rec.Body.String(), `<meta name="tstamps-hosted" content="1">`) {
+		t.Fatalf("hosted shell = %q, want the hosted marker", rec.Body.String())
+	}
+
+	rec = httptest.NewRecorder()
+	handler(sub, false).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
+	if strings.Contains(rec.Body.String(), "tstamps-hosted") {
+		t.Fatalf("one-workspace shell carries the hosted marker: %q", rec.Body.String())
+	}
+
+	rec = httptest.NewRecorder()
+	handler(sub, true).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/docs/", nil))
+	if rec.Body.String() != "docs home" {
+		t.Fatalf("hosted docs = %q, want the manual, not the marked shell", rec.Body.String())
 	}
 }

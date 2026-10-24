@@ -42,6 +42,7 @@ declare module 'svelte/elements' {
       label?: string
       open?: boolean
       'light-dismiss'?: boolean
+      'onwa-after-show'?: (event: Event) => void
       'onwa-after-hide'?: (event: Event) => void
     }
   }

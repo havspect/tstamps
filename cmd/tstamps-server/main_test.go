@@ -21,6 +21,8 @@ func TestUsageErrors(t *testing.T) {
 		{"admin without subcommand", []string{"admin"}},
 		{"unknown admin subcommand", []string{"admin", "delete"}},
 		{"backup without destination", []string{"backup"}},
+		{"workspace without subcommand", []string{"workspace"}},
+		{"workspace create without slug", []string{"workspace", "create", "--email", "a@example.com", "--name", "Ada", "--workspace-dir", t.TempDir()}},
 	}
 	for _, tt := range cases {
 		t.Run(tt.name, func(t *testing.T) {
@@ -171,6 +173,69 @@ func TestBackup(t *testing.T) {
 	// A second backup to the same name must fail rather than replace it.
 	if code := run([]string{"backup", "--db", db, dest}, &stdout, &stderr); code != 1 {
 		t.Fatalf("backup over an existing file exit %d, want 1", code)
+	}
+}
+
+func TestWorkspaceCreate(t *testing.T) {
+	dir := t.TempDir()
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"workspace", "create", "koeber.com", "--email", "ada@example.com", "--name", "Ada Lovelace", "--workspace-dir", dir}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit %d, want 0 (stderr %q)", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "koeber.com") || strings.Count(stdout.String(), "\n") != 1 {
+		t.Fatalf("stdout = %q, want one line naming the workspace", stdout.String())
+	}
+	password := passwordFrom(t, stdout.String())
+
+	st, err := store.Open(filepath.Join(dir, "koeber.com.db"))
+	if err != nil {
+		t.Fatalf("open workspace: %v", err)
+	}
+	defer st.Close()
+	u, err := st.UserByEmail("ada@example.com")
+	if err != nil {
+		t.Fatalf("admin missing: %v", err)
+	}
+	if !u.IsAdmin || !auth.VerifyPassword(u.PasswordHash, password) {
+		t.Fatal("workspace admin or printed password is wrong")
+	}
+
+	// An invalid slug is refused without writing a file.
+	stdout.Reset()
+	stderr.Reset()
+	if code := run([]string{"workspace", "create", "../bad", "--email", "x@example.com", "--name", "X", "--workspace-dir", dir}, &stdout, &stderr); code != 1 {
+		t.Fatalf("invalid slug exit %d, want 1", code)
+	}
+}
+
+func TestBackupWorkspaces(t *testing.T) {
+	dir := t.TempDir()
+	for _, slug := range []string{"alpha", "beta"} {
+		var stdout, stderr bytes.Buffer
+		if code := run([]string{"workspace", "create", slug, "--email", "admin@" + slug + ".example", "--name", "Admin", "--workspace-dir", dir}, &stdout, &stderr); code != 0 {
+			t.Fatalf("create %s exit %d: %s", slug, code, stderr.String())
+		}
+	}
+
+	dest := filepath.Join(t.TempDir(), "snapshot")
+	var stdout, stderr bytes.Buffer
+	if code := run([]string{"backup", "--workspace-dir", dir, dest}, &stdout, &stderr); code != 0 {
+		t.Fatalf("backup exit %d: %s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "2 workspaces") {
+		t.Fatalf("stdout = %q, want the workspace count", stdout.String())
+	}
+	for _, slug := range []string{"alpha", "beta"} {
+		if _, err := os.Stat(filepath.Join(dest, slug+".db")); err != nil {
+			t.Errorf("backup missing %s: %v", slug, err)
+		}
+	}
+
+	// The hosted directory cannot be mixed with a single database path.
+	stderr.Reset()
+	if code := run([]string{"backup", "--workspace-dir", dir, "--db", "one.db", filepath.Join(t.TempDir(), "other")}, &stdout, &stderr); code != 1 {
+		t.Fatalf("mixed backup exit %d, want 1", code)
 	}
 }
 

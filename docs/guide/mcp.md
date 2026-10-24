@@ -2,7 +2,7 @@
 
 `tstamps mcp` is an MCP server over stdio. It uses the same config file and token as the CLI, and it talks to the same HTTP API as the timeline. It never opens the database.
 
-Use it when an agent should start, stop, correct or read entries with the permissions of the token you gave it.
+Use it when an agent should start, stop, correct or read entries with the permissions of the token you gave it. The shipped agent skill wraps this setup for Amp, Claude, Codex, Langdock and OpenCode: see [Agents](./agents/index.md).
 
 ## Give the agent its own token
 
@@ -44,6 +44,8 @@ Point an MCP client at the `tstamps` binary and pass the server URL and token as
 ```
 
 Put this in the MCP client's own config file. On Windows, use the full path to `tstamps.exe` if the client does not inherit `Path`, for example `%LOCALAPPDATA%\tstamps\tstamps.exe`.
+
+On an operator-hosted server, set `TSTAMPS_URL` to the workspace URL, `https://time.example.com/w/koeber.com`, and use a token from that workspace. A token minted elsewhere is rejected. See [Hosted workspaces](./workspaces.md).
 
 If `TSTAMPS_URL` and `TSTAMPS_TOKEN` are omitted, the MCP server falls back to the same rules as the CLI: flags, then environment, then `~/.config/tstamps/config.json`.
 

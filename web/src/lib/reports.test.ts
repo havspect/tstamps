@@ -164,5 +164,8 @@ describe('csvHref', () => {
 
     const query = new URLSearchParams(csvHref({ from: '2026-10-19', to: '2026-10-26', teamID: '2' }).split('?')[1])
     expect(query.get('team_id')).toBe('2')
+    expect(csvHref({ from: '2026-10-19', to: '2026-10-26', teamID: '' }, '/w/koeber.com')).toBe(
+      '/w/koeber.com/api/v1/reports.csv?from=2026-10-19&to=2026-10-26',
+    )
   })
 })

@@ -2,7 +2,7 @@ import { defineConfig } from 'vitepress'
 
 export default defineConfig({
   title: 'Tstamps',
-  description: 'Team time tracking on a timeline. One binary, one SQLite file, yours to run.',
+  description: 'Team time tracking on a timeline. One binary, one SQLite file per workspace, yours to run.',
   base: '/docs/',
   srcDir: 'guide',
   outDir: '../web/dist/docs',
@@ -32,7 +32,17 @@ export default defineConfig({
           { text: 'Timeline', link: '/timeline' },
           { text: 'Reports', link: '/reports' },
           { text: 'CLI reference', link: '/cli' },
+        ],
+      },
+      {
+        text: 'Agents',
+        items: [
           { text: 'MCP', link: '/mcp' },
+          { text: 'Agent skill', link: '/agents/' },
+          { text: 'Claude', link: '/agents/claude' },
+          { text: 'Codex', link: '/agents/codex' },
+          { text: 'Langdock', link: '/agents/langdock' },
+          { text: 'OpenCode', link: '/agents/opencode' },
         ],
       },
       {
@@ -40,6 +50,7 @@ export default defineConfig({
         items: [
           { text: 'Admin console', link: '/admin' },
           { text: 'Server on Linux', link: '/server' },
+          { text: 'Hosted workspaces', link: '/workspaces' },
           { text: 'Backup and upgrade', link: '/backup-upgrade' },
         ],
       },
@@ -53,7 +64,7 @@ export default defineConfig({
     },
     footer: {
       message: 'AGPL-3.0-only. Built with Go and Svelte.',
-      copyright: 'One binary, one SQLite file.',
+      copyright: 'One binary, one SQLite file per workspace.',
     },
     socialLinks: [{ icon: 'github', link: 'https://github.com/havspect/tstamps' }],
   },

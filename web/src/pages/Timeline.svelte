@@ -669,9 +669,13 @@
 
   <div class="toolbar">
     <div class="timeline-nav">
-      <Button variant="secondary" aria-label="Previous day" onclick={() => shiftDay(-1)}>◀</Button>
+      <Button variant="secondary" onclick={() => shiftDay(-1)}>
+        <span aria-hidden="true">◀</span><span class="sr-only">Previous day</span>
+      </Button>
       <Button variant="secondary" onclick={goToday}>Today</Button>
-      <Button variant="secondary" aria-label="Next day" onclick={() => shiftDay(1)} disabled={day >= today}>▶</Button>
+      <Button variant="secondary" onclick={() => shiftDay(1)} disabled={day >= today}>
+        <span aria-hidden="true">▶</span><span class="sr-only">Next day</span>
+      </Button>
     </div>
     <span class="day-title">{dayTitle}</span>
     <p class="hint">
@@ -874,6 +878,7 @@
   class="project-picker"
   label="Add project"
   open={pickerOpen}
+  onwa-after-show={() => document.getElementById('picker-search')?.focus()}
   onwa-after-hide={() => (pickerOpen = false)}
 >
   <Input

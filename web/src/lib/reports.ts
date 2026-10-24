@@ -187,8 +187,8 @@ export type CsvFilters = { from: string; to: string; teamID: string }
 
 // csvHref is the download URL for the filters the table was loaded with; an
 // empty id means "all", and the API ignores the bucket because CSV is per day.
-export function csvHref({ from, to, teamID }: CsvFilters): string {
+export function csvHref({ from, to, teamID }: CsvFilters, base = ''): string {
   const query = new URLSearchParams({ from, to })
   if (teamID) query.set('team_id', teamID)
-  return `/api/v1/reports.csv?${query}`
+  return `${base}/api/v1/reports.csv?${query}`
 }

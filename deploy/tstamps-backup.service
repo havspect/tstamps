@@ -12,8 +12,11 @@ Group=tstamps
 # file and the directory writable, so grant the same StateDirectory as serve.
 StateDirectory=tstamps
 StateDirectoryMode=0750
-# Created by hand in the install steps; VACUUM INTO refuses to overwrite a file.
+# Created by hand in the install steps; the backup command refuses to overwrite.
 ReadWritePaths=/var/backups/tstamps
+# One workspace. For hosted mode, replace --db ... with:
+# --workspace-dir /var/lib/tstamps/workspaces /var/backups/tstamps/tstamps-$(date ...)
+# and change the cleanup to remove old snapshot directories.
 ExecStart=/bin/sh -c 'exec /usr/local/bin/tstamps-server backup --db /var/lib/tstamps/tstamps.db /var/backups/tstamps/tstamps-$(date -u +%%Y%%m%%dT%%H%%M%%SZ).db'
 ExecStartPost=/bin/sh -c 'find /var/backups/tstamps -name "tstamps-*.db" -type f -mtime +14 -delete'
 UMask=0077

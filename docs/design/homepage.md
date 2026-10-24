@@ -5,7 +5,8 @@ Owner: web. Date: 2026-10-24.
 
 ## 1. What we are selling
 
-Tstamps is self-hosted team time tracking for one company. The product's
+Tstamps is team time tracking for one company per workspace. It is self-hosted
+by the team that uses it, with a managed/hosted option to come. The product's
 distinctive idea is small enough to say in one sentence:
 
 > A week of hours is a few drags, not a Friday form.
@@ -20,7 +21,8 @@ same single binary, served to everyone, signed in or not.
    under 20 seconds.
 2. The timeline is shown, not described. The hero contains the real interface.
 3. A person with a workspace knows exactly where to sign in; a person without
-   one knows how to run it.
+   one knows that they can self-host it for one company or several, and that a
+   managed option is announced but not available yet.
 4. It loads with the same static SPA: no external fonts, trackers, CDNs or
    server-side rendering.
 5. It feels like Tstamps: paper-warm, quiet, precise, with project colour as the
@@ -29,9 +31,22 @@ same single binary, served to everyone, signed in or not.
 ### Non-goals
 
 - No pricing table, no “Book a demo”, no invented customer logos or quotes.
-- No sign-up flow. A workspace is bootstrapped by its admin (`admin create`).
+- No sign-up flow. A workspace is bootstrapped by its admin (`admin create`);
+  there is no self-service workspace signup.
+- No hosted-availability claim. The managed path is marked “coming soon” and
+  links only to the GitHub repository: no price, uptime figure, waitlist, signup
+  flow, email address or launch date.
 - No marketing claims the spec cannot keep (approvals, invoicing, SSO, mobile).
 - No separate landing app or static-site build.
+
+### The managed option
+
+The product owner wants both deployment paths on the page: self-hosted, and
+managed by us. Nothing in this repository implements or operates a managed
+service, so the page presents it as a direction, not an offer — the third item
+in the self-host section reads “Hosted by us — coming soon” and its only link is
+the public GitHub repository. When a managed service exists, that item becomes a
+real CTA and this section records the change.
 
 ## 2. Evidence: the product as it is today
 
@@ -151,7 +166,8 @@ Motion: a single 500ms rise on the hero copy and image, and a slow pulse on the
 │                      └────────────────────────────────────┘  │
 ├──────────────────────────────────────────────────────────────┤
 │ NIGHT SECTION: Yours to run.                                  │
-│ One binary · one SQLite file · backup is a file copy          │
+│ One binary · one SQLite file per workspace · file-copy backup │
+│ One company · several companies · hosted by us (coming soon)  │
 │ [install commands]                                            │
 ├──────────────────────────────────────────────────────────────┤
 │ Deliberately small.                                           │
@@ -166,12 +182,14 @@ Motion: a single 500ms rise on the hero copy and image, and a slow pulse on the
 
 **Hero**
 
-- Eyebrow: `SELF-HOSTED TEAM TIME TRACKING`
+- Eyebrow: `SELF-HOSTED OR HOSTED TEAM TIME TRACKING`
 - H1: `Your week, in a few drags.` — “few drags” sits in an accent block, shaped
   like a timeline entry.
 - Body: “Tstamps is a team time tracker built around a timeline. Drag on a lane
   to log an entry, drag its edges to retime it, and let the report do the
-  remembering. One Go binary, one SQLite file, yours to run.”
+  remembering. Run it yourself for one company, or several as separate
+  workspaces: one Go binary, one SQLite file per workspace. Hosted by us is
+  coming.”
 - Primary: `Sign in`
 - Secondary: `See the timeline`
 - Trust line: `AGPL-3.0` · `No per-seat pricing` · `One VM`
@@ -207,12 +225,23 @@ Motion: a single 500ms rise on the hero copy and image, and a slow pulse on the
 
 **Self-host**
 
+- Label: `Self-hosted, or hosted by us`
 - Heading: `Yours to run.`
 - Body: “One `tstamps-server` process on one VM, behind Caddy on the same host.
-  The UI is embedded in the binary; the data is one SQLite file. Backups use
-  `VACUUM INTO` and are safe while the server is running.”
-- Facts: `One binary`, `One SQLite file`, `No containers`.
-- Commands: the release download and `tstamps-server serve`.
+  Run it for a single company, or host several: each workspace is one SQLite
+  file with its own users and projects. Backups use `VACUUM INTO` and are safe
+  while the server is running.”
+- Paths, in order:
+  - `One company.` — one workspace, one SQLite file, one admin created from the
+    CLI.
+  - `Several companies.` — one workspace per company, each with its own SQLite
+    file and its own logins. Operators create workspaces; there is no
+    self-service signup.
+  - `Hosted by us.` — coming soon; we run the same binary and the same
+    per-workspace files. Link: `Follow along on GitHub` (the repository is the
+    only thing that exists).
+- Facts: `One binary`, `One SQLite file per workspace`, `No containers`.
+- Commands: the release download and `tstamps login`.
 
 **Deliberately small**
 
@@ -220,9 +249,9 @@ Motion: a single 500ms rise on the hero copy and image, and a slow pulse on the
 - Intro: “Tstamps is not trying to run your whole company. If you need these,
   choose something else — and that is the point.”
 - Left (it does): timeline logging · team-lead reports · CSV · CLI + MCP ·
-  soft delete and restore · entry timezones · one workspace.
+  soft delete and restore · entry timezones · one company per workspace.
 - Right (it does not): approvals or leave · invoicing and rates · SSO or audit
-  log · mobile app · realtime co-editing · several companies per install.
+  log · mobile app · realtime co-editing · self-service workspace signup.
 - Footer of section: “What it does and does not do is in the spec.”
 
 **Close**
@@ -267,7 +296,8 @@ Built with Go and Svelte.
   Twitter card tags as static markup, so a crawler or a link unfurler sees them
   without running JavaScript. `Home.svelte` then swaps in its own shorter title
   once it mounts. The `<noscript>` block is a one-paragraph product summary, so
-  a no-JS visitor still reads what Tstamps is.
+  a no-JS visitor still reads what Tstamps is, how it is run (one company or
+  several workspaces) and that the managed option is not available yet.
 - `/robots.txt` allows `/` and disallows `/login`, `/password`, `/timeline`,
   `/reports`, `/admin/` and `/api/`, and points at the sitemap.
 - Only `/` is meant to be indexed. `web/embed.go` sends
@@ -313,6 +343,10 @@ Built with Go and Svelte.
 - [ ] Anonymous `/` renders with no uncaught JS errors (the expected anonymous
       `/me` 401 is the only failed request).
 - [ ] Signed-in `/` renders the homepage; `Sign in` reaches `/timeline`.
+- [ ] The self-host section covers all three paths — one company, several
+      companies as separate workspaces, and hosted by us — and the managed path
+      is marked coming soon with no price, uptime, signup or email claim; its
+      only link is the GitHub repository.
 - [ ] `web/index.html` ships title, description and canonical (plus Open Graph
       and Twitter card) as static markup, with a `<noscript>` product summary.
 - [ ] `/robots.txt` answers 200, allows `/` and disallows `/login`, `/password`,
