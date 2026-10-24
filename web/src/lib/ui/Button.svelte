@@ -21,9 +21,9 @@
   appearance={active ? 'filled' : variant === 'secondary' ? 'outlined' : 'accent'}
   {type}
   size="s"
-  aria-pressed={active}
   class={className}
   {...rest}
 >
   {@render children()}
+  {#if active}<span class="sr-only"> (selected)</span>{/if}
 </wa-button>

@@ -5,11 +5,11 @@ Team time tracking. People log intervals of work against projects, team leads re
 ## Language
 
 **Workspace**:
-One company's users, teams, projects and entries. A server runs one or more workspaces.
+One company's users, teams, projects and entries. One server binary serves one workspace today; hosting several per server is planned ([ADR-0011](docs/adr/0011-host-workspaces-as-separate-sqlite-files.md)).
 _Avoid_: tenant, organisation, org, account
 
 **Workspace slug**:
-The unique, operator-assigned identifier used to select a workspace. It is not a DNS domain, even when it looks like one.
+The unique, operator-assigned identifier that will select a workspace once a server hosts several. It is not a DNS domain, even when it looks like one.
 _Avoid_: workspace ID, subdomain
 
 **User**:

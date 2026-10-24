@@ -150,7 +150,7 @@
 <form class="toolbar" onsubmit={create}>
   <Input id="new-project" label="Name" bind:value={name} required />
   <Select id="new-project-team" label="Team" bind:value={teamID} required>
-    <wa-option value="" disabled>Choose a team</wa-option>
+    <wa-option value="">Choose a team</wa-option>
     {#each activeTeams as team (team.id)}
       <wa-option value={String(team.id)}>{team.name}</wa-option>
     {/each}

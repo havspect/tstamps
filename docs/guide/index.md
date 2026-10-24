@@ -1,16 +1,16 @@
 # Tstamps
 
-Team time tracking for one company. Log hours by dragging on a timeline; whoever needs the numbers reads a report.
+Team time tracking. Log hours by dragging on a timeline; whoever needs the numbers reads a report.
 
-Tstamps is one `tstamps-server` process holding the SQLite database, the web timeline and the REST API, plus a small `tstamps` CLI that each person installs and points at that server. There is no hosted service, no per-seat subscription and no second system to reconcile.
+Tstamps is one `tstamps-server` process holding the SQLite database — or one per hosted workspace — plus the web timeline and the REST API, and a small `tstamps` CLI that each person installs and points at that server. Run it for one company, or host several companies as separate workspaces on the same server. There is no managed service, no per-seat subscription and no second system to reconcile.
 
 ## How the pieces fit
 
-- **Workspace** — one installation, one company. It holds every user, team and project.
+- **Workspace** — one company's data: every user, team, project and entry, in its own SQLite file. A server runs either one workspace (`--db`) or several (`--workspace-dir`), each served under its own `/w/{slug}` URL.
 - **Team** — a group of users that owns projects. A user can be in several teams.
 - **Lead** — a membership role: creates that team's projects and reads every hour booked on them.
 - **Member** — logs their own hours and reads their own totals.
-- **Admin** — manages users, teams, memberships, and restores archived projects or deleted entries.
+- **Admin** — manages users, teams, memberships, and restores archived projects or deleted entries, within one workspace. There is no server-wide admin.
 - **Entry** — one continuous stretch of work on one project, with a start, an end and an optional note. A **running entry** has a start but no end yet; there is at most one per user.
 
 | Action | Member | Lead | Admin |
@@ -27,7 +27,7 @@ Vocabulary is [GLOSSARY.md](https://github.com/havspect/tstamps/blob/main/GLOSSA
 
 ## Quick start
 
-If your workspace is already running, install the [CLI](./install-cli.md) and log in. The commands are the same on all three platforms; the tabs exist because the manual shows every command for every platform.
+If your workspace is already running, install the [CLI](./install-cli.md) and log in. On an operator-hosted server the URL names your workspace, for example `https://time.example.com/w/koeber.com`; see [Hosted workspaces](./workspaces.md). The commands below are the same in both shapes. They are also the same on all three platforms; the tabs exist because the manual shows every command for every platform.
 
 ::: code-group
 ```sh [Linux]
@@ -73,4 +73,5 @@ If you need any of those, choose something else. [The spec](https://github.com/h
 
 - [Install the CLI](./install-cli.md) on Linux, macOS or Windows.
 - [Run the server](./server.md) on a Linux host.
+- [Host several companies](./workspaces.md) as separate workspaces.
 - [Back up and upgrade](./backup-upgrade.md) without losing hours.

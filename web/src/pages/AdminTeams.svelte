@@ -247,15 +247,15 @@
                       >
                         {user.name} <span class="hint">{user.email}</span>
                       </wa-checkbox>
-                      <wa-select
+                      <select
                         aria-label={`Role for ${user.name}`}
                         value={drafts[team.id]?.[user.id] ?? 'member'}
                         onchange={(event) => setRole(team.id, user.id, event.currentTarget.value)}
                         disabled={drafts[team.id]?.[user.id] === undefined}
                       >
-                        <wa-option value="member">member</wa-option>
-                        <wa-option value="lead">lead</wa-option>
-                      </wa-select>
+                        <option value="member">member</option>
+                        <option value="lead">lead</option>
+                      </select>
                     </div>
                   {/each}
                 </div>

@@ -82,6 +82,14 @@ tstamps login --url https://time.example.com
 
 It prompts for your email and password, then prints `logged in as Name <email>`. `tstamps whoami` shows the account and every team you belong to.
 
+On an operator-hosted server, the URL names the workspace and nothing else changes:
+
+```sh
+tstamps login --url https://time.example.com/w/koeber.com
+```
+
+The config file stores that URL, so every later command stays in the workspace. Log in again with another URL to switch. See [Hosted workspaces](./workspaces.md).
+
 ::: warning Initial password
 A user created or reset by an admin must sign in to the web UI and change the initial password first. Until then the API refuses everything except the password-change endpoints, so `tstamps login` cannot mint a token.
 :::

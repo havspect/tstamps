@@ -28,12 +28,15 @@
 <main id="main" class="home">
   <section class="hero wrap" aria-labelledby="hero-title">
     <div class="hero-copy">
-      <p class="eyebrow"><span class="dot" aria-hidden="true"></span>Self-hosted team time tracking</p>
+      <p class="eyebrow">
+        <span class="dot" aria-hidden="true"></span>Self-hosted or hosted team time tracking
+      </p>
       <h1 id="hero-title">Your week, <br />in a <span class="mark">few drags.</span></h1>
       <p class="lede">
         Tstamps is a team time tracker built around a timeline. Drag on a lane to log an entry, drag its
-        edges to retime it, and let the report do the remembering. One Go binary, one SQLite file, yours
-        to run.
+        edges to retime it, and let the report do the remembering. Run it yourself for one company, or
+        several as separate workspaces: one Go binary, one SQLite file per workspace. Hosted by us is
+        coming.
       </p>
       <div class="actions">
         <Link href="/login" class="btn primary">Sign in <span aria-hidden="true">→</span></Link>
@@ -149,9 +152,18 @@
           start, stop and correct entries with the permissions of the token you gave it. Both talk to
           the same HTTP API as the timeline.
         </p>
-        <a class="text-link" href="https://github.com/havspect/tstamps#cli">
-          Read the CLI reference <span aria-hidden="true">↗</span>
-        </a>
+        <p>
+          The <code>tstamps</code> agent skill ships the MCP setup and the rules for logging honestly:
+          it proposes entries and asks before writing them.
+        </p>
+        <div class="actions">
+          <a class="text-link" href="https://github.com/havspect/tstamps-skills">
+            Install the agent skill <span aria-hidden="true">↗</span>
+          </a>
+          <a class="text-link" href="https://github.com/havspect/tstamps#cli">
+            Read the CLI reference <span aria-hidden="true">↗</span>
+          </a>
+        </div>
       </div>
       <div class="terminal" role="group" aria-label="Example terminal session">
         <div class="term-bar" aria-hidden="true">
@@ -173,16 +185,33 @@
   <section id="self-host" class="night" aria-labelledby="host-title">
     <div class="wrap split">
       <div>
-        <p class="label">Self-hosted, not hosted</p>
+        <p class="label">Self-hosted, or hosted by us</p>
         <h2 id="host-title">Yours to run.</h2>
         <p>
-          One <code>tstamps-server</code> process on one VM, behind Caddy on the same host. The UI is
-          embedded in the binary; the data is one SQLite file. Backups use <code>VACUUM INTO</code> and
-          are safe while the server is running.
+          One <code>tstamps-server</code> process on one VM, behind Caddy on the same host. Run it for a
+          single company, or host several: each workspace is one SQLite file with its own users and
+          projects. Backups use <code>VACUUM INTO</code> and are safe while the server is running.
         </p>
+        <ul class="paths">
+          <li>
+            <strong>One company.</strong> One workspace, one SQLite file, one admin you create from the
+            CLI.
+          </li>
+          <li>
+            <strong>Several companies.</strong> One workspace per company, each with its own SQLite file
+            and its own logins. Operators create workspaces; there is no self-service signup.
+          </li>
+          <li>
+            <strong>Hosted by us.</strong> Coming soon — we run the same binary and the same per-workspace
+            files.
+            <a href="https://github.com/havspect/tstamps">
+              Follow along on GitHub <span aria-hidden="true">↗</span>
+            </a>
+          </li>
+        </ul>
         <ul class="facts">
           <li><strong>1</strong>binary</li>
-          <li><strong>1</strong>SQLite file</li>
+          <li><strong>1</strong>SQLite file per workspace</li>
           <li><strong>0</strong>containers</li>
         </ul>
       </div>
@@ -216,10 +245,10 @@ tstamps login --url https://time.example.com</code></pre>
           <ul class="ticks">
             <li>Timeline logging, one running entry</li>
             <li>Team-lead reports and CSV</li>
-            <li>CLI and MCP over the same API</li>
+            <li>CLI, MCP and a shipped agent skill</li>
             <li>Entry timezones that decide the day</li>
             <li>Soft delete and admin restore</li>
-            <li>One workspace, one company</li>
+            <li>One company per workspace</li>
           </ul>
         </div>
         <div>
@@ -230,7 +259,7 @@ tstamps login --url https://time.example.com</code></pre>
             <li>SSO and an audit log</li>
             <li>A mobile app</li>
             <li>Realtime co-editing</li>
-            <li>Several companies per install</li>
+            <li>Self-service workspace signup</li>
           </ul>
         </div>
       </div>
@@ -892,6 +921,35 @@ tstamps login --url https://time.example.com</code></pre>
   }
 
   .night code {
+    color: #fff;
+  }
+
+  .paths {
+    display: grid;
+    gap: 0.85rem;
+    margin: 1.75rem 0 0;
+    padding: 0;
+    list-style: none;
+    font-size: 0.9375rem;
+  }
+
+  .paths li {
+    padding-left: 1rem;
+    border-left: 2px solid rgb(255 255 255 / 18%);
+    color: #c9d4cc;
+  }
+
+  .paths strong {
+    color: #fff;
+  }
+
+  .paths a {
+    color: #a9c9b8;
+    text-decoration: underline;
+    text-underline-offset: 0.2em;
+  }
+
+  .paths a:hover {
     color: #fff;
   }
 
