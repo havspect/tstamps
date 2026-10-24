@@ -158,8 +158,11 @@ func TestLogin(t *testing.T) {
 func TestLoginSecureCookie(t *testing.T) {
 	h := newHarness(t)
 	https := map[string]string{"X-Forwarded-Proto": "https, http"}
-	rec := h.do(http.MethodPost, "/api/v1/auth/login",
-		map[string]string{"email": h.user.Email, "password": h.password}, https, "")
+	// The proxy connects from loopback, so its forwarded scheme is trusted.
+	req := h.request(http.MethodPost, "/api/v1/auth/login",
+		map[string]string{"email": h.user.Email, "password": h.password}, https)
+	req.RemoteAddr = "127.0.0.1:9000"
+	rec := h.send(req)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body)
 	}
@@ -169,7 +172,8 @@ func TestLoginSecureCookie(t *testing.T) {
 	}
 
 	// The middleware accepts the secure name and authenticates with it.
-	req := h.request(http.MethodGet, "/api/v1/me", nil, https)
+	req = h.request(http.MethodGet, "/api/v1/me", nil, https)
+	req.RemoteAddr = "127.0.0.1:9000"
 	req.AddCookie(&http.Cookie{Name: c.Name, Value: c.Value})
 	if rec := h.send(req); rec.Code != http.StatusOK {
 		t.Fatalf("status with secure cookie = %d, want 200: %s", rec.Code, rec.Body)

@@ -175,7 +175,7 @@ Leads do not get a team timeline in v1; the report table answers their question.
 
 ## Operations
 
-Production is one VM: `tstamps-server` under systemd, Caddy terminating TLS on the same host, no container ([ADR-0009](./adr/0009-deploy-on-one-vm.md)). The unit files and Caddyfile live in `deploy/`. The server binds `127.0.0.1` because it trusts the proxy's `X-Forwarded-Proto` for cookies and its last `X-Forwarded-For` hop for client addresses.
+Production is one VM: `tstamps-server` under systemd, Caddy terminating TLS on the same host, no container ([ADR-0009](./adr/0009-deploy-on-one-vm.md)). The unit files and Caddyfile live in `deploy/`. The server binds `127.0.0.1` and honors `X-Forwarded-Proto` for cookies and its last `X-Forwarded-For` hop for client addresses only from a loopback peer, so a direct client cannot forge either.
 
 - **Backup** — `tstamps-server backup [--db path] <destination>` writes a consistent snapshot with SQLite's `VACUUM INTO`. It is safe while the server is running and refuses an existing file, so a date-stamped name never overwrites yesterday. The deploy timer runs it nightly and keeps 14 days. Operators copy that directory off the box; a backup on the same disk is not a backup.
 - **Restore** — stop the server, replace the database file, remove stale `-wal`/`-shm`, start the server. `AutoMigrate` runs at boot. Restore is verified by `/healthz` and one report read.

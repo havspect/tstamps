@@ -3,7 +3,10 @@ package cli
 import (
 	"bufio"
 	"fmt"
+	"os"
 	"strings"
+
+	"golang.org/x/term"
 
 	"github.com/havspect/tstamps/internal/client"
 )
@@ -37,9 +40,8 @@ func (a *App) login(args []string) int {
 		}
 	}
 	if *password == "" {
-		// shortcut: the password prompt echoes what is typed, upgrade to x/term when it is worth a dependency
 		fmt.Fprint(a.Out, "password: ")
-		if *password, err = readLine(in); err != nil {
+		if *password, err = a.readPassword(in); err != nil {
 			return a.fail("login", err)
 		}
 	}
@@ -60,6 +62,18 @@ func (a *App) login(args []string) int {
 
 	fmt.Fprintf(a.Out, "logged in as %s <%s>\n", me.Name, me.Email)
 	return 0
+}
+
+// readPassword turns echo off when stdin is a terminal, so the password stays out
+// of the scrollback; piped input is not echoed anyway.
+func (a *App) readPassword(in *bufio.Reader) (string, error) {
+	f, ok := a.In.(*os.File)
+	if !ok || !term.IsTerminal(int(f.Fd())) {
+		return readLine(in)
+	}
+	b, err := term.ReadPassword(int(f.Fd()))
+	fmt.Fprintln(a.Out) // ReadPassword does not echo the Enter.
+	return string(b), err
 }
 
 // readLine returns one line without its terminator; EOF with bytes still counts.

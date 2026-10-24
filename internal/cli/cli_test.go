@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bufio"
 	"bytes"
 	"encoding/json"
 	"strings"
@@ -293,5 +294,14 @@ func TestMissingURL(t *testing.T) {
 	}
 	if !strings.Contains(errOut.String(), "no server URL") {
 		t.Fatalf("stderr %q does not explain the missing URL", errOut.String())
+	}
+}
+
+// Echo is only disabled on a terminal; a piped or injected reader still works.
+func TestReadPasswordFallsBackWhenNotATerminal(t *testing.T) {
+	a := &App{In: strings.NewReader("secret\n"), Out: &bytes.Buffer{}}
+	got, err := a.readPassword(bufio.NewReader(a.In))
+	if err != nil || got != "secret" {
+		t.Fatalf("readPassword = %q, %v, want secret", got, err)
 	}
 }

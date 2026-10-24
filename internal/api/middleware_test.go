@@ -2,9 +2,11 @@ package api
 
 import (
 	"bytes"
+	"crypto/tls"
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -48,6 +50,35 @@ func TestBearerTokenAuthenticatesAsItsUser(t *testing.T) {
 		map[string]string{"Authorization": "Bearer " + token}, cookie)
 	if rec.Code != http.StatusUnauthorized {
 		t.Fatalf("status with revoked token = %d, want 401: %s", rec.Code, rec.Body)
+	}
+}
+
+func TestForwardedProtoTrustsOnlyTheProxy(t *testing.T) {
+	tests := []struct {
+		name   string
+		remote string
+		header string
+		tls    bool
+		want   bool
+	}{
+		{"proxy says https", "127.0.0.1:9000", "https", false, true},
+		{"proxy says http", "127.0.0.1:9000", "http", false, false},
+		{"proxy sends the first value", "127.0.0.1:9000", "https, http", false, true},
+		{"direct client cannot spoof https", "203.0.113.5:9000", "https", false, false},
+		{"tls wins over the header", "203.0.113.5:9000", "http", true, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, "/", nil)
+			req.RemoteAddr = tt.remote
+			req.Header.Set("X-Forwarded-Proto", tt.header)
+			if tt.tls {
+				req.TLS = &tls.ConnectionState{}
+			}
+			if got := isHTTPS(req); got != tt.want {
+				t.Errorf("isHTTPS(%s, %q, tls=%v) = %v, want %v", tt.remote, tt.header, tt.tls, got, tt.want)
+			}
+		})
 	}
 }
 

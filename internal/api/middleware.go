@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"log/slog"
+	"net"
 	"net/http"
 	"strings"
 	"time"
@@ -268,10 +269,23 @@ func sameOrigin(r *http.Request) bool {
 	return r.Header.Get("Origin") == scheme+"://"+r.Host
 }
 
-// shortcut: X-Forwarded-Proto is trusted as-is, upgrade when requests can reach the server without a proxy that sets it
+// proxyPeer reports whether the request came from the reverse proxy on this host.
+// Only a loopback peer may set X-Forwarded-*; a direct client cannot forge them.
+func proxyPeer(r *http.Request) bool {
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		host = r.RemoteAddr
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
+}
+
 func isHTTPS(r *http.Request) bool {
 	if r.TLS != nil {
 		return true
+	}
+	if !proxyPeer(r) {
+		return false
 	}
 	// Proxies append their own scheme, so only the first value is the client's.
 	proto, _, _ := strings.Cut(r.Header.Get("X-Forwarded-Proto"), ",")

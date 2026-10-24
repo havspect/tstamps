@@ -118,9 +118,10 @@ sudo -u tstamps tstamps-server admin create \
 The unit binds `127.0.0.1:8080`; Caddy is the only public listener and sets the
 `X-Forwarded-Proto` header the server needs to mark cookies `Secure`, plus the
 `X-Forwarded-For` hop it uses for client IPs in logs and login rate limiting. The
-server trusts both only because it listens on localhost; do not expose port 8080
-directly. `GET /healthz` answers 200 only while SQLite is reachable, and reports
-the schema version stored in the file.
+server trusts both only from a loopback peer, so a direct client that sends them
+is ignored; keep port 8080 off the network anyway. `GET /healthz` answers 200
+only while SQLite is reachable, and reports the schema version stored in the
+file.
 
 ## CLI
 

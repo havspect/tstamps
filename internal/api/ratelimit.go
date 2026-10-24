@@ -56,7 +56,7 @@ func clientIP(r *http.Request) string {
 	if err != nil {
 		host = r.RemoteAddr
 	}
-	if ip := net.ParseIP(host); ip == nil || !ip.IsLoopback() {
+	if !proxyPeer(r) {
 		return host
 	}
 	forwarded := r.Header.Get("X-Forwarded-For")
