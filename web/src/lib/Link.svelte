@@ -17,6 +17,6 @@
   }
 </script>
 
-<a {href} class={className} aria-current={current ? 'page' : undefined} onclick={follow}>
+<a href={router.href(href)} class={className} aria-current={current ? 'page' : undefined} onclick={follow}>
   {@render children?.()}
 </a>

@@ -14,7 +14,12 @@ const notBuilt = `<!doctype html>
 
 // Handler answers every path with the not-built page. The API is mounted
 // separately, so this never sees /api requests.
-func Handler() http.Handler {
+func Handler() http.Handler { return notBuiltHandler() }
+
+// HostedHandler has no embedded shell to mark; the host still routes normally.
+func HostedHandler() http.Handler { return notBuiltHandler() }
+
+func notBuiltHandler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.Header().Set("Cache-Control", "no-store")

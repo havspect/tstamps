@@ -60,6 +60,18 @@ type requestInfo struct {
 }
 
 type requestKey struct{}
+type workspaceKey struct{}
+
+// WithWorkspace labels a request with the hosted workspace slug so the access log
+// can name it after the router strips the /w/{slug} prefix.
+func WithWorkspace(r *http.Request, slug string) *http.Request {
+	return r.WithContext(context.WithValue(r.Context(), workspaceKey{}, slug))
+}
+
+func workspaceFrom(ctx context.Context) string {
+	slug, _ := ctx.Value(workspaceKey{}).(string)
+	return slug
+}
 
 func requestFrom(ctx context.Context) *requestInfo {
 	ri, _ := ctx.Value(requestKey{}).(*requestInfo)
@@ -156,6 +168,9 @@ func (s *Server) withAccessLog(next http.Handler) http.Handler {
 			"duration_ms", time.Since(start).Milliseconds(),
 			"bytes", rec.bytes,
 			"ip", clientIP(r),
+		}
+		if slug := workspaceFrom(r.Context()); slug != "" {
+			attrs = append(attrs, "workspace", slug)
 		}
 		if ri.User != nil {
 			attrs = append(attrs, "user_id", ri.User.ID)

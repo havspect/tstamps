@@ -5,7 +5,7 @@ Owner: web. Date: 2026-10-24.
 
 ## 1. What we are selling
 
-Tstamps is self-hosted team time tracking for one company. The product's
+Tstamps is self-hosted team time tracking for one company per workspace. The product's
 distinctive idea is small enough to say in one sentence:
 
 > A week of hours is a few drags, not a Friday form.
@@ -151,7 +151,7 @@ Motion: a single 500ms rise on the hero copy and image, and a slow pulse on the
 │                      └────────────────────────────────────┘  │
 ├──────────────────────────────────────────────────────────────┤
 │ NIGHT SECTION: Yours to run.                                  │
-│ One binary · one SQLite file · backup is a file copy          │
+│ One binary · one SQLite file per workspace · file-copy backup │
 │ [install commands]                                            │
 ├──────────────────────────────────────────────────────────────┤
 │ Deliberately small.                                           │
@@ -171,7 +171,7 @@ Motion: a single 500ms rise on the hero copy and image, and a slow pulse on the
   like a timeline entry.
 - Body: “Tstamps is a team time tracker built around a timeline. Drag on a lane
   to log an entry, drag its edges to retime it, and let the report do the
-  remembering. One Go binary, one SQLite file, yours to run.”
+  remembering. One Go binary, one SQLite file per workspace, yours to run.”
 - Primary: `Sign in`
 - Secondary: `See the timeline`
 - Trust line: `AGPL-3.0` · `No per-seat pricing` · `One VM`
@@ -207,11 +207,12 @@ Motion: a single 500ms rise on the hero copy and image, and a slow pulse on the
 
 **Self-host**
 
+- Label: `Self-hosted, one company or many`
 - Heading: `Yours to run.`
 - Body: “One `tstamps-server` process on one VM, behind Caddy on the same host.
-  The UI is embedded in the binary; the data is one SQLite file. Backups use
-  `VACUUM INTO` and are safe while the server is running.”
-- Facts: `One binary`, `One SQLite file`, `No containers`.
+  The UI is embedded in the binary; each workspace is one SQLite file. Backups
+  use `VACUUM INTO` and are safe while the server is running.”
+- Facts: `One binary`, `One SQLite file per workspace`, `No containers`.
 - Commands: the release download and `tstamps-server serve`.
 
 **Deliberately small**
@@ -220,9 +221,9 @@ Motion: a single 500ms rise on the hero copy and image, and a slow pulse on the
 - Intro: “Tstamps is not trying to run your whole company. If you need these,
   choose something else — and that is the point.”
 - Left (it does): timeline logging · team-lead reports · CSV · CLI + MCP ·
-  soft delete and restore · entry timezones · one workspace.
+  soft delete and restore · entry timezones · one company per workspace.
 - Right (it does not): approvals or leave · invoicing and rates · SSO or audit
-  log · mobile app · realtime co-editing · several companies per install.
+  log · mobile app · realtime co-editing · self-service workspace signup.
 - Footer of section: “What it does and does not do is in the spec.”
 
 **Close**

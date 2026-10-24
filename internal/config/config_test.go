@@ -34,6 +34,26 @@ func TestLoad(t *testing.T) {
 			want: Config{Addr: "127.0.0.1:9000", DB: "flags.db"},
 		},
 		{
+			name: "hosted from env",
+			env:  map[string]string{"TSTAMPS_WORKSPACE_DIR": "/srv/workspaces"},
+			want: Config{Addr: ":8080", WorkspaceDir: "/srv/workspaces"},
+		},
+		{
+			name: "hosted from flag",
+			args: []string{"--workspace-dir", "workspaces"},
+			want: Config{Addr: ":8080", WorkspaceDir: "workspaces"},
+		},
+		{
+			name:    "hosted and env db",
+			env:     map[string]string{"TSTAMPS_WORKSPACE_DIR": "/srv/workspaces", "TSTAMPS_DB": "/srv/one.db"},
+			wantErr: true,
+		},
+		{
+			name:    "hosted and db flag",
+			args:    []string{"--workspace-dir", "workspaces", "--db", "one.db"},
+			wantErr: true,
+		},
+		{
 			name:    "unknown flag",
 			args:    []string{"--nope"},
 			wantErr: true,

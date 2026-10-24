@@ -5,11 +5,15 @@ Team time tracking. People log intervals of work against projects, team leads re
 ## Language
 
 **Workspace**:
-One installation of the app, belonging to one company. Holds every user, team and project.
+One company's users, teams, projects and entries. A server runs one or more workspaces.
 _Avoid_: tenant, organisation, org, account
 
+**Workspace slug**:
+The unique, operator-assigned identifier used to select a workspace. It is not a DNS domain, even when it looks like one.
+_Avoid_: workspace ID, subdomain
+
 **User**:
-A person who can log in and log hours.
+A person who can log in and log hours in one workspace. The same person in another workspace is a separate User.
 _Avoid_: account, employee, member (see **Member**)
 
 **Admin**:

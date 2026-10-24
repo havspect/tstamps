@@ -1,5 +1,7 @@
 # Production runs on one VM: systemd and Caddy, no container
 
+Status: one process may now host several workspaces in hosted mode ([ADR-0011](0011-host-workspaces-as-separate-sqlite-files.md)); the one-VM systemd and Caddy deployment is unchanged.
+
 A workspace is deployed as the `tstamps-server` binary on one VM, under systemd, behind Caddy on the same host. Caddy terminates TLS and proxies to `127.0.0.1:8080`; systemd owns the process, the data directory and the nightly backup timer. The unit files and Caddyfile are in `deploy/`.
 
 Why: ADR-0001 already accepts one process per workspace and SQLite's single writer, so there is no availability to buy with replicas. A container would add a volume, a probe distinction and a backup sidecar; Kubernetes would add all of that plus a scheduler for a workload that must run exactly once. systemd already provides restart, sandboxing, a state directory and timers, and Caddy provides certificates and HSTS from four lines.

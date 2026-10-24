@@ -2,7 +2,7 @@
   <title>Tstamps — your week, in a few drags</title>
   <meta
     name="description"
-    content="Tstamps is self-hosted team time tracking built around a timeline. Drag to log, read the week, or log from the CLI. One Go binary, one SQLite file, yours to run."
+    content="Tstamps is self-hosted team time tracking built around a timeline. Drag to log, read the week, or log from the CLI. One Go binary, one SQLite file per workspace, yours to run."
   />
 </svelte:head>
 
@@ -31,8 +31,8 @@
       <h1 id="hero-title">Your week, <br />in a <span class="mark">few drags.</span></h1>
       <p class="lede">
         Tstamps is a team time tracker built around a timeline. Drag on a lane to log an entry, drag its
-        edges to retime it, and let the report do the remembering. One Go binary, one SQLite file, yours
-        to run.
+        edges to retime it, and let the report do the remembering. One Go binary, one SQLite file per
+        workspace, yours to run.
       </p>
       <div class="actions">
         <a href="/login" class="btn primary">Sign in <span aria-hidden="true">→</span></a>
@@ -172,16 +172,16 @@
   <section id="self-host" class="night" aria-labelledby="host-title">
     <div class="wrap split">
       <div>
-        <p class="label">Self-hosted, not hosted</p>
+        <p class="label">Self-hosted, one company or many</p>
         <h2 id="host-title">Yours to run.</h2>
         <p>
           One <code>tstamps-server</code> process on one VM, behind Caddy on the same host. The UI is
-          embedded in the binary; the data is one SQLite file. Backups use <code>VACUUM INTO</code> and
-          are safe while the server is running.
+          embedded in the binary; each workspace is one SQLite file. Backups use <code>VACUUM INTO</code>
+          and are safe while the server is running.
         </p>
         <ul class="facts">
           <li><strong>1</strong>binary</li>
-          <li><strong>1</strong>SQLite file</li>
+          <li><strong>1</strong>SQLite file per workspace</li>
           <li><strong>0</strong>containers</li>
         </ul>
       </div>
@@ -218,7 +218,7 @@ tstamps login --url https://time.example.com</code></pre>
             <li>CLI and MCP over the same API</li>
             <li>Entry timezones that decide the day</li>
             <li>Soft delete and admin restore</li>
-            <li>One workspace, one company</li>
+            <li>One company per workspace</li>
           </ul>
         </div>
         <div>
@@ -229,7 +229,7 @@ tstamps login --url https://time.example.com</code></pre>
             <li>SSO and an audit log</li>
             <li>A mobile app</li>
             <li>Realtime co-editing</li>
-            <li>Several companies per install</li>
+            <li>Self-service workspace signup</li>
           </ul>
         </div>
       </div>

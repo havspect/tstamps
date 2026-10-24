@@ -3,7 +3,7 @@ import { defineConfig } from '@playwright/test'
 export default defineConfig({
   testDir: './e2e',
   timeout: 60_000,
-  // One workspace, one database: tests share the server the setup starts.
+  // Both modes share the servers the setup starts, so one worker avoids port churn.
   workers: 1,
   reporter: 'list',
   globalSetup: './e2e/global-setup.ts',

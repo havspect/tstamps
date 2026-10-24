@@ -10,6 +10,7 @@
   import NotFound from './pages/NotFound.svelte'
   import Password from './pages/Password.svelte'
   import Reports from './pages/Reports.svelte'
+  import WorkspaceSelect from './pages/WorkspaceSelect.svelte'
   import Timeline from './pages/Timeline.svelte'
   import AdminEntries from './pages/AdminEntries.svelte'
   import AdminProjects from './pages/AdminProjects.svelte'
@@ -29,12 +30,15 @@
   }
 
   let ready = $state(false)
+  const selectingWorkspace = $derived(router.hosted && router.base === '')
 
   onMount(async () => {
-    try {
-      await session.load()
-    } catch {
-      // Offline: show the login screen rather than guess at a session.
+    if (!selectingWorkspace) {
+      try {
+        await session.load()
+      } catch {
+        // Offline: show the login screen rather than guess at a session.
+      }
     }
     ready = true
   })
@@ -45,7 +49,8 @@
   // Do not mount a page the shell is about to redirect away from: it would
   // fetch with the wrong role and flash its content for a frame.
   const allowed = $derived.by(() => {
-    if (!user) return router.path === '/login' || router.path === '/'
+    if (selectingWorkspace) return router.path === '/'
+    if (!user) return router.path === '/login' || (router.path === '/' && !router.hosted)
     if (session.mustChangePassword) return router.path === '/password'
     if (router.path === '/login' || router.path === '/password' || router.path === '/') return false
     if (router.path.startsWith('/admin')) return user.is_admin
@@ -58,8 +63,11 @@
   $effect(() => {
     if (!ready) return
     const path = router.path
-    if (!user) {
-      if (path !== '/login' && path !== '/') router.navigate('/login', { replace: true })
+    if (selectingWorkspace) {
+      if (path !== '/') router.navigate('/', { replace: true })
+    } else if (!user) {
+      const publicHome = path === '/' && !router.hosted
+      if (path !== '/login' && !publicHome) router.navigate('/login', { replace: true })
     } else if (session.mustChangePassword) {
       if (path !== '/password') router.navigate('/password', { replace: true })
     } else if (path.startsWith('/admin') && !user.is_admin) {
@@ -77,7 +85,9 @@
   }
 </script>
 
-{#if router.path === '/'}
+{#if selectingWorkspace}
+  <WorkspaceSelect />
+{:else if router.path === '/'}
   {#if ready && allowed}
     <Page />
   {/if}

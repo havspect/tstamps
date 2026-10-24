@@ -1,10 +1,10 @@
 # Tstamps
 
-**Team time tracking for one company: log time by dragging on a timeline;
-whoever needs the numbers reads a report.** One server binary holding the
-SQLite database, the web timeline and the REST API, plus a CLI that every user
-installs on their own machine and points at that server. No per-seat
-subscription.
+**Team time tracking: log time by dragging on a timeline; whoever needs the
+numbers reads a report.** One server binary holding the web timeline, the REST
+API and one SQLite database per workspace, plus a CLI that every user installs
+on their own machine and points at that server. Run it for one company, or host
+several companies as separate workspaces. No per-seat subscription.
 
 ## Why Tstamps
 
@@ -28,15 +28,17 @@ subscription.
   ([ADR-0004](docs/adr/0004-archive-projects-delete-entries.md)).
 - **Yours to run.** One `tstamps-server` process on one VM with the UI
   embedded, behind Caddy on the same host, and a backup that is a file copy
-  ([ADR-0009](docs/adr/0009-deploy-on-one-vm.md)).
+  ([ADR-0009](docs/adr/0009-deploy-on-one-vm.md)). Hosted deployments keep one
+  SQLite file per workspace, so backup and isolation remain per company
+  ([ADR-0011](docs/adr/0011-host-workspaces-as-separate-sqlite-files.md)).
 
 ## Not for you if
 
 - you need approvals, leave and holidays, invoicing or rates;
-- you want a hosted service, SSO, an audit log or a mobile app;
+- you want a managed service, SSO, an audit log or a mobile app;
 - you must erase one person's data — a leaver is deactivated, and erasing a
   person means erasing the workspace;
-- you need several companies on one install, or realtime co-editing.
+- you need several companies inside one workspace, or realtime co-editing.
 
 What it does and does not do is [docs/SPEC.md](docs/SPEC.md). The vocabulary is
 [GLOSSARY.md](GLOSSARY.md); decisions worth not reversing are in
@@ -86,6 +88,31 @@ Open `http://localhost:8080` and log in with the initial password the first
 command printed. Change it when prompted, then create teams, users and
 memberships under **/admin**. The CLI reads those; it does not create them.
 
+## Host several workspaces
+
+Hosted mode selects a workspace by slug in the URL, for example
+`https://time.example.com/w/koeber.com/`. Each workspace has its own users,
+teams, projects and SQLite file; the same email in two workspaces is two
+accounts. Operators create them locally:
+
+```sh
+tstamps-server workspace create koeber.com \
+  --workspace-dir ./workspaces --email you@koeber.com --name "Your Name"
+tstamps-server serve --addr :8080 --workspace-dir ./workspaces
+```
+
+The first command prints the workspace admin's initial password. Open `/`, enter
+the slug, and sign in. Existence, suspension and deletion are operator concerns;
+there is no public workspace list or self-service signup. CLI and MCP users put
+the workspace in the URL they already save:
+
+```sh
+tstamps login --url https://time.example.com/w/koeber.com
+```
+
+A browser holds one workspace login at a time per server. Logging into another
+workspace replaces the session cookie.
+
 ## Deploy on a VM
 
 Production is one VM running `tstamps-server` under systemd, with Caddy terminating
@@ -120,8 +147,13 @@ The unit binds `127.0.0.1:8080`; Caddy is the only public listener and sets the
 `X-Forwarded-For` hop it uses for client IPs in logs and login rate limiting. The
 server trusts both only from a loopback peer, so a direct client that sends them
 is ignored; keep port 8080 off the network anyway. `GET /healthz` answers 200
-only while SQLite is reachable, and reports the schema version stored in the
-file.
+while the database or workspace directory is reachable; a workspace's
+`/w/{slug}/healthz` also reports the schema version stored in its file.
+
+For hosted mode, create the directory under the service's state directory, swap
+`--db /var/lib/tstamps/tstamps.db` for `--workspace-dir
+/var/lib/tstamps/workspaces` in the unit, and create workspaces with
+`sudo -u tstamps tstamps-server workspace create ... --workspace-dir ...`.
 
 ## CLI
 
@@ -149,9 +181,11 @@ Times without a date mean today in your timezone; `--to 1h30m` and
 Exit codes: `0` ok, `1` error, `2` usage.
 
 Server settings come from flags, then the environment, then defaults:
-`--addr`/`TSTAMPS_ADDR` (default `:8080`) and `--db`/`TSTAMPS_DB` (default
-`./tstamps.db`). Client settings come from `--url`/`--token`, then `TSTAMPS_URL`/
-`TSTAMPS_TOKEN`, then the config file.
+`--addr`/`TSTAMPS_ADDR` (default `:8080`) and either `--db`/`TSTAMPS_DB` (default
+`./tstamps.db`) or `--workspace-dir`/`TSTAMPS_WORKSPACE_DIR`. The two storage
+modes are mutually exclusive. Client settings come from `--url`/`--token`, then
+`TSTAMPS_URL`/`TSTAMPS_TOKEN`, then the config file; in hosted mode the URL ends
+in `/w/{slug}`.
 
 ## MCP
 
@@ -166,7 +200,7 @@ needs, so an agent can explain a refusal.
       "command": "tstamps",
       "args": ["mcp"],
       "env": {
-        "TSTAMPS_URL": "https://tstamps.example.com",
+        "TSTAMPS_URL": "https://tstamps.example.com/w/koeber.com",
         "TSTAMPS_TOKEN": "ts_..."
       }
     }
@@ -181,31 +215,39 @@ it is shown once.
 
 ## Backup
 
-Everything lives in one SQLite file (`tstamps.db` by default) plus its `-wal` and
-`-shm` companions while the server runs.
+Everything lives in one SQLite file (`tstamps.db` by default), or in one file
+per workspace under `--workspace-dir`, plus `-wal` and `-shm` companions while
+the server runs.
 
 - **With the server running:** `tstamps-server backup` takes a consistent
-  snapshot with SQLite's `VACUUM INTO`. It refuses an existing file, so a
+  snapshot with SQLite's `VACUUM INTO`. It refuses an existing destination, so a
   date-stamped name never overwrites yesterday:
 
   ```sh
   tstamps-server backup --db /var/lib/tstamps/tstamps.db \
     "/var/backups/tstamps/tstamps-$(date -u +%Y%m%dT%H%M%SZ).db"
+  tstamps-server backup --workspace-dir /var/lib/tstamps/workspaces \
+    "/var/backups/tstamps/tstamps-$(date -u +%Y%m%dT%H%M%SZ)"
   ```
 
-  `deploy/tstamps-backup.timer` runs that nightly and deletes files older than
-  14 days.
+  The hosted form writes one snapshot per workspace and publishes the
+  destination directory only when all snapshots succeed. Each file is
+  internally consistent; the set is not one atomic cross-workspace instant.
+  `deploy/tstamps-backup.timer` runs the configured command nightly and deletes
+  entries older than 14 days.
 
 - **With the server stopped:** copy `tstamps.db` (and the WAL/SHM files if they
-  are still there), or copy the whole directory.
+  are still there), or copy the whole workspace directory. Restore one workspace
+  by replacing its slug-named file.
 
 - **Off the box:** a snapshot on the same disk is not a backup. Copy
   `/var/backups/tstamps` with restic, borg, rclone or whatever the host already
   uses.
 
-- **Restore:** stop the server, replace `tstamps.db` (remove stale `-wal`/`-shm`),
-  start it, check `curl -fsS http://127.0.0.1:8080/healthz`, and read one report.
-  Migrations run at boot.
+- **Restore:** stop the server, replace the database file or workspace files
+  (remove stale `-wal`/`-shm`), start it, check
+  `curl -fsS http://127.0.0.1:8080/healthz`, and read one report. Migrations run
+  at boot and on first open of each hosted workspace.
 
 - The client config holds a bearer token and is a credential, not data worth
   backing up.
@@ -217,16 +259,16 @@ backup.
 ## Upgrade
 
 Stop the server, take a backup, install the new `tstamps-server`, start it.
-`AutoMigrate` runs at boot and records the schema version in the database file;
-`GET /healthz` reports that version. A binary refuses to start on a database
-written by a newer schema, so there is no silent downgrade — restore the backup
-to go back.
+`AutoMigrate` runs at boot and records the schema version in each database file;
+one-workspace `/healthz` and each hosted workspace heartbeat report it. A binary
+refuses a database written by a newer schema, so there is no silent downgrade —
+restore the backup to go back.
 
 ## Development
 
 ```sh
 just check       # go vet, go test, svelte-check, vitest
-just e2e         # build the server, then one Playwright smoke walk
+just e2e         # build the server, then the Playwright legacy and hosted walks
 just dev         # API plus Vite dev server, both hot reloading
 just serve-watch # API only, hot reloaded (UI comes from Vite)
 ```
@@ -241,8 +283,10 @@ changes; Vite hot-reloads the UI on the same page.
 
 `go test ./...` passes offline with no external services. The end-to-end test
 builds both binaries, serves on a free port, bootstraps an admin, logs an entry,
-exports CSV and calls the MCP server over stdio. The Playwright smoke test drives
-the built UI: login, an entry on the timeline, the report table and the CSV.
+exports CSV and calls the MCP server over stdio. Workspace tests prove that
+sessions and tokens from one hosted database cannot authenticate against
+another. Playwright drives both the legacy UI and hosted workspace selection,
+deep links and login.
 
 ## License
 

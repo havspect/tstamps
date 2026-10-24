@@ -1,6 +1,6 @@
-// Command tstamps-server serves one workspace: the web UI, the HTTP API and the
-// SQLite file, plus the admin commands that run on the same host. Users talk to
-// it through cmd/tstamps, the CLI.
+// Command tstamps-server serves one workspace or a hosted directory of them: the
+// web UI, the HTTP API and the SQLite files, plus the setup commands that run on
+// the same host. Users talk to it through cmd/tstamps, the CLI.
 package main
 
 import (
@@ -53,6 +53,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return admin(args[1:], stdout, stderr)
 	case "backup":
 		return backup(args[1:], stdout, stderr)
+	case "workspace":
+		return workspaceCmd(args[1:], stdout, stderr)
 	}
 
 	fmt.Fprintf(stderr, "tstamps-server: unknown command %q; run tstamps-server help\n", args[0])
@@ -61,9 +63,10 @@ func run(args []string, stdout, stderr io.Writer) int {
 
 const usageText = `usage: tstamps-server <command> [flags]
 
-  serve                      run the web UI and API (--addr, --db, --log-level)
+  serve                      run the web UI and API (--addr, --db | --workspace-dir, --log-level)
   admin create               bootstrap an admin (--email, --name, --db)
-  backup <destination>       write a consistent copy of the database (--db first)
+  workspace create           create a hosted workspace (slug, --email, --name, --workspace-dir)
+  backup <destination>       copy the database, or every workspace with --workspace-dir
   openapi                    print the OpenAPI document
   version                    print the version
 

@@ -73,3 +73,17 @@ func internal(err error) *huma.ErrorModel {
 	slog.Error("store", "error", err)
 	return problem(http.StatusInternalServerError, urnInternal, "internal error")
 }
+
+// WriteNotFound and WriteInternal let the hosted workspace router answer in the
+// same problem+json shape before a workspace handler exists.
+func WriteNotFound(w http.ResponseWriter) {
+	writeProblem(w, problem(http.StatusNotFound, urnNotFound, "not found"))
+}
+
+func WriteInternal(w http.ResponseWriter) {
+	writeProblem(w, problem(http.StatusInternalServerError, urnInternal, "internal error"))
+}
+
+func WriteUnavailable(w http.ResponseWriter) {
+	writeProblem(w, problem(http.StatusServiceUnavailable, urnUnavailable, "the workspace is not available"))
+}
