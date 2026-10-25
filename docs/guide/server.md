@@ -46,6 +46,8 @@ tstamps-server serve --addr :8080 --workspace-dir ./workspaces
 
 The first command prints the workspace admin's initial password and creates the directory if needed. Open `http://localhost:8080/`, enter `example.com`, and sign in. `--db` and `--workspace-dir` are mutually exclusive. The full shape is on [Hosted workspaces](./workspaces.md).
 
+To let visitors create their own workspace, add `--email-api-key`, `--email-from` and `--public-url`. Without them, signup is off. Details and the email setup are on [Hosted workspaces](./workspaces.md#self-service-signup).
+
 ## Deploy on a VM
 
 The production shape is one VM running `tstamps-server` under systemd, with Caddy terminating TLS on the same host. The unit files and Caddyfile are in [`deploy/`](https://github.com/havspect/tstamps/tree/main/deploy). The server binds loopback; Caddy is the only public listener.
@@ -85,6 +87,10 @@ Flags win over environment, which wins over the default.
 | `--addr` | `TSTAMPS_ADDR` | `:8080` | Listen address |
 | `--db` | `TSTAMPS_DB` | `./tstamps.db` | One SQLite file |
 | `--workspace-dir` | `TSTAMPS_WORKSPACE_DIR` | none | Directory of workspace databases (hosted mode) |
+| `--email-api-key` | `TSTAMPS_EMAIL_API_KEY` | none | Email API key; required for self-service signup |
+| `--email-from` | `TSTAMPS_EMAIL_FROM` | none | Verified From address for signup mail |
+| `--public-url` | `TSTAMPS_PUBLIC_URL` | none | Public origin used in emailed links |
+| `--email-api-url` | `TSTAMPS_EMAIL_API_URL` | `https://api.resend.com/emails` | Email endpoint |
 | `--log-level` | `TSTAMPS_LOG_LEVEL` | `info` | `debug`, `info`, `warn` or `error` |
 
 Set one storage mode: `--db` or `--workspace-dir`, never both.
@@ -112,9 +118,10 @@ Every API request writes one structured log line to stderr: method, path without
 - There is no CORS: the SPA is served from the same origin as the API.
 - Mutations over the session cookie require a same-origin `Origin` header.
 - Login is rate limited per IP in memory.
+- Signup sends at most five verification emails per hour per IP, also in memory. Its POSTs require a same-origin `Origin`, its links are single use, and pending signups are `0600` files under the workspace directory rather than workspaces.
 - In hosted mode a session or token is looked up only in the workspace named by `/w/{slug}`; credentials never cross databases.
 - Passwords are stored as argon2id hashes; tokens are stored as SHA-256 and shown once.
-- Admin edits are not audited in v1.
+- Admin edits and a lead's project changes are recorded in the [audit log](./admin.md#audit-log).
 
 ## Next
 

@@ -27,7 +27,7 @@ func TestHostIsolatesWorkspaces(t *testing.T) {
 		t.Fatalf("create beta: %v", err)
 	}
 
-	host, err := New(dir, clock.System{})
+	host, err := New(dir, clock.System{}, nil)
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
@@ -70,7 +70,7 @@ func TestHostUnknownWorkspaceNeverCreatesOne(t *testing.T) {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	host, err := New(dir, clock.System{})
+	host, err := New(dir, clock.System{}, nil)
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
@@ -104,7 +104,7 @@ func TestHostConcurrentFirstOpen(t *testing.T) {
 	if _, err := Create(dir, "alpha", "ada@example.com", "Ada"); err != nil {
 		t.Fatalf("create: %v", err)
 	}
-	host, err := New(dir, clock.System{})
+	host, err := New(dir, clock.System{}, nil)
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
@@ -221,4 +221,47 @@ func hostedJSON(t *testing.T, method, url string, body any, cookie, token string
 		t.Fatal(err)
 	}
 	return resp
+}
+
+func TestHostAnswersSignupBeforeAnyWorkspaceExists(t *testing.T) {
+	dir := t.TempDir()
+	host, err := New(dir, clock.System{}, nil)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	server := httptest.NewServer(host)
+	t.Cleanup(func() {
+		server.Close()
+		_ = host.Close()
+	})
+
+	// With no email configured the route still exists and explains itself.
+	resp, err := http.Post(server.URL+"/api/v1/signup", "application/json", strings.NewReader(`{"email":"ada@example.com"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusServiceUnavailable || !strings.Contains(string(body), "urn:tstamps:error:unavailable") {
+		t.Fatalf("signup = %d %s, want 503 problem", resp.StatusCode, body)
+	}
+
+	// A configured handler sees the request at the root, not inside a workspace.
+	reached := false
+	configured, err := New(dir, clock.System{}, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		reached = true
+		if r.URL.Path != "/api/v1/signup/verify" {
+			t.Errorf("path = %q, want the unprefixed signup path", r.URL.Path)
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer configured.Close()
+	rec := httptest.NewRecorder()
+	configured.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/signup/verify?token=x", nil))
+	if !reached || rec.Code != http.StatusNoContent {
+		t.Fatalf("configured signup not reached: reached=%v status=%d", reached, rec.Code)
+	}
 }

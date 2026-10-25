@@ -52,6 +52,26 @@ Deleting an entry from the timeline or with `tstamps rm` sets `deleted_at`. The 
 
 Nothing in the workspace is hard-deleted. Restoring needs no backup.
 
-## What is not audited
+## Audit log
 
-Admin edits are not audited in v1. That is an accepted risk, recorded in [the spec](https://github.com/havspect/tstamps/blob/main/docs/SPEC.md), not a missing setting.
+An audit event records a change where your authority over the record came from a role: an admin acting on the workspace, or a lead acting on their team's projects. A person editing their own entry writes nothing. That is the product working as designed, not a privilege being spent.
+
+Each event keeps who acted and the role they used (`admin` or `lead`), when, the record it touched (`project` `7`), the action name (`project.archive`), and the audited fields before and after. Password and token hashes never appear; a password reset records that it happened. One change can write several events: archiving a team writes one `project.archive` per archived project, and deactivating a person writes the `entry.stop` that ends their running entry.
+
+Read it as an admin, newest first:
+
+```sh
+tstamps audit --action user.update --from 2026-10-01 --to 2026-11-01
+tstamps audit --target-type project --target-id 7 --limit 50
+tstamps audit --actor sam@example.com
+```
+
+That answers "who deactivated Sam?" and "what happened to project 7 last week?". Rows come back newest first, 200 by default and at most 1000 with `--limit`. Filters are `--from`/`--to` (dates, `from` inclusive, `to` exclusive), `--actor EMAIL`, `--action NAME`, `--target-type TYPE`, `--target-id N`, and `--json`. The API is `GET /api/v1/audit`; there is no admin screen and no MCP tool.
+
+Limits worth knowing:
+
+- It starts empty on the day this version ships; nothing older is backfilled.
+- It is per workspace. On a hosted server each workspace has its own log and there is no combined view.
+- It is append-only: no delete path, no retention job. Events stay for the life of the database.
+- An operator who owns the database file can edit it. It protects against the application, not the operator; a backup taken before an incident is the stronger evidence.
+- It is not a history of hours. What a person does to their own entry — logging, retiming, deleting — is not an event. The two exceptions are an admin restoring a deleted entry, and the stop that deactivation causes.

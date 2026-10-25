@@ -11,6 +11,10 @@ test.use({ baseURL })
 
 test('choose a workspace, log in and keep the workspace in every URL', async ({ page }) => {
   await page.goto('/')
+  await expect(page.getByRole('heading', { name: /Your week/ })).toBeVisible()
+  await page.getByRole('link', { name: 'Sign in' }).first().click()
+
+  await expect(page).toHaveURL('/login')
   await expect(page.getByRole('heading', { name: 'Open your workspace' })).toBeVisible()
   await page.getByLabel('Workspace').fill(state.workspaceSlug.toUpperCase())
   await page.getByRole('button', { name: 'Continue' }).click()
@@ -33,4 +37,25 @@ test('an unknown workspace does not create one or show a login form', async ({ p
   await page.goto('/w/not-a-workspace/login')
   await expect(page.getByRole('heading', { name: 'Workspace not found' })).toBeVisible()
   await expect(page.getByRole('heading', { name: 'Sign in' })).toHaveCount(0)
+})
+
+test('a typed workspace that does not exist shows an error and stays on the prompt', async ({ page }) => {
+  await page.goto('/login')
+  await page.getByLabel('Workspace').fill('not-a-workspace')
+  await page.getByRole('button', { name: 'Continue' }).click()
+  await expect(page.getByRole('alert')).toContainText('Workspace not-a-workspace does not exist')
+  await expect(page).toHaveURL('/login')
+})
+
+test('a hosted homepage offers signup and says when it is disabled', async ({ page }) => {
+  await page.goto('/')
+  await page.getByRole('link', { name: 'Create a workspace' }).first().click()
+
+  await expect(page).toHaveURL('/signup')
+  await expect(page.getByRole('heading', { name: 'Create a workspace' })).toBeVisible()
+  await page.getByLabel('Email').fill('ada@example.com')
+  await page.getByRole('button', { name: 'Send link' }).click()
+
+  // The e2e server runs without email settings, so signup is the off switch.
+  await expect(page.getByRole('alert')).toContainText('not enabled')
 })

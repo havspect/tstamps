@@ -119,12 +119,20 @@ func (s *Server) createProject(ctx context.Context, in *projectCreateInput) (*pr
 	if err := s.requireProjectTeam(in.Body.TeamID); err != nil {
 		return nil, err
 	}
-	if _, err := s.requireTeamManager(ctx, in.Body.TeamID); err != nil {
+	u, err := s.requireTeamManager(ctx, in.Body.TeamID)
+	if err != nil {
 		return nil, err
 	}
 	now := s.Clock.Now()
 	p := &store.Project{TeamID: in.Body.TeamID, Name: in.Body.Name, Color: in.Body.Color, CreatedAt: now, UpdatedAt: now}
-	if err := s.Store.CreateProject(p); err != nil {
+	err = s.Store.InTx(func(tx *store.Store) error {
+		if err := tx.CreateProject(p); err != nil {
+			return err
+		}
+		return tx.RecordAudit(now, s.actorOf(ctx, u), "project.create", "project", p.ID,
+			store.Change{After: p.AuditFields()})
+	})
+	if err != nil {
 		return nil, internal(err)
 	}
 	return &projectOutput{Body: projectResponseOf(p)}, nil
@@ -157,6 +165,7 @@ func (s *Server) patchProject(ctx context.Context, in *projectPatchInput) (*proj
 		return nil, problem(http.StatusForbidden, urnForbidden, "you do not lead this team")
 	}
 	body := in.Body
+	teamID := p.TeamID
 	if body.TeamID != nil && *body.TeamID != p.TeamID {
 		if err := s.requireProjectTeam(*body.TeamID); err != nil {
 			return nil, err
@@ -168,39 +177,63 @@ func (s *Server) patchProject(ctx context.Context, in *projectPatchInput) (*proj
 		if !ok {
 			return nil, problem(http.StatusForbidden, urnForbidden, "you do not lead the target team")
 		}
-		// The check and the write are one statement, so an entry created in
-		// between cannot land on a project that just changed teams.
-		if err := s.Store.MoveProject(p.ID, *body.TeamID, s.Clock.Now()); err != nil {
-			return nil, fail(err)
-		}
-		p.TeamID = *body.TeamID
+		teamID = *body.TeamID
 	}
 	if body.Archived != nil {
 		// Restoring is the admin's call, exactly as on POST /projects/{id}/restore.
 		if !*body.Archived && !u.IsAdmin {
 			return nil, problem(http.StatusForbidden, urnForbidden, "admin only")
 		}
-		if *body.Archived {
-			at := s.Clock.Now()
-			p.ArchivedAt = &at
-		} else {
-			// A project must not come back to life inside an archived team.
-			if err := s.requireProjectTeam(p.TeamID); err != nil {
+		// A project must not come back to life inside an archived team.
+		if !*body.Archived {
+			if err := s.requireProjectTeam(teamID); err != nil {
 				return nil, err
 			}
-			p.ArchivedAt = nil
 		}
 	}
-	if body.Name != nil {
-		p.Name = *body.Name
+	now := s.Clock.Now()
+	var after *store.Project
+	err = s.Store.InTx(func(tx *store.Store) error {
+		before, err := tx.ProjectByID(in.ID)
+		if err != nil {
+			return err
+		}
+		p := *before
+		if body.TeamID != nil && *body.TeamID != p.TeamID {
+			// The check and the write are one statement, so an entry created in
+			// between cannot land on a project that just changed teams.
+			if err := tx.MoveProject(p.ID, *body.TeamID, now); err != nil {
+				return err
+			}
+			p.TeamID = *body.TeamID
+		}
+		if body.Archived != nil {
+			if *body.Archived {
+				at := now
+				p.ArchivedAt = &at
+			} else {
+				p.ArchivedAt = nil
+			}
+		}
+		if body.Name != nil {
+			p.Name = *body.Name
+		}
+		if body.Color != nil {
+			p.Color = *body.Color
+		}
+		if err := tx.UpdateProject(&p); err != nil {
+			return err
+		}
+		if after, err = tx.ProjectByID(in.ID); err != nil {
+			return err
+		}
+		return tx.RecordAudit(now, s.actorOf(ctx, u), "project.update", "project", in.ID,
+			store.Change{Before: before.AuditFields(), After: after.AuditFields()})
+	})
+	if err != nil {
+		return nil, fail(err)
 	}
-	if body.Color != nil {
-		p.Color = *body.Color
-	}
-	if err := s.Store.UpdateProject(p); err != nil {
-		return nil, internal(err)
-	}
-	return &projectOutput{Body: projectResponseOf(p)}, nil
+	return &projectOutput{Body: projectResponseOf(after)}, nil
 }
 
 type projectRestoreInput struct {
@@ -208,7 +241,8 @@ type projectRestoreInput struct {
 }
 
 func (s *Server) restoreProject(ctx context.Context, in *projectRestoreInput) (*projectOutput, error) {
-	if _, err := requireAdmin(ctx); err != nil {
+	admin, err := requireAdmin(ctx)
+	if err != nil {
 		return nil, err
 	}
 	p, err := s.Store.ProjectByID(in.ID)
@@ -219,9 +253,26 @@ func (s *Server) restoreProject(ctx context.Context, in *projectRestoreInput) (*
 	if err := s.requireProjectTeam(p.TeamID); err != nil {
 		return nil, err
 	}
-	p.ArchivedAt = nil
-	if err := s.Store.UpdateProject(p); err != nil {
+	now := s.Clock.Now()
+	var after *store.Project
+	err = s.Store.InTx(func(tx *store.Store) error {
+		before, err := tx.ProjectByID(in.ID)
+		if err != nil {
+			return err
+		}
+		p := *before
+		p.ArchivedAt = nil
+		if err := tx.UpdateProject(&p); err != nil {
+			return err
+		}
+		if after, err = tx.ProjectByID(in.ID); err != nil {
+			return err
+		}
+		return tx.RecordAudit(now, s.actorOf(ctx, admin), "project.restore", "project", in.ID,
+			store.Change{Before: before.AuditFields(), After: after.AuditFields()})
+	})
+	if err != nil {
 		return nil, fail(err)
 	}
-	return &projectOutput{Body: projectResponseOf(p)}, nil
+	return &projectOutput{Body: projectResponseOf(after)}, nil
 }

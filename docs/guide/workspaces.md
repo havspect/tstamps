@@ -7,7 +7,7 @@ One `tstamps-server` binary runs either one workspace or several. The difference
 | One company | one SQLite file, `--db` | `/timeline`, `/reports`, `/admin` |
 | Operator-hosted | one SQLite file per workspace, `--workspace-dir` | `/w/{slug}/timeline`, `/w/{slug}/reports`, `/w/{slug}/admin` |
 
-Hosted mode is something an operator runs on their own VM with this binary. It is not a managed service: no signup page, no operator control panel, and no third party holding the data. You run the process and the backups.
+Hosted mode is something an operator runs on their own VM with this binary. It is not a managed service: no operator control panel, no third party holding the workspace data, and no billing. You run the process and the backups. Self-service signup is optional and needs an email provider you configure; see below.
 
 ## When to use hosted mode
 
@@ -39,11 +39,40 @@ The directory must exist before `serve` starts; the first `workspace create` cre
 
 `workspace create` makes only the first admin. That admin adds the company's other users, teams and projects in the [admin console](./admin.md), exactly as in one-workspace mode.
 
+## Self-service signup
+
+A hosted server can offer two ways in: an operator creates a workspace with `workspace create`, or a visitor creates one from the homepage. Signup is off unless you configure email, because the first step has to verify that the person owns the address.
+
+```sh
+tstamps-server serve --addr :8080 --workspace-dir /var/lib/tstamps/workspaces \
+  --email-api-key re_... \
+  --email-from "Tstamps <hello@example.com>" \
+  --public-url https://time.example.com
+```
+
+- `--email-api-key` (`TSTAMPS_EMAIL_API_KEY`) is the Resend API key.
+- `--email-from` (`TSTAMPS_EMAIL_FROM`) is the verified sending address. Verify the domain at Resend first, or the API rejects the send.
+- `--public-url` (`TSTAMPS_PUBLIC_URL`) is the origin in the emailed link. It must match the address people use, including the scheme; a wrong value sends them to the wrong host.
+- `--email-api-url` (`TSTAMPS_EMAIL_API_URL`) defaults to `https://api.resend.com/emails`. Change it only for a Resend-compatible relay or a test double.
+
+All three of key, from and public URL are required together; the server refuses a partial configuration. With none set, the homepage still shows **Create a workspace**, but the page answers that signup is not enabled and creates nothing. That is also the off switch: remove the key and restart.
+
+The flow is two pages:
+
+1. `/signup` asks for an email. The server stores a pending record and sends a single-use link. Sending is limited to five per hour per IP.
+2. The link opens `/signup/verify?token=...`, which shows the verified address and asks for the workspace URL, the person's name and a password (at least 8 characters). Submitting creates the workspace and its first admin, then signs that admin in and opens `/w/{slug}/timeline`.
+
+Nothing is written to the workspace directory until the second page is submitted, so an unverified address cannot create files. The pending records are `0600` files under `<workspace-dir>/pending/`, named by the token hash, not by slug; they are not workspaces, are not in a backup, and never expire. Delete that directory while the server is stopped to cancel every outstanding link. A used link is dead; asking again from `/signup` sends a new one.
+
+The created admin is an ordinary workspace admin: they can add users, teams and projects, and there is still no server-wide role. The operator remains the only one who can suspend or delete a workspace, and that is still a filesystem action (see [Deliberately out of scope](#deliberately-out-of-scope)).
+
+Signup leaves no public list of workspaces. `/login` asks for a slug and reveals only whether the one you typed exists, exactly as before.
+
 ## The slug
 
 The slug is the workspace's name in the URL and the name of its database file: `example.com` is stored as `example.com.db` and served at `/w/example.com/`.
 
-It is an operator-chosen identifier, not a DNS name — no subdomain or certificate is involved. Use a short, stable, lowercase label that tells you which company it is. The rules:
+It is chosen by the operator, or by the person signing up, and is not a DNS name — no subdomain or certificate is involved. Use a short, stable, lowercase label that tells you which company it is. The rules:
 
 - 1 to 63 characters
 - lowercase letters, digits, dots and hyphens
@@ -53,7 +82,7 @@ There is no rename command in v1: changing the slug means a new file and a new U
 
 ## URLs and login
 
-Open `/` and the server asks for a workspace slug, then takes you to `/w/{slug}/login`. From there every page and API route keeps the prefix:
+Open `/` for the homepage, then sign in to get the workspace prompt at `/login`; it takes you to `/w/{slug}/login`. From there every page and API route keeps the prefix:
 
 | Page | One workspace | Hosted |
 | --- | --- | --- |
@@ -122,9 +151,9 @@ Migrations run at boot in one-workspace mode, and on first open of each hosted w
 
 ## Deliberately out of scope
 
-- **Self-service signup.** There is no public form that creates a workspace. Only the operator's `workspace create` makes one.
 - **A workspace list.** `/` asks for a slug and does not reveal which ones exist, so one company cannot enumerate the others.
 - **Billing, plans and quotas.** Nothing meters seats or usage.
+- **Signup without email.** Verification needs a sending domain and an API key; there is no invite-code or open form that skips it.
 - **Suspension and deletion workflows.** There is no UI, API or CLI command for either. To stop serving a workspace, stop the server, then move or delete `<slug>.db` (and its `-wal`/`-shm`). Do it stopped: an open handle would otherwise keep serving a file you meant to remove. Backups are deleted the same way, by hand.
 - **Server-wide administration, SSO and cross-workspace reporting.** The **Admin** role always means one workspace, and each company's numbers stay in its own reports.
 

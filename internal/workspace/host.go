@@ -23,10 +23,11 @@ var ErrClosed = errors.New("workspace host closed")
 // SQLite database. Tenant selection happens before authentication, so a session
 // or token is only ever looked up in the workspace named by the URL.
 type Host struct {
-	dir   string
-	clock clock.Clock
-	web   http.Handler
-	serve http.Handler
+	dir    string
+	clock  clock.Clock
+	web    http.Handler
+	signup http.Handler
+	serve  http.Handler
 
 	mu     sync.Mutex
 	cache  map[string]*instance
@@ -41,8 +42,9 @@ type instance struct {
 }
 
 // New serves the workspace databases in dir. The directory must already exist;
-// New never creates a workspace.
-func New(dir string, clk clock.Clock) (*Host, error) {
+// New never creates a workspace. signup answers the host-level signup routes and
+// may be nil, which makes them answer "not enabled".
+func New(dir string, clk clock.Clock, signup http.Handler) (*Host, error) {
 	info, err := os.Stat(dir)
 	if err != nil {
 		return nil, err
@@ -50,8 +52,11 @@ func New(dir string, clk clock.Clock) (*Host, error) {
 	if !info.IsDir() {
 		return nil, fmt.Errorf("%s is not a directory", dir)
 	}
+	if signup == nil {
+		signup = api.NewSignupHandler(nil, clk)
+	}
 	h := &Host{
-		dir: dir, clock: clk, web: web.HostedHandler(),
+		dir: dir, clock: clk, web: web.HostedHandler(), signup: signup,
 		cache: make(map[string]*instance),
 	}
 	h.serve = api.SecurityHeaders(http.HandlerFunc(h.route))
@@ -91,6 +96,12 @@ func (h *Host) Close() error {
 func (h *Host) route(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path == "/healthz" {
 		h.health(w)
+		return
+	}
+	// Signup happens before a workspace exists, so it is answered here rather
+	// than by the per-workspace API.
+	if strings.HasPrefix(r.URL.Path, "/api/v1/signup") {
+		h.signup.ServeHTTP(w, r)
 		return
 	}
 

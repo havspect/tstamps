@@ -68,7 +68,7 @@ func TestWorkspaceBaseURL(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create workspace: %v", err)
 	}
-	host, err := workspace.New(dir, clock.System{})
+	host, err := workspace.New(dir, clock.System{}, nil)
 	if err != nil {
 		t.Fatalf("workspace host: %v", err)
 	}

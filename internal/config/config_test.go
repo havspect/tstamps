@@ -69,6 +69,33 @@ func TestLoad(t *testing.T) {
 			want: Config{Addr: ":8080", DB: "./tstamps.db", LogLevel: slog.LevelWarn},
 		},
 		{
+			name: "signup configured",
+			args: []string{
+				"--workspace-dir", "workspaces",
+				"--email-api-key", "re_key",
+				"--email-from", "Tstamps <hello@example.com>",
+				"--public-url", "https://time.example.com/",
+			},
+			want: Config{
+				Addr: ":8080", WorkspaceDir: "workspaces",
+				EmailAPIKey: "re_key", EmailFrom: "Tstamps <hello@example.com>",
+				PublicURL: "https://time.example.com",
+			},
+		},
+		{
+			name:    "signup partial is refused",
+			args:    []string{"--workspace-dir", "workspaces", "--email-api-key", "re_key"},
+			wantErr: true,
+		},
+		{
+			name: "signup public url must be absolute",
+			args: []string{
+				"--workspace-dir", "workspaces",
+				"--email-api-key", "re_key", "--email-from", "x@example.com", "--public-url", "/",
+			},
+			wantErr: true,
+		},
+		{
 			name:    "invalid log level",
 			env:     map[string]string{"TSTAMPS_LOG_LEVEL": "loud"},
 			wantErr: true,
@@ -89,6 +116,28 @@ func TestLoad(t *testing.T) {
 			}
 			if got != tt.want {
 				t.Errorf("Load(%q) = %+v, want %+v", tt.args, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestSignupEnabled(t *testing.T) {
+	full := Config{WorkspaceDir: "ws", EmailAPIKey: "k", EmailFrom: "f@example.com", PublicURL: "https://x.example"}
+	if !full.SignupEnabled() {
+		t.Fatal("a hosted server with all email settings must offer signup")
+	}
+	for _, tt := range []struct {
+		name string
+		cfg  Config
+	}{
+		{"one workspace mode", Config{DB: "x.db", EmailAPIKey: "k", EmailFrom: "f@example.com", PublicURL: "https://x.example"}},
+		{"no key", Config{WorkspaceDir: "ws", EmailFrom: "f@example.com", PublicURL: "https://x.example"}},
+		{"no from", Config{WorkspaceDir: "ws", EmailAPIKey: "k", PublicURL: "https://x.example"}},
+		{"no public url", Config{WorkspaceDir: "ws", EmailAPIKey: "k", EmailFrom: "f@example.com"}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.cfg.SignupEnabled() {
+				t.Fatal("signup enabled without the full email path")
 			}
 		})
 	}

@@ -284,6 +284,19 @@ func TestUserCLI(t *testing.T) {
 		t.Fatalf("projects --all --json printed %q", out)
 	}
 
+	// The audit log records the admin's project archive (as project.update) and
+	// nothing the owner did to their own entries.
+	if out := must("audit"); !strings.Contains(out, "project.update") || !strings.Contains(out, "admin@example.com") {
+		t.Fatalf("audit table printed %q", out)
+	}
+	archived := must("audit", "--action", "project.update", "--json")
+	if !strings.Contains(archived, `"action": "project.update"`) || !strings.Contains(archived, `"actor_email": "admin@example.com"`) || !strings.Contains(archived, `"archived_at": "`) {
+		t.Fatalf("audit --action project.update printed %q", archived)
+	}
+	if out := must("audit", "--action", "entry.delete", "--json"); strings.TrimSpace(out) != "[]" {
+		t.Fatalf("audit --action entry.delete printed %q, want []", out)
+	}
+
 	// Personal tokens: create, use without the stored config, list and revoke.
 	created := must("tokens", "create", "laptop")
 	tokenID := leadingID(t, created, "created token ")

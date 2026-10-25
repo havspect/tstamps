@@ -31,8 +31,11 @@ same single binary, served to everyone, signed in or not.
 ### Non-goals
 
 - No pricing table, no “Book a demo”, no invented customer logos or quotes.
-- No sign-up flow. A workspace is bootstrapped by its admin (`admin create`);
-  there is no self-service workspace signup.
+- No sign-up flow on a one-workspace install, or on a hosted server without email
+  configured. A hosted server that has email set up also offers self-service
+  signup ([ADR-0014](../adr/0014-self-service-workspace-signup.md)): the page
+  shows "Create a workspace" in hosted mode, and `/signup` explains when the
+  server has it switched off.
 - No hosted-availability claim. The managed path is marked “coming soon” and
   links only to the GitHub repository: no price, uptime figure, waitlist, signup
   flow, email address or launch date.
@@ -190,8 +193,10 @@ Motion: a single 500ms rise on the hero copy and image, and a slow pulse on the
   remembering. Run it yourself for one company, or several as separate
   workspaces: one Go binary, one SQLite file per workspace. Hosted by us is
   coming.”
-- Primary: `Sign in`
-- Secondary: `See the timeline`
+- Primary: `Create a workspace` (hosted mode only), leading to `/signup`
+- Secondary: `Sign in`
+- On a one-workspace install the hero keeps `Sign in` as the primary and
+  `See the timeline` as the secondary.
 - Trust line: `AGPL-3.0` · `No per-seat pricing` · `One VM`
 
 **The loop**
@@ -235,8 +240,8 @@ Motion: a single 500ms rise on the hero copy and image, and a slow pulse on the
   - `One company.` — one workspace, one SQLite file, one admin created from the
     CLI.
   - `Several companies.` — one workspace per company, each with its own SQLite
-    file and its own logins. Operators create workspaces; there is no
-    self-service signup.
+    file and its own logins. Operators invite companies, or turn on
+    self-service signup with their own email provider.
   - `Hosted by us.` — coming soon; we run the same binary and the same
     per-workspace files. Link: `Follow along on GitHub` (the repository is the
     only thing that exists).
@@ -251,7 +256,7 @@ Motion: a single 500ms rise on the hero copy and image, and a slow pulse on the
 - Left (it does): timeline logging · team-lead reports · CSV · CLI + MCP ·
   soft delete and restore · entry timezones · one company per workspace.
 - Right (it does not): approvals or leave · invoicing and rates · SSO or audit
-  log · mobile app · realtime co-editing · self-service workspace signup.
+  log · mobile app · realtime co-editing.
 - Footer of section: “What it does and does not do is in the spec.”
 
 **Close**
@@ -298,8 +303,8 @@ Built with Go and Svelte.
   once it mounts. The `<noscript>` block is a one-paragraph product summary, so
   a no-JS visitor still reads what Tstamps is, how it is run (one company or
   several workspaces) and that the managed option is not available yet.
-- `/robots.txt` allows `/` and disallows `/login`, `/password`, `/timeline`,
-  `/reports`, `/admin/` and `/api/`, and points at the sitemap.
+- `/robots.txt` allows `/` and disallows `/login`, `/password`, `/signup`,
+  `/timeline`, `/reports`, `/admin/` and `/api/`, and points at the sitemap.
 - Only `/` is meant to be indexed. `web/embed.go` sends
   `X-Robots-Tag: noindex, nofollow` on client-route fallbacks and leaves `/` and
   real static files alone, so a deep link does not put someone's hours in a
@@ -315,6 +320,10 @@ Built with Go and Svelte.
 ## 7. Implementation notes
 
 - New route `/` → `web/src/pages/Home.svelte`, styles scoped to that component.
+- Hosted only: `/signup` and `/signup/verify` → `Signup.svelte` and
+  `SignupVerify.svelte`, both rendered inside the shell. They call the
+  host-level signup API with `fetch`, because those routes are not in the
+  workspace OpenAPI document.
 - `App.svelte` renders `Home` without the app header/main. `/` does not wait for
   the session check or the route guard: it renders on first paint for everyone.
   Every other route still waits for the check, and a signed-out visitor on any
@@ -343,6 +352,9 @@ Built with Go and Svelte.
 - [ ] Anonymous `/` renders with no uncaught JS errors (the expected anonymous
       `/me` 401 is the only failed request).
 - [ ] Signed-in `/` renders the homepage; `Sign in` reaches `/timeline`.
+- [ ] A hosted `/` offers `Create a workspace`, which reaches `/signup`; when the
+      server has no email configured, submitting says signup is not enabled and
+      creates nothing.
 - [ ] The self-host section covers all three paths — one company, several
       companies as separate workspaces, and hosted by us — and the managed path
       is marked coming soon with no price, uptime, signup or email claim; its

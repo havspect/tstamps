@@ -50,6 +50,16 @@ serve-watch:
 serve:
     go run ./cmd/tstamps-server serve
 
+# Run the hot-reload stack in hosted mode: one SQLite file per slug under ./workspaces, at /w/{slug}/.
+dev-workspaces: types
+    mkdir -p workspaces
+    TSTAMPS_WORKSPACE_DIR=./workspaces hivemind Procfile.dev
+
+# Create a hosted workspace (slug, admin email, admin name) and print its initial password.
+workspace-create slug email name:
+    mkdir -p workspaces
+    go run ./cmd/tstamps-server workspace create {{slug}} --workspace-dir ./workspaces --email {{email}} --name "{{name}}"
+
 # Run the browser smoke test against a freshly built server.
 e2e: build
     pnpm --dir web e2e

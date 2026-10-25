@@ -12,6 +12,8 @@
   import Reports from './pages/Reports.svelte'
   import WorkspaceSelect from './pages/WorkspaceSelect.svelte'
   import Timeline from './pages/Timeline.svelte'
+  import Signup from './pages/Signup.svelte'
+  import SignupVerify from './pages/SignupVerify.svelte'
   import AdminEntries from './pages/AdminEntries.svelte'
   import AdminProjects from './pages/AdminProjects.svelte'
   import AdminTeams from './pages/AdminTeams.svelte'
@@ -21,6 +23,8 @@
     '/': Home,
     '/login': Login,
     '/password': Password,
+    '/signup': Signup,
+    '/signup/verify': SignupVerify,
     '/timeline': Timeline,
     '/reports': Reports,
     '/admin/users': AdminUsers,
@@ -30,10 +34,21 @@
   }
 
   let ready = $state(false)
-  const selectingWorkspace = $derived(router.hosted && router.base === '')
+  // A hosted server without /w/{slug} in the URL has no workspace yet: "/" is
+  // the public homepage, "/login" asks for the slug, and the signup pages create
+  // a workspace before one exists.
+  const hostedRoot = $derived(router.hosted && router.base === '')
+  const selectingWorkspace = $derived(hostedRoot && router.path === '/login')
+  const hostedPublic = $derived(
+    hostedRoot &&
+      (router.path === '/' ||
+        router.path === '/login' ||
+        router.path === '/signup' ||
+        router.path === '/signup/verify'),
+  )
 
   onMount(async () => {
-    if (!selectingWorkspace) {
+    if (!hostedRoot) {
       try {
         await session.load()
       } catch {
@@ -50,7 +65,7 @@
   // fetch with the wrong role and flash its content for a frame. The homepage
   // is public, so it skips this check entirely.
   const allowed = $derived.by(() => {
-    if (selectingWorkspace) return router.path === '/'
+    if (hostedRoot) return hostedPublic
     if (!user) return router.path === '/login' || (router.path === '/' && !router.hosted)
     if (session.mustChangePassword) return router.path === '/password'
     if (router.path === '/login' || router.path === '/password' || (router.path === '/' && router.hosted)) return false
@@ -65,8 +80,8 @@
   $effect(() => {
     if (!ready) return
     const path = router.path
-    if (selectingWorkspace) {
-      if (path !== '/') router.navigate('/', { replace: true })
+    if (hostedRoot) {
+      if (!hostedPublic) router.navigate('/', { replace: true })
     } else if (!user) {
       const publicHome = path === '/' && !router.hosted
       if (path !== '/login' && !publicHome) router.navigate('/login', { replace: true })
@@ -89,8 +104,8 @@
 
 {#if selectingWorkspace}
   <WorkspaceSelect />
-{:else if router.path === '/' && !router.hosted}
-  <!-- Public homepage: never wait on the session or the shell's redirect guard. -->
+{:else if router.path === '/' && !router.base}
+  <!-- Public homepage, also the hosted root: never wait on the session. -->
   <Page />
 {:else}
   <header>

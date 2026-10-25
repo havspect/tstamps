@@ -115,7 +115,8 @@ main {
   border-radius: var(--radius);
 }
 
-.auth wa-input {
+.auth wa-input,
+.auth wa-callout {
   margin-bottom: var(--space-3);
 }
 

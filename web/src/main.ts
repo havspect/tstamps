@@ -1,6 +1,7 @@
 import { mount } from 'svelte'
 import '@awesome.me/webawesome/dist/styles/themes/default.css'
 import '@awesome.me/webawesome/dist/components/button/button.js'
+import '@awesome.me/webawesome/dist/components/callout/callout.js'
 import '@awesome.me/webawesome/dist/components/checkbox/checkbox.js'
 import '@awesome.me/webawesome/dist/components/dialog/dialog.js'
 import '@awesome.me/webawesome/dist/components/input/input.js'

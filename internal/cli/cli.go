@@ -41,6 +41,8 @@ type Client interface {
 	ListTokens() ([]client.Token, error)
 	CreateToken(name string) (*client.Token, error)
 	RevokeToken(id uint) error
+
+	ListAudit(q client.AuditQuery) ([]client.AuditEvent, error)
 }
 
 // App is the CLI with its edges injected: writers, the client factory, the
@@ -106,6 +108,8 @@ func (a *App) Run(args []string) int {
 		return a.report(rest)
 	case "tokens":
 		return a.tokens(rest)
+	case "audit":
+		return a.audit(rest)
 	}
 	return a.unknown(cmd)
 }

@@ -195,12 +195,31 @@ type entryRestoreInput struct {
 }
 
 func (s *Server) restoreEntry(ctx context.Context, in *entryRestoreInput) (*entryOutput, error) {
-	if _, err := requireAdmin(ctx); err != nil {
+	admin, err := requireAdmin(ctx)
+	if err != nil {
 		return nil, err
 	}
-	e, err := s.entries.Restore(in.ID)
+	var restored *store.Entry
+	var at time.Time
+	err = s.Store.InTx(func(tx *store.Store) error {
+		before, err := tx.EntryByID(in.ID)
+		if err != nil {
+			return err
+		}
+		// The shared service is bound to the non-transactional store, so use one
+		// bound to tx instead.
+		restored, err = entry.New(tx, s.Clock).Restore(in.ID)
+		if err != nil {
+			return err
+		}
+		// Restore takes its own clock reading; its updated_at is that exact
+		// instant, so the event and the row carry the same time.
+		at = restored.UpdatedAt
+		return tx.RecordAudit(at, s.actorOf(ctx, admin), "entry.restore", "entry", in.ID,
+			store.Change{Before: before.AuditFields(), After: restored.AuditFields()})
+	})
 	if err != nil {
 		return nil, fail(err)
 	}
-	return &entryOutput{Body: entryResponseOf(e)}, nil
+	return &entryOutput{Body: entryResponseOf(restored)}, nil
 }

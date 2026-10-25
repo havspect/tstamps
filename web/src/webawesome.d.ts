@@ -17,6 +17,10 @@ declare module 'svelte/elements' {
       pill?: boolean
       size?: 'xs' | 's' | 'm' | 'l' | 'xl' | 'small' | 'medium' | 'large'
     }
+    'wa-callout': HTMLAttributes<HTMLElement> & {
+      variant?: 'brand' | 'neutral' | 'success' | 'warning' | 'danger'
+      appearance?: 'accent' | 'filled' | 'outlined' | 'plain' | 'filled-outlined'
+    }
     'wa-input': HTMLInputAttributes & {
       label?: string
       hint?: string

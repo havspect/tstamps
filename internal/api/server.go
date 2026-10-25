@@ -33,7 +33,7 @@ type Server struct {
 	Store   *store.Store
 	Clock   clock.Clock
 	entries *entry.Service
-	limit   loginLimiter
+	limit   *limiter
 }
 
 // New returns the http.Handler for the whole API and web surface.
@@ -62,7 +62,8 @@ func New(st *store.Store, clk clock.Clock) http.Handler {
 	}
 	doc.Security = []map[string][]string{{"bearerAuth": {}}, {"sessionCookie": {}}}
 
-	s := &Server{Store: st, Clock: clk, entries: entry.New(st, clk)}
+	s := &Server{Store: st, Clock: clk, entries: entry.New(st, clk), limit: newLimiter(loginLimit, loginWindow)}
+	s.auditRoutes(api)
 	s.authRoutes(api)
 	s.entryRoutes(api)
 	s.projectRoutes(api)
@@ -104,7 +105,7 @@ func origin(r *http.Request) string {
 // everything behind the login.
 func robots(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-	_, _ = fmt.Fprintf(w, "User-agent: *\nAllow: /\nDisallow: /login\nDisallow: /password\nDisallow: /timeline\nDisallow: /reports\nDisallow: /admin/\nDisallow: /api/\n\nSitemap: %s/sitemap.xml\n", origin(r))
+	_, _ = fmt.Fprintf(w, "User-agent: *\nAllow: /\nDisallow: /login\nDisallow: /password\nDisallow: /signup\nDisallow: /timeline\nDisallow: /reports\nDisallow: /admin/\nDisallow: /api/\n\nSitemap: %s/sitemap.xml\n", origin(r))
 }
 
 // sitemap lists the only indexable page: the public homepage.

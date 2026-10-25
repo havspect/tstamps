@@ -84,8 +84,9 @@ tstamps-server serve --addr :8080 --workspace-dir ./workspaces
 
 `--db` and `--workspace-dir` are mutually exclusive. Each workspace has its own
 users and data at `/w/{slug}/`; the same email in two workspaces is two
-accounts. Operators create, suspend and delete workspaces; there is no
-self-service signup. The full shape is in
+accounts. Operators create, suspend and delete workspaces. A hosted server may
+also offer self-service signup when it is given an email API key, a From address
+and a public URL; without those it stays operator-only. The full shape is in
 [Hosted workspaces](docs/guide/workspaces.md).
 
 ## The manual

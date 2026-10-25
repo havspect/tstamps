@@ -1,5 +1,6 @@
 <script lang="ts">
   import Link from '../lib/Link.svelte'
+  import { router } from '../lib/router.svelte'
 </script>
 
 <svelte:head>
@@ -39,8 +40,13 @@
         coming.
       </p>
       <div class="actions">
-        <Link href="/login" class="btn primary">Sign in <span aria-hidden="true">→</span></Link>
-        <a class="btn ghost" href="#loop">See the timeline <span aria-hidden="true">↓</span></a>
+        {#if router.hosted}
+          <Link href="/signup" class="btn primary">Create a workspace <span aria-hidden="true">→</span></Link>
+          <Link href="/login" class="btn ghost">Sign in</Link>
+        {:else}
+          <Link href="/login" class="btn primary">Sign in <span aria-hidden="true">→</span></Link>
+          <a class="btn ghost" href="#loop">See the timeline <span aria-hidden="true">↓</span></a>
+        {/if}
       </div>
       <ul class="trust" aria-label="At a glance">
         <li>AGPL-3.0</li>
@@ -199,7 +205,7 @@
           </li>
           <li>
             <strong>Several companies.</strong> One workspace per company, each with its own SQLite file
-            and its own logins. Operators create workspaces; there is no self-service signup.
+            and its own logins. Operators invite companies, or let people create their own workspace.
           </li>
           <li>
             <strong>Hosted by us.</strong> Coming soon — we run the same binary and the same per-workspace
@@ -259,7 +265,6 @@ tstamps login --url https://time.example.com</code></pre>
             <li>SSO and an audit log</li>
             <li>A mobile app</li>
             <li>Realtime co-editing</li>
-            <li>Self-service workspace signup</li>
           </ul>
         </div>
       </div>
@@ -277,11 +282,16 @@ tstamps login --url https://time.example.com</code></pre>
         <p>If your server is already running, the timeline is one sign-in away.</p>
       </div>
       <div class="actions">
-        <Link href="/login" class="btn primary">Sign in <span aria-hidden="true">→</span></Link>
-        <a
-          class="btn ghost"
-          href="https://github.com/havspect/tstamps/blob/main/docs/SPEC.md">Read the specification</a
-        >
+        {#if router.hosted}
+          <Link href="/signup" class="btn primary">Create a workspace <span aria-hidden="true">→</span></Link>
+          <Link href="/login" class="btn ghost">Sign in</Link>
+        {:else}
+          <Link href="/login" class="btn primary">Sign in <span aria-hidden="true">→</span></Link>
+          <a
+            class="btn ghost"
+            href="https://github.com/havspect/tstamps/blob/main/docs/SPEC.md">Read the specification</a
+          >
+        {/if}
       </div>
     </div>
   </section>

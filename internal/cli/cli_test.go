@@ -26,6 +26,7 @@ type fakeClient struct {
 	minted   *client.Token
 	started  *client.Entry
 	stopped  *client.Entry
+	audit    []client.AuditEvent
 
 	startErr   error
 	deleted    uint
@@ -35,6 +36,8 @@ type fakeClient struct {
 	reportQ    client.ReportQuery
 	projIn     client.ProjectInput
 	entryPatch client.EntryPatch
+	auditQ     client.AuditQuery
+	auditErr   error
 }
 
 func (f *fakeClient) Me() (*client.Me, error) { return &f.me, nil }
@@ -98,6 +101,11 @@ func (f *fakeClient) ListTokens() ([]client.Token, error) { return f.tokens, nil
 func (f *fakeClient) CreateToken(string) (*client.Token, error) { return f.minted, nil }
 
 func (f *fakeClient) RevokeToken(id uint) error { f.revoked = id; return nil }
+
+func (f *fakeClient) ListAudit(q client.AuditQuery) ([]client.AuditEvent, error) {
+	f.auditQ = q
+	return f.audit, f.auditErr
+}
 
 // testNow is a Tuesday afternoon: bare times land on 2026-10-20, and Berlin is
 // two hours ahead of UTC, so a mistake in the zone shows up in the assertions.

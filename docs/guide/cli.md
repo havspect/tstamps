@@ -286,6 +286,26 @@ tstamps report --from 2026-10-19 --to 2026-10-26 --csv | Set-Content -Encoding u
 
 `--json` and `--csv` are mutually exclusive. `--by none` returns one row for the whole range.
 
+## audit
+
+The workspace's audit log, newest first; admin only. `--from` and `--to` are dates (`from` inclusive, `to` exclusive). `--actor EMAIL`, `--action NAME`, `--target-type TYPE`, `--target-id N`, `--limit N` (default 200, at most 1000), `--json`.
+
+::: code-group
+```sh [Linux]
+tstamps audit --action project.archive --from 2026-10-19 --to 2026-10-26
+```
+
+```sh [macOS]
+tstamps audit --action project.archive --from 2026-10-19 --to 2026-10-26
+```
+
+```powershell [Windows]
+tstamps audit --action project.archive --from 2026-10-19 --to 2026-10-26
+```
+:::
+
+See [Admin console](./admin.md#audit-log) for what an event records and what it does not.
+
 ## mcp
 
 Runs the MCP server over stdio with the same config and token as the CLI. It blocks until the client closes the stream. See [MCP](./mcp.md).

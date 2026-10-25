@@ -15,7 +15,7 @@ import (
 // SchemaVersion is the model set this binary understands. It is stored in the
 // database's PRAGMA user_version so /healthz reports what is on disk, not what
 // the binary hopes is there, and an older binary refuses a newer database.
-const SchemaVersion = 4
+const SchemaVersion = 5
 
 // ErrNotFound is returned when a lookup matches no row.
 var ErrNotFound = errors.New("not found")
@@ -68,6 +68,15 @@ func (s *Store) Close() error {
 	return sqlDB.Close()
 }
 
+// InTx runs fn with a Store bound to one transaction, so a mutation and the
+// audit event describing it commit together. A method that opens its own
+// transaction inside fn becomes a savepoint.
+func (s *Store) InTx(fn func(tx *Store) error) error {
+	return s.db.Transaction(func(tx *gorm.DB) error {
+		return fn(&Store{db: tx})
+	})
+}
+
 // Migrate creates or updates the tables; running it on every boot is safe. A
 // database written by a newer binary is refused rather than silently mistreated.
 func (s *Store) Migrate() error {
@@ -78,7 +87,7 @@ func (s *Store) Migrate() error {
 	if version > SchemaVersion {
 		return fmt.Errorf("database schema %d is newer than this binary (%d)", version, SchemaVersion)
 	}
-	if err := s.db.AutoMigrate(&User{}, &Session{}, &Team{}, &TeamMembership{}, &Project{}, &APIToken{}, &Entry{}); err != nil {
+	if err := s.db.AutoMigrate(&User{}, &Session{}, &Team{}, &TeamMembership{}, &Project{}, &APIToken{}, &Entry{}, &AuditEvent{}); err != nil {
 		return err
 	}
 	// Entries logged before the column existed get their owner's zone. That is a

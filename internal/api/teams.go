@@ -141,36 +141,104 @@ func (s *Server) listTeams(ctx context.Context, _ *struct{}) (*teamsOutput, erro
 }
 
 func (s *Server) createTeam(ctx context.Context, in *teamNameInput) (*teamOutput, error) {
-	if _, err := requireAdmin(ctx); err != nil {
+	admin, err := requireAdmin(ctx)
+	if err != nil {
 		return nil, err
 	}
 	team := &store.Team{Name: in.Body.Name}
-	if err := s.Store.CreateTeam(team); err != nil {
+	now := s.Clock.Now()
+	err = s.Store.InTx(func(tx *store.Store) error {
+		if err := tx.CreateTeam(team); err != nil {
+			return err
+		}
+		return tx.RecordAudit(now, s.actorOf(ctx, admin), "team.create", "team", team.ID,
+			store.Change{After: team.AuditFields()})
+	})
+	if err != nil {
 		return nil, internal(err)
 	}
 	return &teamOutput{Body: teamOf(*team, nil)}, nil
 }
 
 func (s *Server) renameTeam(ctx context.Context, in *teamRenameInput) (*teamOutput, error) {
-	if _, err := requireAdmin(ctx); err != nil {
+	admin, err := requireAdmin(ctx)
+	if err != nil {
 		return nil, err
 	}
-	team, err := s.Store.RenameTeam(in.ID, in.Body.Name, s.Clock.Now())
+	now := s.Clock.Now()
+	var team *store.Team
+	var members []store.Member
+	err = s.Store.InTx(func(tx *store.Store) error {
+		before, err := tx.TeamByID(in.ID)
+		if err != nil {
+			return err
+		}
+		if team, err = tx.RenameTeam(in.ID, in.Body.Name, now); err != nil {
+			return err
+		}
+		if members, err = tx.MembersOf(in.ID); err != nil {
+			return err
+		}
+		return tx.RecordAudit(now, s.actorOf(ctx, admin), "team.rename", "team", in.ID,
+			store.Change{Before: before.AuditFields(), After: team.AuditFields()})
+	})
 	if err != nil {
 		return nil, fail(err)
-	}
-	members, err := s.Store.MembersOf(team.ID)
-	if err != nil {
-		return nil, internal(err)
 	}
 	return &teamOutput{Body: teamOf(*team, members)}, nil
 }
 
 func (s *Server) archiveTeam(ctx context.Context, in *teamIDInput) (*struct{}, error) {
-	if _, err := requireAdmin(ctx); err != nil {
+	admin, err := requireAdmin(ctx)
+	if err != nil {
 		return nil, err
 	}
-	err := s.Store.ArchiveTeam(in.ID, s.Clock.Now())
+	now := s.Clock.Now()
+	err = s.Store.InTx(func(tx *store.Store) error {
+		before, err := tx.TeamByID(in.ID)
+		if err != nil {
+			return err
+		}
+		// This is exactly the set ArchiveTeam will archive below.
+		var projects []store.Project
+		if before.ArchivedAt == nil {
+			all, err := tx.Projects(true)
+			if err != nil {
+				return err
+			}
+			for _, p := range all {
+				if p.TeamID == in.ID && p.ArchivedAt == nil {
+					projects = append(projects, p)
+				}
+			}
+		}
+		if err := tx.ArchiveTeam(in.ID, now); err != nil {
+			return err
+		}
+		if before.ArchivedAt != nil {
+			return nil
+		}
+		actor := s.actorOf(ctx, admin)
+		after, err := tx.TeamByID(in.ID)
+		if err != nil {
+			return err
+		}
+		if err := tx.RecordAudit(now, actor, "team.archive", "team", in.ID,
+			store.Change{Before: before.AuditFields(), After: after.AuditFields()}); err != nil {
+			return err
+		}
+		for _, p := range projects {
+			afterProject, err := tx.ProjectByID(p.ID)
+			if err != nil {
+				return err
+			}
+			if err := tx.RecordAudit(now, actor, "project.archive", "project", p.ID,
+				store.Change{Before: p.AuditFields(), After: afterProject.AuditFields()}); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 	if err != nil {
 		return nil, fail(err)
 	}
@@ -178,7 +246,8 @@ func (s *Server) archiveTeam(ctx context.Context, in *teamIDInput) (*struct{}, e
 }
 
 func (s *Server) replaceMembers(ctx context.Context, in *teamMembersInput) (*teamMembersOutput, error) {
-	if _, err := requireAdmin(ctx); err != nil {
+	admin, err := requireAdmin(ctx)
+	if err != nil {
 		return nil, err
 	}
 	seen := make(map[uint]bool, len(in.Body))
@@ -190,16 +259,35 @@ func (s *Server) replaceMembers(ctx context.Context, in *teamMembersInput) (*tea
 		seen[m.UserID] = true
 		members = append(members, store.MemberRole{UserID: m.UserID, Role: m.Role})
 	}
-	err := s.Store.ReplaceMemberships(in.ID, members, s.Clock.Now())
+	// A membership list is not a row, so before and after are built from it.
+	membershipList := func(rows []store.Member) map[string]any {
+		list := make([]map[string]any, 0, len(rows))
+		for _, m := range rows {
+			list = append(list, map[string]any{"user_id": m.UserID, "email": m.Email, "role": m.Role})
+		}
+		return map[string]any{"members": list}
+	}
+	now := s.Clock.Now()
+	var after []store.Member
+	err = s.Store.InTx(func(tx *store.Store) error {
+		before, err := tx.MembersOf(in.ID)
+		if err != nil {
+			return err
+		}
+		if err := tx.ReplaceMemberships(in.ID, members, now); err != nil {
+			return err
+		}
+		if after, err = tx.MembersOf(in.ID); err != nil {
+			return err
+		}
+		return tx.RecordAudit(now, s.actorOf(ctx, admin), "team.members.replace", "team", in.ID,
+			store.Change{Before: membershipList(before), After: membershipList(after)})
+	})
 	if err != nil {
 		return nil, fail(err)
 	}
-	rows, err := s.Store.MembersOf(in.ID)
-	if err != nil {
-		return nil, internal(err)
-	}
-	out := make([]teamMemberResponse, 0, len(rows))
-	for _, m := range rows {
+	out := make([]teamMemberResponse, 0, len(after))
+	for _, m := range after {
 		out = append(out, teamMemberOf(m))
 	}
 	return &teamMembersOutput{Body: out}, nil

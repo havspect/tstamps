@@ -78,6 +78,20 @@ type Entry struct {
 	DeletedAt *time.Time `gorm:"index"`
 }
 
+// AuditEvent is one change made by an actor whose authority came from a role.
+// Changes is JSON {"before":{...},"after":{...}}; hashes never enter it.
+type AuditEvent struct {
+	ID           uint      `gorm:"primarykey"`
+	At           time.Time `gorm:"not null;index"`
+	ActorUserID  uint      `gorm:"not null;index"`
+	ActorTokenID *uint
+	ActorRole    string `gorm:"not null"`
+	Action       string `gorm:"not null;index"`
+	TargetType   string `gorm:"not null;index:idx_audit_target"`
+	TargetID     uint   `gorm:"not null;index:idx_audit_target"`
+	Changes      string `gorm:"not null"`
+}
+
 // APIToken is a personal token that acts as its user; only the hash is stored.
 type APIToken struct {
 	ID         uint   `gorm:"primarykey"`

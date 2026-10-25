@@ -30,7 +30,21 @@ func serve(args []string, stderr io.Writer) int {
 
 	var handler http.Handler
 	if cfg.WorkspaceDir != "" {
-		host, err := workspace.New(cfg.WorkspaceDir, clock.System{})
+		var signup http.Handler
+		if cfg.SignupEnabled() {
+			endpoint := cfg.EmailAPIURL
+			if endpoint == "" {
+				endpoint = workspace.DefaultEmailEndpoint
+			}
+			svc := workspace.NewSignup(cfg.WorkspaceDir, cfg.PublicURL, &workspace.Resend{
+				Endpoint: endpoint, Key: cfg.EmailAPIKey, From: cfg.EmailFrom,
+			}, clock.System{})
+			signup = api.NewSignupHandler(svc, clock.System{})
+			log.Info("self-service signup enabled", "public_url", cfg.PublicURL)
+		} else if cfg.EmailAPIKey != "" || cfg.EmailFrom != "" || cfg.PublicURL != "" {
+			log.Warn("self-service signup is ignored without --workspace-dir")
+		}
+		host, err := workspace.New(cfg.WorkspaceDir, clock.System{}, signup)
 		if err != nil {
 			log.Error("open workspace directory", "dir", cfg.WorkspaceDir, "error", err)
 			return 1

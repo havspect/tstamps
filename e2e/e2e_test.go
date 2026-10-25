@@ -158,7 +158,14 @@ func passwordFrom(t *testing.T, line string) string {
 // logs the address it actually bound.
 func startServer(t *testing.T, bin, db string) (string, func()) {
 	t.Helper()
-	cmd := exec.Command(bin, "serve", "--db", db, "--addr", "127.0.0.1:0")
+	return startServe(t, bin, "serve", "--db", db, "--addr", "127.0.0.1:0")
+}
+
+// startServe runs `tstamps-server` with args on a free port and returns its base
+// URL once it logs the address it actually bound.
+func startServe(t *testing.T, bin string, args ...string) (string, func()) {
+	t.Helper()
+	cmd := exec.Command(bin, args...)
 	stderr, err := cmd.StderrPipe()
 	if err != nil {
 		t.Fatal(err)

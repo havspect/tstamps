@@ -9,8 +9,32 @@ One company's users, teams, projects and entries. A server runs one or more work
 _Avoid_: tenant, organisation, org, account
 
 **Workspace slug**:
-The unique, operator-assigned identifier used to select a workspace. It is not a DNS domain, even when it looks like one.
+The unique identifier used to select a workspace, chosen by an operator or by the person signing up. It is not a DNS domain, even when it looks like one.
 _Avoid_: workspace ID, subdomain
+
+**Operator**:
+The person who runs the server and the workspaces on it. Not a User: an Operator is a member of no workspace, logs no entries, and acts through the server CLI and the operator console.
+_Avoid_: server admin, superuser, root, sysadmin
+
+**Signup**:
+The self-service way to create a workspace on a hosted server: an email owner verifies the address, then chooses the workspace slug, their name and a password. Contrasts with an operator's `workspace create`.
+_Avoid_: registration, onboarding, tenant creation
+
+**Pending signup**:
+An emailed link that has been requested but not yet used to create a workspace. It holds one email address, not a workspace, and it never expires.
+_Avoid_: invite, request, application
+
+**Trial**:
+The first 14 days of a self-service workspace, before the first payment. It has every feature; when it ends the workspace becomes suspended, it is not deleted.
+_Avoid_: free plan, beta, free tier
+
+**Suspended workspace**:
+A workspace whose trial ended or whose payment failed. Everyone may sign in, read and export; logging and admin changes are refused. Its data stays until the Operator deletes the workspace by hand.
+_Avoid_: locked, disabled, dormant, frozen
+
+**Billing contact**:
+The address that receives a workspace's invoices. Not necessarily a User, and not an authority: any admin may change it.
+_Avoid_: payer, owner, account holder
 
 **User**:
 A person who can log in and log hours in one workspace. The same person in another workspace is a separate User.
@@ -37,12 +61,24 @@ The link between a user and a team, carrying the role of lead or member.
 _Avoid_: seat, assignment
 
 **Initial password**:
-The password an admin sets for a new or reset user, which the user must replace at first login.
+The password an admin sets for a new or reset user, which the user must replace at first login. A password chosen during self-service signup is not an initial password.
 _Avoid_: temporary password, one-time password, OTP
 
 **Deactivated user**:
 A user who can no longer log in; their hours stay in reports.
 _Avoid_: deleted user, disabled user
+
+**Identity provider**:
+The external OIDC service a workspace trusts to prove who a user is. It proves identity only: it grants no team, role or workspace access.
+_Avoid_: SSO server, auth server, login provider
+
+**SSO**:
+Signing in through the workspace's Identity provider instead of a workspace password. Once enforced, only the Break-glass admin still uses a password and TOTP.
+_Avoid_: enterprise login, social login
+
+**Break-glass admin**:
+The one workspace admin who can still sign in with a password and a TOTP code after SSO is enforced, for IdP outages and lockouts.
+_Avoid_: backup admin, emergency account, super admin
 
 **Project**:
 The unit of work that hours are logged against. Belongs to exactly one team and is visible to everyone in the workspace.
@@ -99,3 +135,11 @@ _Avoid_: deleted project, inactive project
 **Deleted entry**:
 An entry removed from all lists and totals but kept in storage. Only an admin restores it.
 _Avoid_: archived entry, voided entry
+
+**Audit event**:
+A record of one change made by a user whose authority over the target comes from a role, not from ownership: an admin, or a lead acting on their team's projects. A user changing their own entry is not an audit event.
+_Avoid_: history, changelog, activity, version
+
+**Audit log**:
+The append-only list of audit events, read by admins. It is not a feed and not a backup.
+_Avoid_: history, activity feed, changelog

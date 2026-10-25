@@ -27,6 +27,8 @@ const (
 	urnEntryTooLong           = "urn:tstamps:error:entry-too-long"
 	urnProjectHasEntries      = "urn:tstamps:error:project-has-entries"
 	urnUnavailable            = "urn:tstamps:error:unavailable"
+	urnInvalidToken           = "urn:tstamps:error:invalid-token"
+	urnEmailFailed            = "urn:tstamps:error:email-failed"
 )
 
 func problem(status int, urn, detail string) *huma.ErrorModel {

@@ -25,7 +25,6 @@ func (r dateRange) padded() (time.Time, time.Time) {
 // parseRange reads from/to as plain dates, defaulting to the caller's current
 // ISO week. An empty one of the pair is a 422, never half a range.
 func parseRange(tz string, now time.Time, from, to string) (dateRange, error) {
-	const layout = "2006-01-02"
 	if from == "" && to == "" {
 		loc, err := time.LoadLocation(tz)
 		if err != nil {
@@ -42,6 +41,20 @@ func parseRange(tz string, now time.Time, from, to string) (dateRange, error) {
 			time.Date(ny, nm, nd, 0, 0, 0, 0, time.UTC),
 		}, nil
 	}
+	rng, err := parseDates(from, to)
+	if err != nil {
+		return dateRange{}, err
+	}
+	if rng.To.Sub(rng.From) > 366*24*time.Hour {
+		return dateRange{}, problem(http.StatusUnprocessableEntity, urnInvalidInput, "the range may not be longer than 366 days")
+	}
+	return rng, nil
+}
+
+// parseDates reads a from/to pair as plain dates without a span limit. Both are
+// required: half a range is a 422, never a guess.
+func parseDates(from, to string) (dateRange, error) {
+	const layout = "2006-01-02"
 	if from == "" || to == "" {
 		return dateRange{}, problem(http.StatusUnprocessableEntity, urnInvalidInput, "from and to must be given together")
 	}
@@ -55,9 +68,6 @@ func parseRange(tz string, now time.Time, from, to string) (dateRange, error) {
 	}
 	if !t.After(f) {
 		return dateRange{}, problem(http.StatusUnprocessableEntity, urnInvalidInput, "to must be after from")
-	}
-	if t.Sub(f) > 366*24*time.Hour {
-		return dateRange{}, problem(http.StatusUnprocessableEntity, urnInvalidInput, "the range may not be longer than 366 days")
 	}
 	return dateRange{f, t}, nil
 }

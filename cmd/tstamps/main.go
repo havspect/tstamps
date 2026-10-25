@@ -64,6 +64,7 @@ client (needs a token from "tstamps login"):
   teams members <team>       list a team's members
   report                     hours totals (--from, --to, --by, --json, --csv)
   tokens create|ls|rm        manage personal API tokens
+  audit                      role-based changes (--from, --to, --actor, --action, --json)
   mcp                        MCP server on stdio
 
   version                    print the version
