@@ -1,10 +1,31 @@
 <script lang="ts">
+  import { onMount } from 'svelte'
   import Input from '../lib/ui/Input.svelte'
   import Button from '../lib/ui/Button.svelte'
 
   let slug = $state('')
   let error = $state('')
   let pending = $state(false)
+  let checking = $state(true)
+
+  onMount(async () => {
+    // A client-side click on "Sign in" does not reload /login, so the server's
+    // redirect cannot run. Ask whether there is exactly one workspace and go
+    // straight to it; a multi-workspace server returns an empty slug.
+    try {
+      const res = await fetch('/api/v1/workspace')
+      if (res.ok) {
+        const body = (await res.json()) as { slug?: string }
+        if (body.slug) {
+          location.replace(`/w/${encodeURIComponent(body.slug)}/login`)
+          return
+        }
+      }
+    } catch {
+      // Offline: show the prompt rather than guess.
+    }
+    checking = false
+  })
 
   async function submit(event: SubmitEvent) {
     event.preventDefault()
@@ -32,6 +53,7 @@
   }
 </script>
 
+{#if !checking}
 <form class="auth" onsubmit={submit}>
   <h1>Open your workspace</h1>
   {#if error}
@@ -50,3 +72,4 @@
   />
   <Button type="submit" disabled={pending}>{pending ? 'Checking…' : 'Continue'}</Button>
 </form>
+{/if}

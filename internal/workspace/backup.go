@@ -3,38 +3,30 @@ package workspace
 import (
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/havspect/tstamps/internal/store"
 )
 
-// BackupAll snapshots every workspace database into a new destination directory.
-// Each file is internally consistent; the set is not a cross-workspace point in
-// time. Nothing is published unless every snapshot succeeds.
-func BackupAll(source, dest string) (int, error) {
-	paths, err := Databases(source)
-	if err != nil {
-		return 0, err
-	}
-	if len(paths) == 0 {
+// Backup snapshots the one database into a new file. The snapshot is one point
+// in time for every workspace and is published only when complete.
+func Backup(db, dest string) (int, error) {
+	if _, err := os.Stat(db); err != nil {
 		return 0, errors.New("no workspaces to back up")
 	}
-	srcAbs, err := filepath.Abs(source)
+	reg, err := store.OpenRegistry(db)
 	if err != nil {
 		return 0, err
 	}
-	destAbs, err := filepath.Abs(dest)
+	defer reg.Close()
+	workspaces, err := reg.Workspaces()
 	if err != nil {
 		return 0, err
 	}
-	rel, err := filepath.Rel(srcAbs, destAbs)
-	if err != nil {
-		return 0, err
-	}
-	if rel == "." || (rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))) {
-		return 0, errors.New("backup destination must be outside the workspace directory")
+	if len(workspaces) == 0 {
+		return 0, errors.New("no workspaces to back up")
 	}
 	if _, err := os.Stat(dest); !errors.Is(err, os.ErrNotExist) {
 		return 0, fmt.Errorf("destination %s already exists", dest)
@@ -45,24 +37,22 @@ func BackupAll(source, dest string) (int, error) {
 		return 0, err
 	}
 	defer os.RemoveAll(stage)
+	stageFile := filepath.Join(stage, "snapshot.db")
 
-	for _, path := range paths {
-		slug := strings.TrimSuffix(filepath.Base(path), ".db")
-		if err := backupOne(path, filepath.Join(stage, slug+".db")); err != nil {
-			return 0, fmt.Errorf("%s: %w", slug, err)
-		}
-	}
-	if err := os.Rename(stage, dest); err != nil {
+	if err := reg.BackupTo(stageFile); err != nil {
 		return 0, err
 	}
-	return len(paths), nil
-}
-
-func backupOne(source, dest string) error {
-	st, err := store.Open(source)
-	if err != nil {
-		return err
+	// The snapshot holds password and session hashes; do not inherit the umask.
+	if err := os.Chmod(stageFile, 0o600); err != nil {
+		return 0, err
 	}
-	defer st.Close()
-	return st.BackupTo(dest)
+	// Link, not rename: link refuses an existing destination atomically, so two
+	// overlapping backups cannot replace each other.
+	if err := os.Link(stageFile, dest); err != nil {
+		if errors.Is(err, fs.ErrExist) {
+			return 0, fmt.Errorf("destination %s already exists", dest)
+		}
+		return 0, err
+	}
+	return len(workspaces), nil
 }

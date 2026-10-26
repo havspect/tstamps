@@ -68,21 +68,21 @@ The CLI stores a personal API token after a password login. It does not keep you
 
 ::: code-group
 ```sh [Linux]
-tstamps login --url https://time.example.com
+tstamps login --url https://time.example.com/w/example.com
 ```
 
 ```sh [macOS]
-tstamps login --url https://time.example.com
+tstamps login --url https://time.example.com/w/example.com
 ```
 
 ```powershell [Windows]
-tstamps login --url https://time.example.com
+tstamps login --url https://time.example.com/w/example.com
 ```
 :::
 
 It prompts for your email and password, then prints `logged in as Name <email>`. `tstamps whoami` shows the account and every team you belong to.
 
-On an operator-hosted server, the URL names the workspace and nothing else changes:
+The URL names the workspace:
 
 ```sh
 tstamps login --url https://time.example.com/w/example.com

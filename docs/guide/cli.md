@@ -2,7 +2,7 @@
 
 `tstamps` talks to the server's HTTP API. It never opens the database. Every client command accepts `--url` and `--token`; settings resolve as flags, then `TSTAMPS_URL` / `TSTAMPS_TOKEN`, then the config file written by `tstamps login`.
 
-On an operator-hosted server the saved URL carries the workspace: `https://time.example.com/w/example.com`. Every command then reaches that workspace and no other. See [Hosted workspaces](./workspaces.md).
+The saved URL carries the workspace: `https://time.example.com/w/example.com`. Every command then reaches that workspace and no other. See [Hosted workspaces](./workspaces.md).
 
 The commands are identical on Linux, macOS and Windows, so the three tabs below repeat the same line. Installation and config paths are the parts that differ; they are on [Install the CLI](./install-cli.md).
 
@@ -32,19 +32,19 @@ Stores a personal API token after a password login. Prompts for email and passwo
 
 ::: code-group
 ```sh [Linux]
-tstamps login --url https://time.example.com
+tstamps login --url https://time.example.com/w/example.com
 ```
 
 ```sh [macOS]
-tstamps login --url https://time.example.com
+tstamps login --url https://time.example.com/w/example.com
 ```
 
 ```powershell [Windows]
-tstamps login --url https://time.example.com
+tstamps login --url https://time.example.com/w/example.com
 ```
 :::
 
-On a hosted server, log in to one workspace by putting its slug in the URL:
+Log in to one workspace by putting its slug in the URL:
 
 ```sh
 tstamps login --url https://time.example.com/w/example.com
@@ -326,7 +326,7 @@ tstamps mcp
 
 ::: tip Common errors
 - `no server URL` — run `tstamps login --url ...` or set `TSTAMPS_URL`.
-- `404` on a hosted server — check the `/w/{slug}` part of the URL; an unknown slug selects no workspace.
+- `404` — check the `/w/{slug}` part of the URL; an unknown slug selects no workspace.
 - `already running since 09:41` — stop the running entry first; `tstamps stop`.
 - `invalid timezone` / `422` on create — pass an IANA name such as `Europe/Berlin`, not a UTC offset.
 - `password-change-required` — change the admin-issued initial password in the web UI before logging in.

@@ -47,7 +47,7 @@ test('a typed workspace that does not exist shows an error and stays on the prom
   await expect(page).toHaveURL('/login')
 })
 
-test('a hosted homepage offers signup and says when it is disabled', async ({ page }) => {
+test('the homepage offers signup and says when it is disabled', async ({ page }) => {
   await page.goto('/')
   await page.getByRole('link', { name: 'Create a workspace' }).first().click()
 

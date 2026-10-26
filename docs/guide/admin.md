@@ -1,8 +1,8 @@
 # Admin console
 
-Admins manage one workspace under `/admin`: **Users**, **Teams**, **Projects** and **Entries**. The screens are tables with inline create and edit. There is no separate settings page. On an operator-hosted server the console lives at `/w/{slug}/admin` and manages only that workspace; there is no screen that reaches another company.
+Admins manage one workspace under `/w/{slug}/admin`: **Users**, **Teams**, **Projects** and **Entries**. The screens are tables with inline create and edit. There is no separate settings page, and no screen reaches another workspace.
 
-The first admin of each workspace is created from the server host, not the web UI: `admin create` for a one-workspace server, `workspace create` for a hosted one. See [Server on Linux](./server.md) and [Hosted workspaces](./workspaces.md). After that, everything below happens in the browser.
+The first admin of each workspace is created from the server host, not the web UI: `tstamps-server workspace create <slug> --email x --name y` on the same database. See [Server on Linux](./server.md) and [Hosted workspaces](./workspaces.md). After that, everything below happens in the browser.
 
 ## Users
 
@@ -66,12 +66,12 @@ tstamps audit --target-type project --target-id 7 --limit 50
 tstamps audit --actor sam@example.com
 ```
 
-That answers "who deactivated Sam?" and "what happened to project 7 last week?". Rows come back newest first, 200 by default and at most 1000 with `--limit`. Filters are `--from`/`--to` (dates, `from` inclusive, `to` exclusive), `--actor EMAIL`, `--action NAME`, `--target-type TYPE`, `--target-id N`, and `--json`. The API is `GET /api/v1/audit`; there is no admin screen and no MCP tool.
+That answers "who deactivated Sam?" and "what happened to project 7 last week?". Rows come back newest first, 200 by default and at most 1000 with `--limit`. Filters are `--from`/`--to` (dates, `from` inclusive, `to` exclusive), `--actor EMAIL`, `--action NAME`, `--target-type TYPE`, `--target-id N`, and `--json`. The API is `GET /w/{slug}/api/v1/audit`; there is no admin screen and no MCP tool.
 
 Limits worth knowing:
 
 - It starts empty on the day this version ships; nothing older is backfilled.
-- It is per workspace. On a hosted server each workspace has its own log and there is no combined view.
+- It is per workspace. Each workspace has its own log and there is no combined view.
 - It is append-only: no delete path, no retention job. Events stay for the life of the database.
 - An operator who owns the database file can edit it. It protects against the application, not the operator; a backup taken before an incident is the stronger evidence.
 - It is not a history of hours. What a person does to their own entry — logging, retiming, deleting — is not an event. The two exceptions are an admin restoring a deleted entry, and the stop that deactivation causes.

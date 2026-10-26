@@ -4,13 +4,14 @@ import { fileURLToPath } from 'node:url'
 
 const state = JSON.parse(
   readFileSync(fileURLToPath(new URL('./.state.json', import.meta.url)), 'utf8'),
-) as { port: number; password: string }
+) as { port: number; password: string; workspaceSlug: string }
 const baseURL = `http://127.0.0.1:${state.port}`
+const workspace = `/w/${state.workspaceSlug}`
 
 test.use({ baseURL })
 
 async function signIn(page: Page) {
-  await page.goto('/login')
+  await page.goto(`${workspace}/login`)
   await page.getByLabel('Email').fill('admin@example.com')
   await page.getByLabel('Password').fill(state.password)
   await page.getByRole('button', { name: 'Sign in' }).click()
@@ -64,11 +65,8 @@ test('the manual is public at /docs', async ({ page }) => {
 test('login, log an entry, read the report and export CSV', async ({ page }) => {
   await signIn(page)
 
-  // '/' is public for signed-in users too: it renders instead of redirecting,
-  // and the session check still runs in the background after mount.
-  const me = page.waitForResponse((response) => new URL(response.url()).pathname === '/api/v1/me')
+  // '/' is public for signed-in users too: it renders instead of redirecting.
   await page.goto('/')
-  await me
   await expect(page.getByRole('heading', { level: 1 })).toContainText('Your week')
   await expect(page).toHaveURL('/')
 
@@ -81,9 +79,9 @@ test('login, log an entry, read the report and export CSV', async ({ page }) => 
 
   // Seed the workspace over the API; the admin screens are not what this covers.
   const origin = { Origin: baseURL }
-  const team = await page.request.post('/api/v1/teams', { data: { name: 'Platform' }, headers: origin })
+  const team = await page.request.post(`${workspace}/api/v1/teams`, { data: { name: 'Platform' }, headers: origin })
   expect(team.ok()).toBeTruthy()
-  const project = await page.request.post('/api/v1/projects', {
+  const project = await page.request.post(`${workspace}/api/v1/projects`, {
     data: { name: 'Smoke Project', team_id: (await team.json()).id },
     headers: origin,
   })
@@ -118,7 +116,7 @@ test('login, log an entry, read the report and export CSV', async ({ page }) => 
   await block.scrollIntoViewIfNeeded()
   await expect(block).toBeVisible()
 
-  await page.goto('/reports')
+  await page.goto(`${workspace}/reports`)
   await expect(page.getByRole('rowheader', { name: /Smoke Project/ })).toBeVisible()
   // The selected period is announced even though wa-button drops aria-pressed.
   await expect(page.getByRole('button', { name: /Day.*selected/ })).toBeVisible()
@@ -135,7 +133,7 @@ test('admin controls bind the custom elements to the forms', async ({ page }) =>
   const stamp = Date.now()
   const email = `admin-check-${stamp}@example.com`
 
-  await page.goto('/admin/users')
+  await page.goto(`${workspace}/admin/users`)
   await expect(page.getByRole('heading', { name: 'Users' })).toBeVisible()
 
   // The nav already has aria-label "Admin", so target the toolbar checkbox by
@@ -153,13 +151,13 @@ test('admin controls bind the custom elements to the forms', async ({ page }) =>
   await expect(row.locator('td').nth(3)).toHaveText('yes')
 
   const teamName = `Admin Check ${stamp}`
-  const created = await page.request.post('/api/v1/teams', {
+  const created = await page.request.post(`${workspace}/api/v1/teams`, {
     data: { name: teamName },
     headers: { Origin: baseURL },
   })
   expect(created.ok()).toBeTruthy()
 
-  await page.goto('/admin/teams')
+  await page.goto(`${workspace}/admin/teams`)
   const teamRow = page.locator('tr', { hasText: teamName })
   await teamRow.getByRole('button', { name: 'Members' }).click()
 
@@ -179,7 +177,7 @@ test('admin controls bind the custom elements to the forms', async ({ page }) =>
   await page.getByRole('button', { name: 'Save members' }).click()
   expect((await saved).ok()).toBeTruthy()
 
-  const teams = await page.request.get('/api/v1/teams')
+  const teams = await page.request.get(`${workspace}/api/v1/teams`)
   expect(teams.ok()).toBeTruthy()
   const body = (await teams.json()) as {
     name: string

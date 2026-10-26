@@ -450,14 +450,19 @@ func TestMigrateAddsAndBackfillsEntryTimezone(t *testing.T) {
 		t.Fatalf("drop entries: %v", err)
 	}
 	if err := s.db.Exec(`CREATE TABLE entries (
-		id integer PRIMARY KEY AUTOINCREMENT, user_id integer NOT NULL,
+		id integer PRIMARY KEY AUTOINCREMENT, workspace_id integer NOT NULL,
+		user_id integer NOT NULL,
 		project_id integer NOT NULL, start_at datetime NOT NULL, end_at datetime,
 		note text, created_at datetime, updated_at datetime, deleted_at datetime)`).Error; err != nil {
 		t.Fatalf("create old entries: %v", err)
 	}
-	if err := s.db.Exec(`INSERT INTO entries (user_id, project_id, start_at, end_at) VALUES (?, ?, ?, ?)`,
-		u.ID, p.ID, at(9), at(10)).Error; err != nil {
+	if err := s.db.Exec(`INSERT INTO entries (workspace_id, user_id, project_id, start_at, end_at) VALUES (?, ?, ?, ?, ?)`,
+		s.workspaceID, u.ID, p.ID, at(9), at(10)).Error; err != nil {
 		t.Fatalf("insert old entry: %v", err)
+	}
+	// Pretend this is a pre-timezone database so Migrate takes the full path.
+	if err := s.db.Exec(`PRAGMA user_version = 0`).Error; err != nil {
+		t.Fatalf("reset schema version: %v", err)
 	}
 
 	if err := s.Migrate(); err != nil {

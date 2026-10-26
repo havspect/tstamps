@@ -12,29 +12,29 @@ const baseURL = `http://127.0.0.1:${port}`
 const hostedURL = `http://127.0.0.1:${hostedPort}`
 const workspaceSlug = 'example.com'
 
-// Bootstraps a throwaway legacy workspace and a hosted workspace with the real
-// server binary, and leaves both running for the specs.
+// Bootstraps two throwaway databases with the real server binary: one with a
+// single workspace (the no-prompt path) and one with two (the workspace prompt).
 export default async function globalSetup() {
   const dir = mkdtempSync(join(tmpdir(), 'tstamps-e2e-'))
-  const db = join(dir, 'tstamps.db')
-  const workspaceDir = join(dir, 'workspaces')
-  let legacy: ChildProcess | undefined
+  const singleDB = join(dir, 'single.db')
+  const hostedDB = join(dir, 'hosted.db')
+  let single: ChildProcess | undefined
   let hosted: ChildProcess | undefined
 
   try {
     const output = execFileSync(
       server,
-      ['admin', 'create', '--db', db, '--email', 'admin@example.com', '--name', 'Ada Admin'],
+      ['workspace', 'create', workspaceSlug, '--db', singleDB, '--email', 'admin@example.com', '--name', 'Ada Admin'],
       { encoding: 'utf8' },
     )
     const password = /initial password: (\S+)/.exec(output)?.[1]
-    if (!password) throw new Error(`admin create printed no password: ${output}`)
+    if (!password) throw new Error(`workspace create printed no password: ${output}`)
 
     const hostedOutput = execFileSync(
       server,
       [
         'workspace', 'create', workspaceSlug,
-        '--workspace-dir', workspaceDir,
+        '--db', hostedDB,
         '--email', 'admin@example.com',
         '--name', 'Ada Hosted',
       ],
@@ -43,14 +43,25 @@ export default async function globalSetup() {
     const hostedPassword = /initial password: (\S+)/.exec(hostedOutput)?.[1]
     if (!hostedPassword) throw new Error(`workspace create printed no password: ${hostedOutput}`)
 
-    legacy = spawn(
+    execFileSync(
       server,
-      ['serve', '--addr', `127.0.0.1:${port}`, '--db', db, '--log-level', 'warn'],
+      [
+        'workspace', 'create', 'other.example',
+        '--db', hostedDB,
+        '--email', 'other@example.com',
+        '--name', 'Other Admin',
+      ],
+      { encoding: 'utf8' },
+    )
+
+    single = spawn(
+      server,
+      ['serve', '--addr', `127.0.0.1:${port}`, '--db', singleDB, '--log-level', 'warn'],
       { stdio: 'ignore' },
     )
     hosted = spawn(
       server,
-      ['serve', '--addr', `127.0.0.1:${hostedPort}`, '--workspace-dir', workspaceDir, '--log-level', 'warn'],
+      ['serve', '--addr', `127.0.0.1:${hostedPort}`, '--db', hostedDB, '--log-level', 'warn'],
       { stdio: 'ignore' },
     )
     await Promise.all([waitForHealth(`${baseURL}/healthz`), waitForHealth(`${hostedURL}/healthz`)])
@@ -60,12 +71,12 @@ export default async function globalSetup() {
     )
 
     return async () => {
-      await Promise.all([stop(legacy), stop(hosted)])
+      await Promise.all([stop(single), stop(hosted)])
       rmSync(dir, { recursive: true, force: true })
       rmSync(statePath, { force: true })
     }
   } catch (err) {
-    await Promise.all([stop(legacy), stop(hosted)])
+    await Promise.all([stop(single), stop(hosted)])
     rmSync(dir, { recursive: true, force: true })
     throw err
   }
@@ -78,14 +89,14 @@ async function stop(child: ChildProcess | undefined) {
 }
 
 async function waitForHealth(url: string) {
-  const deadline = Date.now() + 15_000
-  while (Date.now() < deadline) {
+  for (let attempt = 0; attempt < 100; attempt++) {
     try {
-      if ((await fetch(url)).ok) return
+      const res = await fetch(url)
+      if (res.ok) return
     } catch {
-      // Not listening yet.
+      // not listening yet
     }
     await new Promise((resolve) => setTimeout(resolve, 100))
   }
-  throw new Error(`server did not answer ${url}`)
+  throw new Error(`${url} did not become healthy`)
 }

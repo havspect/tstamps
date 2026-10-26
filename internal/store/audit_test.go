@@ -219,7 +219,7 @@ func TestMigrateRecordsAuditSchemaVersion(t *testing.T) {
 	if err != nil {
 		t.Fatalf("schema version: %v", err)
 	}
-	if version != 5 {
-		t.Fatalf("schema version = %d, want 5", version)
+	if version != SchemaVersion {
+		t.Fatalf("schema version = %d, want %d", version, SchemaVersion)
 	}
 }

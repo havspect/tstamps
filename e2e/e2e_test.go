@@ -55,10 +55,11 @@ func TestEndToEnd(t *testing.T) {
 		return string(out)
 	}
 
-	adminPassword := passwordFrom(t, server("admin", "create", "--db", db, "--email", "admin@example.com", "--name", "Ada Admin"))
+	adminPassword := passwordFrom(t, server("workspace", "create", "example.com", "--db", db, "--email", "admin@example.com", "--name", "Ada Admin"))
 
-	url, stopServer := startServer(t, serverBin, db)
+	base, stopServer := startServer(t, serverBin, db)
 	defer stopServer()
+	url := base + "/w/example.com"
 
 	cli("login", "--url", url, "--email", "admin@example.com", "--password", adminPassword)
 	token := savedToken(t, home)

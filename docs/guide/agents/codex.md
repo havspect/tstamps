@@ -8,7 +8,7 @@ three.
 ## Prerequisites
 
 ```sh
-tstamps login --url https://tstamps.example.com
+tstamps login --url https://tstamps.example.com/w/example.com
 tstamps whoami
 tstamps tokens create agent     # for the agent, shown once
 ```
@@ -34,7 +34,7 @@ if a new skill does not appear.
 
 ```sh
 codex mcp add tstamps \
-  --env TSTAMPS_URL=https://tstamps.example.com \
+  --env TSTAMPS_URL=https://tstamps.example.com/w/example.com \
   --env TSTAMPS_TOKEN=ts_... \
   -- tstamps mcp
 ```
@@ -48,7 +48,7 @@ command = "tstamps"
 args = ["mcp"]
 
 [mcp_servers.tstamps.env]
-TSTAMPS_URL = "https://tstamps.example.com"
+TSTAMPS_URL = "https://tstamps.example.com/w/example.com"
 TSTAMPS_TOKEN = "ts_..."
 ```
 

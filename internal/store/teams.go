@@ -27,22 +27,24 @@ type MemberRole struct {
 	Role   string
 }
 
-// CreateTeam inserts a team.
+// CreateTeam inserts a team into this workspace.
 func (s *Store) CreateTeam(t *Team) error {
+	t.WorkspaceID = s.workspaceID
 	return s.db.Create(t).Error
 }
 
-// ListTeams returns every team, archived ones included, ordered by name.
+// ListTeams returns every team in this workspace, archived ones included,
+// ordered by name.
 func (s *Store) ListTeams() ([]Team, error) {
 	out := []Team{}
-	err := s.db.Order("name").Find(&out).Error
+	err := s.scoped().Order("name").Find(&out).Error
 	return out, err
 }
 
-// TeamByID returns the team with id, or ErrNotFound.
+// TeamByID returns the team with id in this workspace, or ErrNotFound.
 func (s *Store) TeamByID(id uint) (*Team, error) {
 	var t Team
-	if err := s.db.First(&t, id).Error; err != nil {
+	if err := s.scoped().First(&t, id).Error; err != nil {
 		return nil, translate(err)
 	}
 	return &t, nil
@@ -52,7 +54,7 @@ func (s *Store) TeamByID(id uint) (*Team, error) {
 // returns ErrNotFound.
 func (s *Store) RenameTeam(id uint, name string, at time.Time) (*Team, error) {
 	// UpdateColumns skips the automatic updated_at, so the injected clock decides it.
-	res := s.db.Model(&Team{}).Where("id = ?", id).
+	res := s.scoped().Model(&Team{}).Where("id = ?", id).
 		UpdateColumns(map[string]any{"name": name, "updated_at": at})
 	if res.Error != nil {
 		return nil, res.Error
@@ -68,36 +70,39 @@ func (s *Store) RenameTeam(id uint, name string, at time.Time) (*Team, error) {
 // call succeeds; an unknown id returns ErrNotFound.
 func (s *Store) ArchiveTeam(id uint, at time.Time) error {
 	return s.db.Transaction(func(tx *gorm.DB) error {
-		if err := tx.First(&Team{}, id).Error; err != nil {
+		if err := tx.Where("workspace_id = ?", s.workspaceID).First(&Team{}, id).Error; err != nil {
 			return translate(err)
 		}
 		// The IS NULL guard keeps the first archive time on a repeat call.
-		if err := tx.Model(&Team{}).Where("id = ? AND archived_at IS NULL", id).
+		if err := tx.Model(&Team{}).Where("workspace_id = ? AND id = ? AND archived_at IS NULL", s.workspaceID, id).
 			UpdateColumns(map[string]any{"archived_at": at, "updated_at": at}).Error; err != nil {
 			return err
 		}
-		return tx.Model(&Project{}).Where("team_id = ? AND archived_at IS NULL", id).
+		return tx.Model(&Project{}).Where("workspace_id = ? AND team_id = ? AND archived_at IS NULL", s.workspaceID, id).
 			UpdateColumns(map[string]any{"archived_at": at, "updated_at": at}).Error
 	})
 }
 
 const memberColumns = "team_memberships.team_id, team_memberships.user_id, users.email, users.name, team_memberships.role"
 
-// AllMembers returns every membership with its user, ordered by email.
+// AllMembers returns every membership in this workspace with its user, ordered
+// by email.
 func (s *Store) AllMembers() ([]Member, error) {
 	out := []Member{}
 	err := s.db.Model(&TeamMembership{}).Select(memberColumns).
-		Joins("JOIN users ON users.id = team_memberships.user_id").
+		Where("team_memberships.workspace_id = ?", s.workspaceID).
+		Joins("JOIN users ON users.id = team_memberships.user_id AND users.workspace_id = team_memberships.workspace_id").
 		Order("users.email").Scan(&out).Error
 	return out, err
 }
 
-// MembersOf returns the memberships of one team, ordered by email.
+// MembersOf returns the memberships of one team in this workspace, ordered by email.
 func (s *Store) MembersOf(teamID uint) ([]Member, error) {
 	out := []Member{}
 	err := s.db.Model(&TeamMembership{}).Select(memberColumns).
-		Joins("JOIN users ON users.id = team_memberships.user_id").
+		Where("team_memberships.workspace_id = ?", s.workspaceID).
 		Where("team_memberships.team_id = ?", teamID).
+		Joins("JOIN users ON users.id = team_memberships.user_id AND users.workspace_id = team_memberships.workspace_id").
 		Order("users.email").Scan(&out).Error
 	return out, err
 }
@@ -107,13 +112,13 @@ func (s *Store) MembersOf(teamID uint) ([]Member, error) {
 // An unknown team returns ErrNotFound, an unknown user ErrUnknownUser.
 func (s *Store) ReplaceMemberships(teamID uint, members []MemberRole, at time.Time) error {
 	return s.db.Transaction(func(tx *gorm.DB) error {
-		if err := tx.First(&Team{}, teamID).Error; err != nil {
+		if err := tx.Where("workspace_id = ?", s.workspaceID).First(&Team{}, teamID).Error; err != nil {
 			return translate(err)
 		}
 		keep := make([]uint, 0, len(members))
 		for _, m := range members {
 			var n int64
-			if err := tx.Model(&User{}).Where("id = ?", m.UserID).Count(&n).Error; err != nil {
+			if err := tx.Model(&User{}).Where("workspace_id = ? AND id = ?", s.workspaceID, m.UserID).Count(&n).Error; err != nil {
 				return err
 			}
 			if n == 0 {
@@ -123,7 +128,7 @@ func (s *Store) ReplaceMemberships(teamID uint, members []MemberRole, at time.Ti
 		}
 
 		// An empty NOT IN list matches nothing, so it needs its own branch.
-		del := tx.Where("team_id = ?", teamID)
+		del := tx.Where("workspace_id = ? AND team_id = ?", s.workspaceID, teamID)
 		if len(keep) > 0 {
 			del = del.Where("user_id NOT IN ?", keep)
 		}
@@ -132,7 +137,7 @@ func (s *Store) ReplaceMemberships(teamID uint, members []MemberRole, at time.Ti
 		}
 
 		for _, m := range members {
-			row := TeamMembership{TeamID: teamID, UserID: m.UserID, Role: m.Role, CreatedAt: at}
+			row := TeamMembership{WorkspaceID: s.workspaceID, TeamID: teamID, UserID: m.UserID, Role: m.Role, CreatedAt: at}
 			err := tx.Clauses(clause.OnConflict{
 				Columns:   []clause.Column{{Name: "team_id"}, {Name: "user_id"}},
 				DoUpdates: clause.AssignmentColumns([]string{"role"}),
@@ -147,5 +152,6 @@ func (s *Store) ReplaceMemberships(teamID uint, members []MemberRole, at time.Ti
 
 // CreateMembership links a user to a team with role lead or member.
 func (s *Store) CreateMembership(m *TeamMembership) error {
+	m.WorkspaceID = s.workspaceID
 	return s.db.Create(m).Error
 }

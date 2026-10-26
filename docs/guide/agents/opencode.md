@@ -7,7 +7,7 @@ servers live under `mcp.servers`.
 ## Prerequisites
 
 ```sh
-tstamps login --url https://tstamps.example.com
+tstamps login --url https://tstamps.example.com/w/example.com
 tstamps whoami
 tstamps tokens create agent     # for the agent, shown once
 ```
@@ -33,7 +33,7 @@ install is picked up without a second copy.
 
 ```sh
 opencode mcp add tstamps --global \
-  --env TSTAMPS_URL=https://tstamps.example.com \
+  --env TSTAMPS_URL=https://tstamps.example.com/w/example.com \
   --env TSTAMPS_TOKEN=ts_... \
   -- tstamps mcp
 ```
@@ -50,7 +50,7 @@ Drop `--global` to write the server to the current project's config. Or edit
         "type": "local",
         "command": ["tstamps", "mcp"],
         "environment": {
-          "TSTAMPS_URL": "https://tstamps.example.com",
+          "TSTAMPS_URL": "https://tstamps.example.com/w/example.com",
           "TSTAMPS_TOKEN": "ts_..."
         }
       }

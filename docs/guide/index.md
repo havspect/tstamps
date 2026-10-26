@@ -2,11 +2,11 @@
 
 Team time tracking. Log hours by dragging on a timeline; whoever needs the numbers reads a report.
 
-Tstamps is one `tstamps-server` process holding the SQLite database — or one per hosted workspace — plus the web timeline and the REST API, and a small `tstamps` CLI that each person installs and points at that server. Run it for one company, or host several companies as separate workspaces on the same server. There is no managed service, no per-seat subscription and no second system to reconcile.
+Tstamps is one `tstamps-server` process holding one SQLite database — every workspace is a row in it — plus the web timeline and the REST API, and a small `tstamps` CLI that each person installs and points at that server. Run it for one company, or host several companies as separate workspaces on the same server. There is no managed service, no per-seat subscription and no second system to reconcile.
 
 ## How the pieces fit
 
-- **Workspace** — one company's data: every user, team, project and entry, in its own SQLite file. A server runs either one workspace (`--db`) or several (`--workspace-dir`), each served under its own `/w/{slug}` URL.
+- **Workspace** — one company's data: every user, team, project and entry, in its own rows. A server runs one workspace or several in the same database; every one is served under `/w/{slug}`.
 - **Team** — a group of users that owns projects. A user can be in several teams.
 - **Lead** — a membership role: creates that team's projects and reads every hour booked on them.
 - **Member** — logs their own hours and reads their own totals.
@@ -27,11 +27,11 @@ Vocabulary is [GLOSSARY.md](https://github.com/havspect/tstamps/blob/main/GLOSSA
 
 ## Quick start
 
-If your workspace is already running, install the [CLI](./install-cli.md) and log in. On an operator-hosted server the URL names your workspace, for example `https://time.example.com/w/example.com`; see [Hosted workspaces](./workspaces.md). The commands below are the same in both shapes. They are also the same on all three platforms; the tabs exist because the manual shows every command for every platform.
+If your workspace is already running, install the [CLI](./install-cli.md) and log in. The base URL always names your workspace, for example `https://time.example.com/w/example.com`; see [Hosted workspaces](./workspaces.md). The commands below are the same whether the server holds one workspace or many. They are also the same on all three platforms; the tabs exist because the manual shows every command for every platform.
 
 ::: code-group
 ```sh [Linux]
-tstamps login --url https://time.example.com
+tstamps login --url https://time.example.com/w/example.com
 tstamps whoami
 tstamps start Timeline --note "OAuth callback"
 tstamps stop
@@ -41,7 +41,7 @@ tstamps report --from 2026-10-19 --to 2026-10-26 --by week
 ```
 
 ```sh [macOS]
-tstamps login --url https://time.example.com
+tstamps login --url https://time.example.com/w/example.com
 tstamps whoami
 tstamps start Timeline --note "OAuth callback"
 tstamps stop
@@ -51,7 +51,7 @@ tstamps report --from 2026-10-19 --to 2026-10-26 --by week
 ```
 
 ```powershell [Windows]
-tstamps login --url https://time.example.com
+tstamps login --url https://time.example.com/w/example.com
 tstamps whoami
 tstamps start Timeline --note "OAuth callback"
 tstamps stop

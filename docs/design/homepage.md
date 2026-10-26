@@ -31,11 +31,10 @@ same single binary, served to everyone, signed in or not.
 ### Non-goals
 
 - No pricing table, no “Book a demo”, no invented customer logos or quotes.
-- No sign-up flow on a one-workspace install, or on a hosted server without email
-  configured. A hosted server that has email set up also offers self-service
-  signup ([ADR-0014](../adr/0014-self-service-workspace-signup.md)): the page
-  shows "Create a workspace" in hosted mode, and `/signup` explains when the
-  server has it switched off.
+- No sign-up flow without email configured. A server with email set up offers
+  self-service signup ([ADR-0014](../adr/0014-self-service-workspace-signup.md)):
+  the page shows "Create a workspace", and `/signup` explains when the server
+  has it switched off.
 - No hosted-availability claim. The managed path is marked “coming soon” and
   links only to the GitHub repository: no price, uptime figure, waitlist, signup
   flow, email address or launch date.
@@ -169,7 +168,7 @@ Motion: a single 500ms rise on the hero copy and image, and a slow pulse on the
 │                      └────────────────────────────────────┘  │
 ├──────────────────────────────────────────────────────────────┤
 │ NIGHT SECTION: Yours to run.                                  │
-│ One binary · one SQLite file per workspace · file-copy backup │
+│ One binary · one SQLite database · file-copy backup │
 │ One company · several companies · hosted by us (coming soon)  │
 │ [install commands]                                            │
 ├──────────────────────────────────────────────────────────────┤
@@ -191,12 +190,11 @@ Motion: a single 500ms rise on the hero copy and image, and a slow pulse on the
 - Body: “Tstamps is a team time tracker built around a timeline. Drag on a lane
   to log an entry, drag its edges to retime it, and let the report do the
   remembering. Run it yourself for one company, or several as separate
-  workspaces: one Go binary, one SQLite file per workspace. Hosted by us is
+  workspaces: one Go binary, one SQLite database. Hosted by us is
   coming.”
-- Primary: `Create a workspace` (hosted mode only), leading to `/signup`
+- Primary: `Create a workspace`, leading to `/signup`; the page says when the
+  server has signup switched off.
 - Secondary: `Sign in`
-- On a one-workspace install the hero keeps `Sign in` as the primary and
-  `See the timeline` as the secondary.
 - Trust line: `AGPL-3.0` · `No per-seat pricing` · `One VM`
 
 **The loop**
@@ -233,19 +231,19 @@ Motion: a single 500ms rise on the hero copy and image, and a slow pulse on the
 - Label: `Self-hosted, or hosted by us`
 - Heading: `Yours to run.`
 - Body: “One `tstamps-server` process on one VM, behind Caddy on the same host.
-  Run it for a single company, or host several: each workspace is one SQLite
-  file with its own users and projects. Backups use `VACUUM INTO` and are safe
+  Run it for a single company, or host several: each workspace has its own users
+  and projects in the same SQLite database. Backups use `VACUUM INTO` and are safe
   while the server is running.”
 - Paths, in order:
-  - `One company.` — one workspace, one SQLite file, one admin created from the
+  - `One company.` — one workspace, one SQLite database, one admin created from the
     CLI.
-  - `Several companies.` — one workspace per company, each with its own SQLite
-    file and its own logins. Operators invite companies, or turn on
+  - `Several companies.` — one workspace per company, each with its own users
+    and logins, all in one SQLite database. Operators invite companies, or turn on
     self-service signup with their own email provider.
   - `Hosted by us.` — coming soon; we run the same binary and the same
-    per-workspace files. Link: `Follow along on GitHub` (the repository is the
+    shared database. Link: `Follow along on GitHub` (the repository is the
     only thing that exists).
-- Facts: `One binary`, `One SQLite file per workspace`, `No containers`.
+- Facts: `One binary`, `One SQLite database`, `No containers`.
 - Commands: the release download and `tstamps login`.
 
 **Deliberately small**
@@ -320,9 +318,9 @@ Built with Go and Svelte.
 ## 7. Implementation notes
 
 - New route `/` → `web/src/pages/Home.svelte`, styles scoped to that component.
-- Hosted only: `/signup` and `/signup/verify` → `Signup.svelte` and
+- Signup: `/signup` and `/signup/verify` → `Signup.svelte` and
   `SignupVerify.svelte`, both rendered inside the shell. They call the
-  host-level signup API with `fetch`, because those routes are not in the
+  root-level signup API with `fetch`, because those routes are not in the
   workspace OpenAPI document.
 - `App.svelte` renders `Home` without the app header/main. `/` does not wait for
   the session check or the route guard: it renders on first paint for everyone.
@@ -330,7 +328,7 @@ Built with Go and Svelte.
   of them lands on `/login`.
 - A signed-in visitor stays on `/`; the three sign-in CTAs are `Link`
   components, so they route client-side to `/login`, where the existing guard
-  forwards a signed-in user on to `/timeline`.
+  forwards a signed-in user on to `/w/{slug}/timeline`.
 - Assets in `web/public/screenshots/` (Vite copies them into `web/dist` and
   `go:embed` carries them).
 - The page is public: no data, no page API call, no session requirement. The
@@ -352,7 +350,7 @@ Built with Go and Svelte.
 - [ ] Anonymous `/` renders with no uncaught JS errors (the expected anonymous
       `/me` 401 is the only failed request).
 - [ ] Signed-in `/` renders the homepage; `Sign in` reaches `/timeline`.
-- [ ] A hosted `/` offers `Create a workspace`, which reaches `/signup`; when the
+- [ ] `/` offers `Create a workspace`, which reaches `/signup`; when the
       server has no email configured, submitting says signup is not enabled and
       creates nothing.
 - [ ] The self-host section covers all three paths — one company, several

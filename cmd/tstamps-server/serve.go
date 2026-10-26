@@ -15,7 +15,6 @@ import (
 	"github.com/havspect/tstamps/internal/api"
 	"github.com/havspect/tstamps/internal/clock"
 	"github.com/havspect/tstamps/internal/config"
-	"github.com/havspect/tstamps/internal/store"
 	"github.com/havspect/tstamps/internal/workspace"
 )
 
@@ -28,47 +27,29 @@ func serve(args []string, stderr io.Writer) int {
 	log := slog.New(slog.NewTextHandler(stderr, &slog.HandlerOptions{Level: cfg.LogLevel}))
 	slog.SetDefault(log)
 
-	var handler http.Handler
-	if cfg.WorkspaceDir != "" {
-		var signup http.Handler
-		if cfg.SignupEnabled() {
-			endpoint := cfg.EmailAPIURL
-			if endpoint == "" {
-				endpoint = workspace.DefaultEmailEndpoint
-			}
-			svc := workspace.NewSignup(cfg.WorkspaceDir, cfg.PublicURL, &workspace.Resend{
-				Endpoint: endpoint, Key: cfg.EmailAPIKey, From: cfg.EmailFrom,
-			}, clock.System{})
-			signup = api.NewSignupHandler(svc, clock.System{})
-			log.Info("self-service signup enabled", "public_url", cfg.PublicURL)
-		} else if cfg.EmailAPIKey != "" || cfg.EmailFrom != "" || cfg.PublicURL != "" {
-			log.Warn("self-service signup is ignored without --workspace-dir")
+	var signup http.Handler
+	if cfg.SignupEnabled() {
+		endpoint := cfg.EmailAPIURL
+		if endpoint == "" {
+			endpoint = workspace.DefaultEmailEndpoint
 		}
-		host, err := workspace.New(cfg.WorkspaceDir, clock.System{}, signup)
-		if err != nil {
-			log.Error("open workspace directory", "dir", cfg.WorkspaceDir, "error", err)
-			return 1
-		}
-		defer host.Close()
-		handler = host
-	} else {
-		st, err := store.Open(cfg.DB)
-		if err != nil {
-			log.Error("open database", "db", cfg.DB, "error", err)
-			return 1
-		}
-		defer st.Close()
-
-		if err := st.Migrate(); err != nil {
-			log.Error("migrate database", "db", cfg.DB, "error", err)
-			return 1
-		}
-		handler = api.New(st, clock.System{})
+		svc := workspace.NewSignup(cfg.DB, cfg.PublicURL, &workspace.Resend{
+			Endpoint: endpoint, Key: cfg.EmailAPIKey, From: cfg.EmailFrom,
+		}, clock.System{})
+		signup = api.NewSignupHandler(svc, clock.System{})
+		log.Info("self-service signup enabled", "public_url", cfg.PublicURL)
 	}
+
+	host, err := workspace.New(cfg.DB, clock.System{}, signup)
+	if err != nil {
+		log.Error("open database", "db", cfg.DB, "error", err)
+		return 1
+	}
+	defer host.Close()
 
 	srv := &http.Server{
 		Addr:              cfg.Addr,
-		Handler:           handler,
+		Handler:           host,
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       30 * time.Second,
 		WriteTimeout:      60 * time.Second,
@@ -84,11 +65,7 @@ func serve(args []string, stderr io.Writer) int {
 		return 1
 	}
 
-	attrs := []any{"addr", ln.Addr().String(), "mode", "one-workspace", "db", cfg.DB}
-	if cfg.WorkspaceDir != "" {
-		attrs = []any{"addr", ln.Addr().String(), "mode", "hosted", "workspace_dir", cfg.WorkspaceDir}
-	}
-	log.Info("serving", attrs...)
+	log.Info("serving", "addr", ln.Addr().String(), "db", cfg.DB)
 
 	listenErr := make(chan error, 1)
 	go func() { listenErr <- srv.Serve(ln) }()

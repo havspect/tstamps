@@ -63,12 +63,12 @@ func TestLogin(t *testing.T) {
 }
 
 func TestWorkspaceBaseURL(t *testing.T) {
-	dir := filepath.Join(t.TempDir(), "workspaces")
-	password, err := workspace.Create(dir, "example.com", "ada@example.com", "Ada Lovelace")
+	db := filepath.Join(t.TempDir(), "tstamps.db")
+	password, err := workspace.Create(db, "example.com", "ada@example.com", "Ada Lovelace")
 	if err != nil {
 		t.Fatalf("create workspace: %v", err)
 	}
-	host, err := workspace.New(dir, clock.System{}, nil)
+	host, err := workspace.New(db, clock.System{}, nil)
 	if err != nil {
 		t.Fatalf("workspace host: %v", err)
 	}

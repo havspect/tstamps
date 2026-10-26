@@ -11,15 +11,13 @@ import (
 )
 
 // Config holds the server settings every command that opens a database needs.
-// Exactly one of DB and WorkspaceDir is set.
 type Config struct {
-	Addr         string     // listen address
-	DB           string     // one-workspace sqlite file path
-	WorkspaceDir string     // hosted mode: one sqlite file per workspace
-	LogLevel     slog.Level // minimum level written to stderr
+	Addr     string     // listen address
+	DB       string     // sqlite database file holding every workspace
+	LogLevel slog.Level // minimum level written to stderr
 
 	// Self-service signup email. Enabled only when all three of EmailAPIKey,
-	// EmailFrom and PublicURL are set and the server is hosted.
+	// EmailFrom and PublicURL are set.
 	EmailAPIKey string
 	EmailAPIURL string
 	EmailFrom   string
@@ -42,14 +40,13 @@ func Load(args []string, getenv func(string) string) (Config, error) {
 	}
 
 	cfg := Config{
-		Addr:         envOr("TSTAMPS_ADDR", DefaultAddr),
-		DB:           envOr("TSTAMPS_DB", DefaultDB),
-		WorkspaceDir: getenv("TSTAMPS_WORKSPACE_DIR"),
-		LogLevel:     slog.LevelInfo,
-		EmailAPIKey:  getenv("TSTAMPS_EMAIL_API_KEY"),
-		EmailAPIURL:  getenv("TSTAMPS_EMAIL_API_URL"),
-		EmailFrom:    getenv("TSTAMPS_EMAIL_FROM"),
-		PublicURL:    getenv("TSTAMPS_PUBLIC_URL"),
+		Addr:        envOr("TSTAMPS_ADDR", DefaultAddr),
+		DB:          envOr("TSTAMPS_DB", DefaultDB),
+		LogLevel:    slog.LevelInfo,
+		EmailAPIKey: getenv("TSTAMPS_EMAIL_API_KEY"),
+		EmailAPIURL: getenv("TSTAMPS_EMAIL_API_URL"),
+		EmailFrom:   getenv("TSTAMPS_EMAIL_FROM"),
+		PublicURL:   getenv("TSTAMPS_PUBLIC_URL"),
 	}
 	if v := getenv("TSTAMPS_LOG_LEVEL"); v != "" {
 		if err := cfg.LogLevel.UnmarshalText([]byte(v)); err != nil {
@@ -60,8 +57,7 @@ func Load(args []string, getenv func(string) string) (Config, error) {
 	fs := flag.NewFlagSet("tstamps-server", flag.ContinueOnError)
 	fs.SetOutput(io.Discard) // the caller reports the error, so no flag chatter on stderr
 	fs.StringVar(&cfg.Addr, "addr", cfg.Addr, "listen address")
-	fs.StringVar(&cfg.DB, "db", cfg.DB, "sqlite file path (one workspace)")
-	fs.StringVar(&cfg.WorkspaceDir, "workspace-dir", cfg.WorkspaceDir, "directory of workspace databases (hosted mode)")
+	fs.StringVar(&cfg.DB, "db", cfg.DB, "sqlite database file")
 	fs.StringVar(&cfg.EmailAPIKey, "email-api-key", cfg.EmailAPIKey, "email API key for self-service signup")
 	fs.StringVar(&cfg.EmailAPIURL, "email-api-url", cfg.EmailAPIURL, "email API endpoint (default https://api.resend.com/emails)")
 	fs.StringVar(&cfg.EmailFrom, "email-from", cfg.EmailFrom, "From address for signup email")
@@ -69,21 +65,6 @@ func Load(args []string, getenv func(string) string) (Config, error) {
 	level := fs.String("log-level", cfg.LogLevel.String(), "debug, info, warn or error")
 	if err := fs.Parse(args); err != nil {
 		return Config{}, err
-	}
-
-	dbSet := false
-	fs.Visit(func(f *flag.Flag) {
-		if f.Name == "db" {
-			dbSet = true
-		}
-	})
-	// TSTAMPS_DB defaults to a path, so only an explicitly supplied value counts
-	// against hosted mode.
-	if cfg.WorkspaceDir != "" && (dbSet || getenv("TSTAMPS_DB") != "") {
-		return Config{}, errors.New("set either --db or --workspace-dir, not both")
-	}
-	if cfg.WorkspaceDir != "" {
-		cfg.DB = ""
 	}
 	if err := cfg.LogLevel.UnmarshalText([]byte(*level)); err != nil {
 		return Config{}, err
@@ -94,10 +75,10 @@ func Load(args []string, getenv func(string) string) (Config, error) {
 	return cfg, nil
 }
 
-// SignupEnabled reports whether this server can offer self-service signup:
-// hosted mode plus the three email settings it needs.
+// SignupEnabled reports whether this server can offer self-service signup: the
+// three email settings it needs are present.
 func (c Config) SignupEnabled() bool {
-	return c.WorkspaceDir != "" && c.EmailAPIKey != "" && c.EmailFrom != "" && c.PublicURL != ""
+	return c.EmailAPIKey != "" && c.EmailFrom != "" && c.PublicURL != ""
 }
 
 // validateSignup refuses a half-configured email path, which would otherwise

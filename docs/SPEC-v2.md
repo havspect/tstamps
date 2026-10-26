@@ -18,7 +18,7 @@ SAML, SCIM or directory sync, per-user erasure, automatic workspace deletion, pl
 
 ### Per-workspace SSO
 
-SSO is OIDC only. Each workspace configures one identity provider: issuer URL, client id, client secret, scopes (default `openid email profile`). Setup is admin-only, in the workspace admin console, and includes a **Test** action that completes a real authorization before the configuration is saved as verified. Secrets are stored in the workspace database; the Operator can read the file, as with every other secret.
+SSO is OIDC only. Each workspace configures one identity provider: issuer URL, client id, client secret, scopes (default `openid email profile`). Setup is admin-only, in the workspace admin console, and includes a **Test** action that completes a real authorization before the configuration is saved as verified. Secrets are stored in the workspace's rows in the `--db` database; the Operator can read the file, as with every other secret.
 
 - Once verified, SSO is **enforced**: password login is refused for every user except the **Break-glass admin**.
 - Users are provisioned just in time on the first successful login: the `email` claim must be present and `email_verified` true. An existing user with that lowercased email is adopted, not duplicated. A new user joins with no team; admins assign teams and roles as in v1.
@@ -72,7 +72,7 @@ The workspace stores: billing contact email (default the signup creator, editabl
 
 `past_due` is a grace period, not a lockout. Entering `suspended` ends every running entry at that instant with the note `stopped on suspension` (the same rule as deactivating a user, ADR-0004), because a running entry cannot be stopped through a read-only API.
 
-Suspension is read-only, not a lockout: everyone can sign in, read the timeline and reports, export CSV, and reach billing. Every non-GET is refused with `402 urn:tstamps:error:workspace-suspended`, except `/auth/*`, `/me`, `/billing/*`, and the Stripe webhook. Export never depends on payment state. Data stays until the Operator deletes the filesystem directory.
+Suspension is read-only, not a lockout: everyone can sign in, read the timeline and reports, export CSV, and reach billing. Every non-GET is refused with `402 urn:tstamps:error:workspace-suspended`, except `/auth/*`, `/me`, `/billing/*`, and the Stripe webhook. Export never depends on payment state. Data stays until the Operator deletes the workspace with a command.
 
 State is derived on request: a trial whose end has passed transitions to `suspended` once, in a transaction, lazily on the next request; a nightly sweep sends the trial-ending and payment-failed emails. Reactivating does not restart the stopped entry.
 
@@ -84,11 +84,11 @@ Email keeps using the existing Resend integration, which slice 2 now requires in
 
 ### Operator console
 
-A separate app at `/operator`, authenticated by an Operator account (argon2id password + TOTP) in a host-level database, with its own cookie scoped to that path. It lists workspaces with state, slug, created, trial end, last activity, user/project/entry counts and backup age. It may extend a trial and suspend or reactivate a workspace, and every action writes an operator audit line.
+A separate app at `/operator`, authenticated by an Operator account (argon2id password + TOTP) in the `--db` database, with its own cookie scoped to that path. It lists workspaces with state, slug, created, trial end, last activity, user/project/entry counts and backup age. It may extend a trial and suspend or reactivate a workspace, and every action writes an operator audit line.
 
-It may not open a workspace, read entries, names or notes, impersonate anyone, or delete anything. Support access is a customer-created user. Deletion stays a filesystem action. Metadata counts are read from each workspace database on demand; the console never returns content.
+It may not open a workspace, read entries, names or notes, impersonate anyone, or delete anything. Support access is a customer-created user. Deletion stays a CLI action. Metadata counts come from one query over the database; the console never returns content.
 
-A workspace's record lives in `<workspace-dir>/server.db` (SQLite). At boot the server adopts any directory with no record, so a restored backup or a hand-made workspace is never invisible. The all-workspace backup now includes `server.db`.
+A workspace's record is a row in the `--db` database beside its tenant rows ([ADR-0019](./adr/0019-workspaces-share-one-sqlite-file.md)). The backup already includes it, so subscription state cannot be restored out of step with the workspaces it describes.
 
 ### Workspace admin additions
 
@@ -118,7 +118,7 @@ A user installs the app, signs in through their workspace's IdP, starts a timer 
 
 ## API additions
 
-All under the existing `/api/v1`, workspace-prefixed in hosted mode, additive only.
+All under `/w/{slug}/api/v1`, additive only. Host-level signup, webhook and operator routes stay at the root.
 
 | Method | Path | Slice |
 | --- | --- | --- |
@@ -142,9 +142,9 @@ Host-level operator routes (`/operator/*`) are outside the workspace OpenAPI doc
 
 ## Schema and compatibility
 
-Additive `AutoMigrate` fields only: `users.totp_secret`, `users.is_break_glass`; `workspaces_oidc`; `oauth_clients`, `oauth_codes`, `oauth_access_tokens`, `oauth_refresh_tokens`; `entries.client_id` with a per-user unique index. The host database holds `operator`, `operator_audit`, `workspace_state`, `billing`.
+Additive `AutoMigrate` fields only: `users.totp_secret`, `users.is_break_glass`; `workspaces_oidc`; `oauth_clients`, `oauth_codes`, `oauth_access_tokens`, `oauth_refresh_tokens`; `entries.client_id` with a per-user unique index. The `--db` database also holds `operator`, `operator_audit`, `workspace_state`, `billing`, beside the workspace's tenant rows.
 
-A suspended workspace still answers `/healthz` with its state and schema version. An older binary refuses a newer database, as in v1; every slice is therefore a one-way upgrade and ships with the pre-upgrade backup noted in `docs/guide/backup-upgrade.md`.
+A suspended workspace still answers `/w/{slug}/healthz` with its state and schema version. An older binary refuses a newer database, as in v1; every slice is therefore a one-way upgrade and ships with the pre-upgrade backup noted in `docs/guide/backup-upgrade.md`.
 
 ## Testing and definition of done
 
@@ -153,7 +153,7 @@ The existing suites keep their promises, plus:
 - **SSO**: enforced login matrix (password refused, JIT create, adopt by email, unverified email refused, break-glass works), IdP outage, SSO disable, break-glass reset by the Operator.
 - **OAuth**: discovery documents, PKCE downgrade refused, code replay refused, refresh rotation and reuse detection, cross-workspace token refused, scope narrowing, consent revoke, redirect URI validation.
 - **Billing**: state table from webhook events including out-of-order and unknown customer, trial lazy transition, read-only matrix (every non-GET refused, export and billing allowed), running entry stopped exactly once on suspension.
-- **Operator**: metadata only (a test asserts no content field can be returned), state actions audited, adoption of an unregistered workspace on boot, `server.db` in the all-workspace backup.
+- **Operator**: metadata only (a test asserts no content field can be returned), state actions audited, workspace state and billing in the same database and backup as the workspaces.
 - **Mobile**: timeline math shared with web golden values, outbox retry idempotency, adopt-server-running-entry, last-write-wins edit, reports parity against the API.
 - **Gate** (`just check`), on every push: `gofmt`, `go vet`, curated `golangci-lint`, `go test -race`; `svelte-check`, Prettier check, ESLint, Vitest; `dart format --set-exit-if-changed`, `flutter analyze --fatal-infos`, `flutter test`. Coverage is measured on changed lines (floor 80%), not the whole repo. A new behaviour without a test, or a TODO without an issue link, fails review.
 

@@ -1,6 +1,6 @@
 # v2 sells one flat workspace subscription, and suspension is read-only
 
-Status: draft, 2026-10-24. Amends [ADR-0011](0011-host-workspaces-as-separate-sqlite-files.md), which left billing, suspension and deletion outside the design, and [ADR-0014](0014-self-service-workspace-signup.md), whose open signup now waits for payment.
+Status: draft, 2026-10-24. Amended by [ADR-0019](0019-workspaces-share-one-sqlite-file.md): the workspace state and billing mapping live in the `--db` database, not a host-level file beside the workspace files. Amends [ADR-0011](0011-host-workspaces-as-separate-sqlite-files.md), which left billing, suspension and deletion outside the design, and [ADR-0014](0014-self-service-workspace-signup.md), whose open signup now waits for payment.
 
 v2 is a paid service the Operator runs. A workspace costs one flat price with unlimited users and starts with a 14-day trial. Stripe holds the subscription, invoices and payment methods; tstamps stores the billing contact, Stripe ids and the dates it needs to decide a state. When a trial ends or a payment stays failed, the workspace becomes **suspended**: everyone can still sign in, read the timeline, read reports, export CSV and pay; every write is refused. Data is never deleted automatically. Until Stripe ships, signup is operator-approved, so no free workspace exists without a decision.
 

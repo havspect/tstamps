@@ -35,7 +35,7 @@ Point an MCP client at the `tstamps` binary and pass the server URL and token as
       "command": "tstamps",
       "args": ["mcp"],
       "env": {
-        "TSTAMPS_URL": "https://time.example.com",
+        "TSTAMPS_URL": "https://time.example.com/w/example.com",
         "TSTAMPS_TOKEN": "ts_..."
       }
     }
@@ -45,7 +45,7 @@ Point an MCP client at the `tstamps` binary and pass the server URL and token as
 
 Put this in the MCP client's own config file. On Windows, use the full path to `tstamps.exe` if the client does not inherit `Path`, for example `%LOCALAPPDATA%\tstamps\tstamps.exe`.
 
-On an operator-hosted server, set `TSTAMPS_URL` to the workspace URL, `https://time.example.com/w/example.com`, and use a token from that workspace. A token minted elsewhere is rejected. See [Hosted workspaces](./workspaces.md).
+Set `TSTAMPS_URL` to the workspace URL, `https://time.example.com/w/example.com`, and use a token from that workspace. A token minted elsewhere is rejected. See [Hosted workspaces](./workspaces.md).
 
 If `TSTAMPS_URL` and `TSTAMPS_TOKEN` are omitted, the MCP server falls back to the same rules as the CLI: flags, then environment, then `~/.config/tstamps/config.json`.
 

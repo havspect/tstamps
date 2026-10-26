@@ -3,10 +3,8 @@ package workspace
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
 	"log/slog"
 	"net/http"
-	"os"
 	"strings"
 	"sync"
 
@@ -19,45 +17,39 @@ import (
 // ErrClosed is returned once the host has started shutting down.
 var ErrClosed = errors.New("workspace host closed")
 
-// Host routes /w/{slug}/... to a cached API handler for that workspace's own
-// SQLite database. Tenant selection happens before authentication, so a session
-// or token is only ever looked up in the workspace named by the URL.
+// Host routes /w/{slug}/... to a cached API handler for that workspace. Tenant
+// selection happens before authentication; the handler only sees a Store scoped
+// to the workspace named by the URL.
 type Host struct {
-	dir    string
+	reg    *store.Registry
 	clock  clock.Clock
 	web    http.Handler
 	signup http.Handler
 	serve  http.Handler
 
 	mu     sync.Mutex
-	cache  map[string]*instance
+	cache  map[string]http.Handler
 	closed bool
 }
 
-type instance struct {
-	ready   chan struct{}
-	handler http.Handler
-	store   *store.Store
-	err     error
-}
-
-// New serves the workspace databases in dir. The directory must already exist;
-// New never creates a workspace. signup answers the host-level signup routes and
-// may be nil, which makes them answer "not enabled".
-func New(dir string, clk clock.Clock, signup http.Handler) (*Host, error) {
-	info, err := os.Stat(dir)
+// New serves the one database at db, migrating it once at boot. signup answers
+// the host-level signup routes and may be nil, which makes them answer "not
+// enabled".
+func New(db string, clk clock.Clock, signup http.Handler) (*Host, error) {
+	reg, err := store.OpenRegistry(db)
 	if err != nil {
 		return nil, err
 	}
-	if !info.IsDir() {
-		return nil, fmt.Errorf("%s is not a directory", dir)
+	if err := reg.Migrate(); err != nil {
+		_ = reg.Close()
+		return nil, err
 	}
 	if signup == nil {
 		signup = api.NewSignupHandler(nil, clk)
 	}
 	h := &Host{
-		dir: dir, clock: clk, web: web.HostedHandler(), signup: signup,
-		cache: make(map[string]*instance),
+		reg: reg, clock: clk, web: web.HostedHandler(), signup: signup,
+		cache: make(map[string]http.Handler),
 	}
 	h.serve = api.SecurityHeaders(http.HandlerFunc(h.route))
 	return h, nil
@@ -67,8 +59,7 @@ func (h *Host) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	h.serve.ServeHTTP(w, r)
 }
 
-// Close releases every cached workspace database. It waits for an in-flight
-// first request to finish opening its store.
+// Close releases the shared database. Cached handlers hold no separate handles.
 func (h *Host) Close() error {
 	h.mu.Lock()
 	if h.closed {
@@ -76,21 +67,9 @@ func (h *Host) Close() error {
 		return nil
 	}
 	h.closed = true
-	cached := h.cache
-	h.cache = make(map[string]*instance)
+	h.cache = map[string]http.Handler{}
 	h.mu.Unlock()
-
-	var errs []error
-	for _, inst := range cached {
-		<-inst.ready
-		if inst.store != nil {
-			if err := inst.store.Close(); err != nil {
-				errs = append(errs, err)
-			}
-			inst.store = nil
-		}
-	}
-	return errors.Join(errs...)
+	return h.reg.Close()
 }
 
 func (h *Host) route(w http.ResponseWriter, r *http.Request) {
@@ -98,11 +77,34 @@ func (h *Host) route(w http.ResponseWriter, r *http.Request) {
 		h.health(w)
 		return
 	}
+	if r.URL.Path == "/robots.txt" {
+		api.Robots(w, r)
+		return
+	}
+	if r.URL.Path == "/sitemap.xml" {
+		api.Sitemap(w, r)
+		return
+	}
 	// Signup happens before a workspace exists, so it is answered here rather
 	// than by the per-workspace API.
 	if strings.HasPrefix(r.URL.Path, "/api/v1/signup") {
 		h.signup.ServeHTTP(w, r)
 		return
+	}
+	// One workspace means one sign-in page: skip the slug prompt.
+	if r.URL.Path == "/api/v1/workspace" {
+		h.onlyWorkspaceJSON(w)
+		return
+	}
+	if r.URL.Path == "/login" {
+		if slug, ok, err := h.onlySlug(); err != nil {
+			slog.Error("read workspaces", "error", err)
+			api.WriteInternal(w)
+			return
+		} else if ok {
+			http.Redirect(w, r, "/w/"+slug+"/login", http.StatusFound)
+			return
+		}
 	}
 
 	slug, rest, ok := splitWorkspace(r.URL.Path)
@@ -119,7 +121,7 @@ func (h *Host) route(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	inst, err := h.instance(slug)
+	handler, err := h.instance(slug)
 	switch {
 	case errors.Is(err, ErrNotFound), errors.Is(err, ErrInvalidSlug):
 		h.notFound(w, rest)
@@ -138,62 +140,71 @@ func (h *Host) route(w http.ResponseWriter, r *http.Request) {
 	r = r.Clone(r.Context())
 	r.URL.Path = rest
 	r = api.WithWorkspace(r, slug)
-	inst.handler.ServeHTTP(w, r)
+	handler.ServeHTTP(w, r)
 }
 
-func (h *Host) instance(slug string) (*instance, error) {
+func (h *Host) onlySlug() (string, bool, error) {
+	workspaces, err := h.reg.Workspaces()
+	if err != nil {
+		return "", false, err
+	}
+	if len(workspaces) != 1 {
+		return "", false, nil
+	}
+	return workspaces[0].Slug, true, nil
+}
+
+// onlyWorkspaceJSON tells the SPA the sole workspace's slug, so a client-side
+// link to /login can skip the prompt. It never lists a multi-workspace server.
+func (h *Host) onlyWorkspaceJSON(w http.ResponseWriter) {
+	slug, ok, err := h.onlySlug()
+	if err != nil {
+		slog.Error("read workspaces", "error", err)
+		api.WriteInternal(w)
+		return
+	}
+	if !ok {
+		slug = ""
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
+	_ = json.NewEncoder(w).Encode(struct {
+		Slug string `json:"slug"`
+	}{slug})
+}
+
+func (h *Host) instance(slug string) (http.Handler, error) {
 	h.mu.Lock()
 	if h.closed {
 		h.mu.Unlock()
 		return nil, ErrClosed
 	}
-	if inst, ok := h.cache[slug]; ok {
+	if handler, ok := h.cache[slug]; ok {
 		h.mu.Unlock()
-		<-inst.ready
-		return inst, inst.err
+		return handler, nil
 	}
-	inst := &instance{ready: make(chan struct{})}
-	h.cache[slug] = inst
 	h.mu.Unlock()
 
-	path, err := DatabasePath(h.dir, slug)
-	var st *store.Store
-	var handler http.Handler
-	if err == nil {
-		_, err = os.Stat(path)
-		if errors.Is(err, os.ErrNotExist) {
-			err = ErrNotFound
-		}
+	ws, err := h.reg.WorkspaceBySlug(slug)
+	if errors.Is(err, store.ErrNotFound) {
+		return nil, ErrNotFound
 	}
-	if err == nil {
-		st, err = store.Open(path)
+	if err != nil {
+		return nil, err
 	}
-	if err == nil {
-		err = st.Migrate()
-	}
-	if err == nil {
-		handler = api.New(st, h.clock)
-	}
-	if err != nil && st != nil {
-		_ = st.Close()
-		st = nil
-	}
+	handler := api.New(h.reg.ForWorkspace(ws.ID), h.clock)
 
 	h.mu.Lock()
-	if err == nil && h.closed {
-		err = ErrClosed
+	defer h.mu.Unlock()
+	if h.closed {
+		return nil, ErrClosed
 	}
-	if err != nil && st != nil {
-		_ = st.Close()
-		st = nil
+	// Two first requests can race; either handler is equivalent, keep one.
+	if cached, ok := h.cache[slug]; ok {
+		return cached, nil
 	}
-	inst.store, inst.handler, inst.err = st, handler, err
-	close(inst.ready)
-	if err != nil {
-		delete(h.cache, slug)
-	}
-	h.mu.Unlock()
-	return inst, err
+	h.cache[slug] = handler
+	return handler, nil
 }
 
 func splitWorkspace(path string) (slug, rest string, ok bool) {
@@ -218,7 +229,7 @@ func (h *Host) notFound(w http.ResponseWriter, rest string) {
 }
 
 func (h *Host) health(w http.ResponseWriter) {
-	if _, err := os.ReadDir(h.dir); err != nil {
+	if err := h.reg.Ping(); err != nil {
 		slog.Error("health", "error", err)
 		api.WriteUnavailable(w)
 		return

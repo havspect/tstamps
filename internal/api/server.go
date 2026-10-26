@@ -114,6 +114,12 @@ func sitemap(w http.ResponseWriter, r *http.Request) {
 	_, _ = fmt.Fprintf(w, xml.Header+`<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"><url><loc>%s/</loc></url></urlset>`+"\n", html.EscapeString(origin(r)))
 }
 
+// Robots serves the crawler rules at the host root.
+func Robots(w http.ResponseWriter, r *http.Request) { robots(w, r) }
+
+// Sitemap serves the per-origin sitemap at the host root.
+func Sitemap(w http.ResponseWriter, r *http.Request) { sitemap(w, r) }
+
 // Spec returns the generated OpenAPI document, for `tstamps openapi`.
 func Spec() ([]byte, error) {
 	rec := httptest.NewRecorder()

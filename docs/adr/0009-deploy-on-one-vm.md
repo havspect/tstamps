@@ -1,6 +1,6 @@
 # Production runs on one VM: systemd and Caddy, no container
 
-Status: one process may now host several workspaces in hosted mode ([ADR-0011](0011-host-workspaces-as-separate-sqlite-files.md)); the one-VM systemd and Caddy deployment is unchanged.
+Status: one process may serve several workspaces ([ADR-0019](0019-workspaces-share-one-sqlite-file.md)); the one-VM systemd and Caddy deployment is unchanged.
 
 A workspace is deployed as the `tstamps-server` binary on one VM, under systemd, behind Caddy on the same host. Caddy terminates TLS and proxies to `127.0.0.1:8080`; systemd owns the process, the data directory and the nightly backup timer. The unit files and Caddyfile are in `deploy/`.
 

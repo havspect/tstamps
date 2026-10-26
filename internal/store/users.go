@@ -10,10 +10,11 @@ import (
 // ErrLastAdmin is returned when an update would leave the workspace without an active admin.
 var ErrLastAdmin = errors.New("last admin")
 
-// ListUsers returns every user, deactivated ones included, ordered by email.
+// ListUsers returns every user in this workspace, deactivated ones included,
+// ordered by email.
 func (s *Store) ListUsers() ([]User, error) {
 	var users []User
-	err := s.db.Order("email").Find(&users).Error
+	err := s.scoped().Order("email").Find(&users).Error
 	return users, err
 }
 
@@ -23,14 +24,15 @@ func (s *Store) ListUsers() ([]User, error) {
 // nobody can reach.
 func (s *Store) SaveUser(u *User, at time.Time) error {
 	return s.db.Transaction(func(tx *gorm.DB) error {
+		ws := tx.Where("workspace_id = ?", s.workspaceID)
 		var current User
-		if err := tx.First(&current, u.ID).Error; err != nil {
+		if err := ws.First(&current, u.ID).Error; err != nil {
 			return translate(err)
 		}
 		if current.IsAdmin && current.Active && (!u.IsAdmin || !u.Active) {
 			// Count and write in one transaction so two concurrent demotions cannot both pass.
 			var admins int64
-			err := tx.Model(&User{}).Where("is_admin AND active").Count(&admins).Error
+			err := tx.Model(&User{}).Where("workspace_id = ? AND is_admin AND active", s.workspaceID).Count(&admins).Error
 			if err != nil {
 				return err
 			}
@@ -40,12 +42,12 @@ func (s *Store) SaveUser(u *User, at time.Time) error {
 		}
 		if current.Active && !u.Active {
 			if err := tx.Model(&Entry{}).
-				Where("user_id = ? AND end_at IS NULL AND deleted_at IS NULL", u.ID).
+				Where("workspace_id = ? AND user_id = ? AND end_at IS NULL AND deleted_at IS NULL", s.workspaceID, u.ID).
 				UpdateColumns(map[string]any{"end_at": at, "note": DeactivationNote, "updated_at": at}).Error; err != nil {
 				return err
 			}
 		}
-		return tx.Model(&User{}).Where("id = ?", u.ID).Updates(map[string]any{
+		return tx.Model(&User{}).Where("workspace_id = ? AND id = ?", s.workspaceID, u.ID).Updates(map[string]any{
 			"name":     u.Name,
 			"timezone": u.Timezone,
 			"is_admin": u.IsAdmin,
@@ -59,7 +61,7 @@ func (s *Store) SaveUser(u *User, at time.Time) error {
 // and every token that is not revoked yet. An unknown id returns ErrNotFound.
 func (s *Store) SetUserPassword(id uint, hash string, mustChange bool, keepSessionID uint, at time.Time) error {
 	return s.db.Transaction(func(tx *gorm.DB) error {
-		res := tx.Model(&User{}).Where("id = ?", id).
+		res := tx.Model(&User{}).Where("workspace_id = ? AND id = ?", s.workspaceID, id).
 			Updates(map[string]any{"password_hash": hash, "must_change_password": mustChange})
 		if res.Error != nil {
 			return res.Error
@@ -67,11 +69,12 @@ func (s *Store) SetUserPassword(id uint, hash string, mustChange bool, keepSessi
 		if res.RowsAffected == 0 {
 			return ErrNotFound
 		}
-		if err := tx.Where("user_id = ? AND id <> ?", id, keepSessionID).
+		if err := tx.Where("workspace_id = ? AND user_id = ? AND id <> ?", s.workspaceID, id, keepSessionID).
 			Delete(&Session{}).Error; err != nil {
 			return err
 		}
-		return tx.Model(&APIToken{}).Where("user_id = ? AND revoked_at IS NULL", id).
+		return tx.Model(&APIToken{}).
+			Where("workspace_id = ? AND user_id = ? AND revoked_at IS NULL", s.workspaceID, id).
 			Update("revoked_at", at).Error
 	})
 }

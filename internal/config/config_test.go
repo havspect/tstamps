@@ -34,26 +34,6 @@ func TestLoad(t *testing.T) {
 			want: Config{Addr: "127.0.0.1:9000", DB: "flags.db"},
 		},
 		{
-			name: "hosted from env",
-			env:  map[string]string{"TSTAMPS_WORKSPACE_DIR": "/srv/workspaces"},
-			want: Config{Addr: ":8080", WorkspaceDir: "/srv/workspaces"},
-		},
-		{
-			name: "hosted from flag",
-			args: []string{"--workspace-dir", "workspaces"},
-			want: Config{Addr: ":8080", WorkspaceDir: "workspaces"},
-		},
-		{
-			name:    "hosted and env db",
-			env:     map[string]string{"TSTAMPS_WORKSPACE_DIR": "/srv/workspaces", "TSTAMPS_DB": "/srv/one.db"},
-			wantErr: true,
-		},
-		{
-			name:    "hosted and db flag",
-			args:    []string{"--workspace-dir", "workspaces", "--db", "one.db"},
-			wantErr: true,
-		},
-		{
 			name:    "unknown flag",
 			args:    []string{"--nope"},
 			wantErr: true,
@@ -71,26 +51,24 @@ func TestLoad(t *testing.T) {
 		{
 			name: "signup configured",
 			args: []string{
-				"--workspace-dir", "workspaces",
 				"--email-api-key", "re_key",
 				"--email-from", "Tstamps <hello@example.com>",
 				"--public-url", "https://time.example.com/",
 			},
 			want: Config{
-				Addr: ":8080", WorkspaceDir: "workspaces",
+				Addr: ":8080", DB: "./tstamps.db",
 				EmailAPIKey: "re_key", EmailFrom: "Tstamps <hello@example.com>",
 				PublicURL: "https://time.example.com",
 			},
 		},
 		{
 			name:    "signup partial is refused",
-			args:    []string{"--workspace-dir", "workspaces", "--email-api-key", "re_key"},
+			args:    []string{"--email-api-key", "re_key"},
 			wantErr: true,
 		},
 		{
 			name: "signup public url must be absolute",
 			args: []string{
-				"--workspace-dir", "workspaces",
 				"--email-api-key", "re_key", "--email-from", "x@example.com", "--public-url", "/",
 			},
 			wantErr: true,
@@ -122,18 +100,17 @@ func TestLoad(t *testing.T) {
 }
 
 func TestSignupEnabled(t *testing.T) {
-	full := Config{WorkspaceDir: "ws", EmailAPIKey: "k", EmailFrom: "f@example.com", PublicURL: "https://x.example"}
+	full := Config{DB: "x.db", EmailAPIKey: "k", EmailFrom: "f@example.com", PublicURL: "https://x.example"}
 	if !full.SignupEnabled() {
-		t.Fatal("a hosted server with all email settings must offer signup")
+		t.Fatal("a server with all email settings must offer signup")
 	}
 	for _, tt := range []struct {
 		name string
 		cfg  Config
 	}{
-		{"one workspace mode", Config{DB: "x.db", EmailAPIKey: "k", EmailFrom: "f@example.com", PublicURL: "https://x.example"}},
-		{"no key", Config{WorkspaceDir: "ws", EmailFrom: "f@example.com", PublicURL: "https://x.example"}},
-		{"no from", Config{WorkspaceDir: "ws", EmailAPIKey: "k", PublicURL: "https://x.example"}},
-		{"no public url", Config{WorkspaceDir: "ws", EmailAPIKey: "k", EmailFrom: "f@example.com"}},
+		{"no key", Config{DB: "x.db", EmailFrom: "f@example.com", PublicURL: "https://x.example"}},
+		{"no from", Config{DB: "x.db", EmailAPIKey: "k", PublicURL: "https://x.example"}},
+		{"no public url", Config{DB: "x.db", EmailAPIKey: "k", EmailFrom: "f@example.com"}},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			if tt.cfg.SignupEnabled() {

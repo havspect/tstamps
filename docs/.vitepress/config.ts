@@ -2,7 +2,7 @@ import { defineConfig } from 'vitepress'
 
 export default defineConfig({
   title: 'Tstamps',
-  description: 'Team time tracking on a timeline. One binary, one SQLite file per workspace, yours to run.',
+  description: 'Team time tracking on a timeline. One binary, one SQLite database, yours to run.',
   base: '/docs/',
   srcDir: 'guide',
   outDir: '../web/dist/docs',
@@ -64,7 +64,7 @@ export default defineConfig({
     },
     footer: {
       message: 'AGPL-3.0-only. Built with Go and Svelte.',
-      copyright: 'One binary, one SQLite file per workspace.',
+      copyright: 'One binary, one SQLite database.',
     },
     socialLinks: [{ icon: 'github', link: 'https://github.com/havspect/tstamps' }],
   },

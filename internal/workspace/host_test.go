@@ -7,27 +7,28 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/havspect/tstamps/internal/clock"
+	"github.com/havspect/tstamps/internal/store"
 )
 
 func TestHostIsolatesWorkspaces(t *testing.T) {
-	dir := filepath.Join(t.TempDir(), "workspaces")
-	alphaPassword, err := Create(dir, "alpha", "ada@example.com", "Ada Alpha")
+	db := filepath.Join(t.TempDir(), "tstamps.db")
+	alphaPassword, err := Create(db, "alpha", "ada@example.com", "Ada Alpha")
 	if err != nil {
 		t.Fatalf("create alpha: %v", err)
 	}
-	betaPassword, err := Create(dir, "beta", "ada@example.com", "Ada Beta")
+	betaPassword, err := Create(db, "beta", "ada@example.com", "Ada Beta")
 	if err != nil {
 		t.Fatalf("create beta: %v", err)
 	}
 
-	host, err := New(dir, clock.System{}, nil)
+	host, err := New(db, clock.System{}, nil)
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
@@ -66,11 +67,8 @@ func TestHostIsolatesWorkspaces(t *testing.T) {
 }
 
 func TestHostUnknownWorkspaceNeverCreatesOne(t *testing.T) {
-	dir := filepath.Join(t.TempDir(), "workspaces")
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	host, err := New(dir, clock.System{}, nil)
+	db := filepath.Join(t.TempDir(), "tstamps.db")
+	host, err := New(db, clock.System{}, nil)
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
@@ -85,26 +83,32 @@ func TestHostUnknownWorkspaceNeverCreatesOne(t *testing.T) {
 			t.Errorf("%s = %d, want 404", path, got.Code)
 		}
 	}
-	entries, err := os.ReadDir(dir)
+	// The shared database exists, but no request may add a workspace to it.
+	reg, err := store.OpenRegistry(db)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("open registry: %v", err)
 	}
-	if len(entries) != 0 {
-		t.Fatalf("requests created files in the workspace directory: %v", entries)
+	workspaces, err := reg.Workspaces()
+	if err != nil {
+		t.Fatalf("list workspaces: %v", err)
+	}
+	_ = reg.Close()
+	if len(workspaces) != 0 {
+		t.Fatalf("requests created %d workspaces: %v", len(workspaces), workspaces)
 	}
 
-	// The process health check inspects the directory, not every workspace.
+	// The process health check pings the database, not every workspace.
 	if got := hostedGet(t, server.URL+"/healthz", "", ""); got.Code != http.StatusOK || !strings.Contains(got.Body.String(), `"ok"`) {
 		t.Fatalf("hosted health = %d %s", got.Code, got.Body)
 	}
 }
 
 func TestHostConcurrentFirstOpen(t *testing.T) {
-	dir := filepath.Join(t.TempDir(), "workspaces")
-	if _, err := Create(dir, "alpha", "ada@example.com", "Ada"); err != nil {
+	db := filepath.Join(t.TempDir(), "tstamps.db")
+	if _, err := Create(db, "alpha", "ada@example.com", "Ada"); err != nil {
 		t.Fatalf("create: %v", err)
 	}
-	host, err := New(dir, clock.System{}, nil)
+	host, err := New(db, clock.System{}, nil)
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
@@ -141,7 +145,222 @@ func TestHostConcurrentFirstOpen(t *testing.T) {
 	cached := len(host.cache)
 	host.mu.Unlock()
 	if cached != 1 {
-		t.Fatalf("cache has %d entries, want one store for concurrent requests", cached)
+		t.Fatalf("cache has %d entries, want one handler for concurrent requests", cached)
+	}
+}
+
+func TestHostKeepsRowsOfEachWorkspaceApart(t *testing.T) {
+	db := filepath.Join(t.TempDir(), "tstamps.db")
+	alphaPassword, err := Create(db, "alpha", "ada@example.com", "Ada Alpha")
+	if err != nil {
+		t.Fatalf("create alpha: %v", err)
+	}
+	betaPassword, err := Create(db, "beta", "ada@example.com", "Ada Beta")
+	if err != nil {
+		t.Fatalf("create beta: %v", err)
+	}
+
+	reg, err := store.OpenRegistry(db)
+	if err != nil {
+		t.Fatalf("open registry: %v", err)
+	}
+	alphaStore := storeFor(t, reg, "alpha")
+	betaStore := storeFor(t, reg, "beta")
+	alphaAdmin, err := alphaStore.UserByEmail("ada@example.com")
+	if err != nil {
+		t.Fatalf("alpha admin: %v", err)
+	}
+	betaAdmin, err := betaStore.UserByEmail("ada@example.com")
+	if err != nil {
+		t.Fatalf("beta admin: %v", err)
+	}
+	alphaProject, alphaEntry, alphaTeam := seedWorkspace(t, alphaStore, alphaAdmin, "Alpha")
+	_, _, _ = seedWorkspace(t, betaStore, betaAdmin, "Beta")
+	_ = reg.Close()
+
+	host, err := New(db, clock.System{}, nil)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	server := httptest.NewServer(host)
+	t.Cleanup(func() {
+		server.Close()
+		_ = host.Close()
+	})
+	alphaCookie, _ := loginHosted(t, server.URL, "alpha", "ada@example.com", alphaPassword)
+	betaCookie, _ := loginHosted(t, server.URL, "beta", "ada@example.com", betaPassword)
+
+	var projects []struct {
+		ID   uint   `json:"id"`
+		Name string `json:"name"`
+	}
+	decodeJSON(t, hostedGet(t, server.URL+"/w/alpha/api/v1/projects", alphaCookie, ""), &projects)
+	if len(projects) != 1 || projects[0].ID != alphaProject.ID || projects[0].Name != "Project Alpha" {
+		t.Fatalf("alpha projects = %+v, want only its own", projects)
+	}
+	var users []struct {
+		ID    uint   `json:"id"`
+		Email string `json:"email"`
+	}
+	decodeJSON(t, hostedGet(t, server.URL+"/w/beta/api/v1/users", betaCookie, ""), &users)
+	if len(users) != 1 || users[0].ID != betaAdmin.ID {
+		t.Fatalf("beta users = %+v, want only its own", users)
+	}
+
+	// An ID from the other workspace is not found, not merely forbidden.
+	cross := []struct {
+		method string
+		path   string
+		body   any
+	}{
+		{http.MethodPatch, "/w/beta/api/v1/entries/" + fmt.Sprint(alphaEntry.ID), map[string]string{"note": "cross-tenant write"}},
+		{http.MethodDelete, "/w/beta/api/v1/entries/" + fmt.Sprint(alphaEntry.ID), map[string]any{}},
+		{http.MethodPost, "/w/beta/api/v1/projects/" + fmt.Sprint(alphaProject.ID) + "/restore", map[string]any{}},
+		{http.MethodPatch, "/w/beta/api/v1/users/" + fmt.Sprint(alphaAdmin.ID), map[string]string{"name": "cross-tenant write"}},
+		{http.MethodPost, "/w/beta/api/v1/users/" + fmt.Sprint(alphaAdmin.ID) + "/password", map[string]any{}},
+		{http.MethodDelete, "/w/beta/api/v1/teams/" + fmt.Sprint(alphaTeam.ID), map[string]any{}},
+		{http.MethodPut, "/w/beta/api/v1/teams/" + fmt.Sprint(alphaTeam.ID) + "/members", []any{}},
+	}
+	for _, tc := range cross {
+		got := hostedJSON(t, tc.method, server.URL+tc.path, tc.body, betaCookie, "")
+		if got.StatusCode != http.StatusNotFound {
+			body, _ := io.ReadAll(got.Body)
+			t.Errorf("%s %s = %d: %s, want 404", tc.method, tc.path, got.StatusCode, body)
+		}
+		_ = got.Body.Close()
+	}
+
+	// Filters cannot pull another workspace's rows either.
+	var audit struct {
+		Events []struct {
+			TargetID uint `json:"target_id"`
+		} `json:"events"`
+	}
+	decodeJSON(t, hostedGet(t, server.URL+"/w/beta/api/v1/audit?target_type=project&target_id="+fmt.Sprint(alphaProject.ID), betaCookie, ""), &audit)
+	if len(audit.Events) != 0 {
+		t.Fatalf("beta audit by alpha project = %+v, want none", audit.Events)
+	}
+	var report struct {
+		Rows []struct {
+			ProjectID uint `json:"project_id"`
+		} `json:"rows"`
+	}
+	decodeJSON(t, hostedGet(t, server.URL+"/w/beta/api/v1/reports?from=2026-10-19&to=2026-10-26&by=none&project_id="+fmt.Sprint(alphaProject.ID), betaCookie, ""), &report)
+	if len(report.Rows) != 0 {
+		t.Fatalf("beta report by alpha project = %+v, want no rows", report.Rows)
+	}
+}
+
+func TestHostPicksUpWorkspaceCreatedAfterStart(t *testing.T) {
+	db := filepath.Join(t.TempDir(), "tstamps.db")
+	host, err := New(db, clock.System{}, nil)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	server := httptest.NewServer(host)
+	t.Cleanup(func() {
+		server.Close()
+		_ = host.Close()
+	})
+
+	if got := hostedGet(t, server.URL+"/w/late/healthz", "", ""); got.Code != http.StatusNotFound {
+		t.Fatalf("unknown workspace health = %d, want 404", got.Code)
+	}
+	if _, err := Create(db, "late", "ada@example.com", "Ada"); err != nil {
+		t.Fatalf("create after start: %v", err)
+	}
+	if got := hostedGet(t, server.URL+"/w/late/healthz", "", ""); got.Code != http.StatusOK {
+		t.Fatalf("new workspace health = %d, want 200: %s", got.Code, got.Body)
+	}
+}
+
+func TestHostLoginSkipsThePromptWhenThereIsOneWorkspace(t *testing.T) {
+	db := filepath.Join(t.TempDir(), "tstamps.db")
+	if _, err := Create(db, "only", "ada@example.com", "Ada"); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	host, err := New(db, clock.System{}, nil)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	server := httptest.NewServer(host)
+	t.Cleanup(func() {
+		server.Close()
+		_ = host.Close()
+	})
+
+	client := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error {
+		return http.ErrUseLastResponse
+	}}
+	resp, err := client.Get(server.URL + "/login")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusFound || resp.Header.Get("Location") != "/w/only/login" {
+		t.Fatalf("/login = %d %q, want 302 /w/only/login", resp.StatusCode, resp.Header.Get("Location"))
+	}
+	var only struct {
+		Slug string `json:"slug"`
+	}
+	decodeJSON(t, hostedGet(t, server.URL+"/api/v1/workspace", "", ""), &only)
+	if only.Slug != "only" {
+		t.Fatalf("only workspace = %q, want only", only.Slug)
+	}
+
+	// A second workspace restores the prompt instead of guessing one.
+	if _, err := Create(db, "second", "grace@example.com", "Grace"); err != nil {
+		t.Fatalf("create second: %v", err)
+	}
+	resp, err = client.Get(server.URL + "/login")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK || resp.Header.Get("Location") != "" {
+		t.Fatalf("/login with two workspaces = %d %q, want the prompt", resp.StatusCode, resp.Header.Get("Location"))
+	}
+	decodeJSON(t, hostedGet(t, server.URL+"/api/v1/workspace", "", ""), &only)
+	if only.Slug != "" {
+		t.Fatalf("two workspaces returned slug %q, want none", only.Slug)
+	}
+}
+
+func storeFor(t *testing.T, reg *store.Registry, slug string) *store.Store {
+	t.Helper()
+	w, err := reg.WorkspaceBySlug(slug)
+	if err != nil {
+		t.Fatalf("workspace %s: %v", slug, err)
+	}
+	return reg.ForWorkspace(w.ID)
+}
+
+func seedWorkspace(t *testing.T, st *store.Store, admin *store.User, label string) (*store.Project, *store.Entry, *store.Team) {
+	t.Helper()
+	now := time.Date(2026, 10, 25, 10, 0, 0, 0, time.UTC)
+	team := &store.Team{Name: "Team " + label}
+	if err := st.CreateTeam(team); err != nil {
+		t.Fatalf("create team: %v", err)
+	}
+	project := &store.Project{TeamID: team.ID, Name: "Project " + label}
+	if err := st.CreateProject(project); err != nil {
+		t.Fatalf("create project: %v", err)
+	}
+	end := now.Add(time.Hour)
+	entry := &store.Entry{UserID: admin.ID, ProjectID: project.ID, StartAt: now, EndAt: &end, Timezone: "UTC", Note: label}
+	if err := st.CreateEntry(entry); err != nil {
+		t.Fatalf("create entry: %v", err)
+	}
+	return project, entry, team
+}
+
+func decodeJSON(t *testing.T, resp *httptest.ResponseRecorder, out any) {
+	t.Helper()
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d: %s", resp.Code, resp.Body)
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), out); err != nil {
+		t.Fatalf("decode %s: %v", resp.Body, err)
 	}
 }
 
@@ -224,8 +443,8 @@ func hostedJSON(t *testing.T, method, url string, body any, cookie, token string
 }
 
 func TestHostAnswersSignupBeforeAnyWorkspaceExists(t *testing.T) {
-	dir := t.TempDir()
-	host, err := New(dir, clock.System{}, nil)
+	db := filepath.Join(t.TempDir(), "tstamps.db")
+	host, err := New(db, clock.System{}, nil)
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
@@ -248,7 +467,7 @@ func TestHostAnswersSignupBeforeAnyWorkspaceExists(t *testing.T) {
 
 	// A configured handler sees the request at the root, not inside a workspace.
 	reached := false
-	configured, err := New(dir, clock.System{}, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	configured, err := New(db, clock.System{}, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		reached = true
 		if r.URL.Path != "/api/v1/signup/verify" {
 			t.Errorf("path = %q, want the unprefixed signup path", r.URL.Path)

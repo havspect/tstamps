@@ -2,14 +2,10 @@ package workspace
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"io/fs"
 	"net/mail"
 	"net/url"
-	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/havspect/tstamps/internal/api"
@@ -17,11 +13,6 @@ import (
 	"github.com/havspect/tstamps/internal/clock"
 	"github.com/havspect/tstamps/internal/store"
 )
-
-// pendingDir holds one file per emailed signup until its link is used. It is a
-// directory on purpose: Databases and backup only look at *.db files, so a
-// pending signup is never mistaken for a workspace or included in a backup.
-const pendingDir = "pending"
 
 // Mailer sends the verification message. Resend implements it in production;
 // tests use a fake, so go test needs no network.
@@ -32,20 +23,20 @@ type Mailer interface {
 // Signup turns a verified email into a workspace. It is the workspace side of
 // api.SignupService.
 type Signup struct {
-	dir       string
+	db        string
 	publicURL string
 	mail      Mailer
 	clock     clock.Clock
 }
 
-// NewSignup builds the signup service for the workspace directory. publicURL is
-// the origin the emailed link points at.
-func NewSignup(dir, publicURL string, mail Mailer, clk clock.Clock) *Signup {
-	return &Signup{dir: dir, publicURL: strings.TrimSuffix(publicURL, "/"), mail: mail, clock: clk}
+// NewSignup builds the signup service for the shared database at db. publicURL
+// is the origin the emailed link points at.
+func NewSignup(db, publicURL string, mail Mailer, clk clock.Clock) *Signup {
+	return &Signup{db: db, publicURL: strings.TrimSuffix(publicURL, "/"), mail: mail, clock: clk}
 }
 
 // Start stores the email behind a fresh token and emails the link. The token
-// itself is never written down; only its hash names the pending file.
+// itself is never written down; only its hash names the pending row.
 func (s *Signup) Start(ctx context.Context, raw string) error {
 	email, err := normalizeEmail(raw)
 	if err != nil {
@@ -55,7 +46,15 @@ func (s *Signup) Start(ctx context.Context, raw string) error {
 	if err != nil {
 		return err
 	}
-	if err := s.writePending(hash, email); err != nil {
+	reg, err := store.OpenRegistry(s.db)
+	if err != nil {
+		return err
+	}
+	defer reg.Close()
+	if err := reg.Migrate(); err != nil {
+		return err
+	}
+	if err := reg.CreatePendingSignup(hash, email, s.clock.Now()); err != nil {
 		return err
 	}
 	link := s.publicURL + "/signup/verify?token=" + url.QueryEscape(token)
@@ -63,7 +62,7 @@ func (s *Signup) Start(ctx context.Context, raw string) error {
 		"\n\nThe link works once. If you did not ask for this, ignore this email.\n"
 	if err := s.mail.Send(ctx, email, "Verify your email for Tstamps", text); err != nil {
 		// No link reached the person, so the record would only be litter.
-		_ = s.removePending(hash)
+		_ = reg.DeletePendingSignup(hash)
 		return fmt.Errorf("%w: %v", api.ErrMailFailed, err)
 	}
 	return nil
@@ -75,8 +74,16 @@ func (s *Signup) Verify(_ context.Context, token string) (string, error) {
 	if token == "" {
 		return "", api.ErrInvalidToken
 	}
-	email, err := s.readPending(auth.HashToken(token))
-	if errors.Is(err, fs.ErrNotExist) {
+	reg, err := store.OpenRegistry(s.db)
+	if err != nil {
+		return "", err
+	}
+	defer reg.Close()
+	if err := reg.Migrate(); err != nil {
+		return "", err
+	}
+	email, err := reg.PendingSignupEmail(auth.HashToken(token))
+	if errors.Is(err, store.ErrNotFound) {
 		return "", api.ErrInvalidToken
 	}
 	if err != nil {
@@ -86,7 +93,7 @@ func (s *Signup) Verify(_ context.Context, token string) (string, error) {
 }
 
 // Complete creates the workspace, its admin with the chosen password, and a
-// session for that admin. The token is claimed by an atomic rename, so two
+// session for that admin. The token is claimed by deleting its row, so two
 // concurrent submits can never both create a workspace from one link.
 func (s *Signup) Complete(ctx context.Context, in api.SignupRequest) (api.SignupResult, error) {
 	slug := strings.TrimSpace(in.Slug)
@@ -106,30 +113,37 @@ func (s *Signup) Complete(ctx context.Context, in api.SignupRequest) (api.Signup
 		return api.SignupResult{}, api.ErrInvalidToken
 	}
 	hash := auth.HashToken(in.Token)
-	email, err := s.claim(hash)
+	reg, err := store.OpenRegistry(s.db)
+	if err != nil {
+		return api.SignupResult{}, err
+	}
+	defer reg.Close()
+	if err := reg.Migrate(); err != nil {
+		return api.SignupResult{}, err
+	}
+	email, err := reg.ClaimPendingSignup(hash)
+	if errors.Is(err, store.ErrNotFound) {
+		return api.SignupResult{}, api.ErrInvalidToken
+	}
 	if err != nil {
 		return api.SignupResult{}, err
 	}
 
-	if err := CreateWithPassword(s.dir, slug, email, name, in.Password); err != nil {
+	if err := CreateWithPassword(s.db, slug, email, name, in.Password); err != nil {
 		// The form can be corrected with the same link, so put the claim back.
-		s.release(hash)
+		_ = reg.CreatePendingSignup(hash, email, s.clock.Now())
 		if errors.Is(err, ErrExists) {
 			return api.SignupResult{}, api.ErrSlugTaken
 		}
 		return api.SignupResult{}, err
 	}
-	s.discard(hash)
 
-	db, err := DatabasePath(s.dir, slug)
+	// CreateWithPassword committed the row, so the store can now find it by slug.
+	w, err := reg.WorkspaceBySlug(slug)
 	if err != nil {
 		return api.SignupResult{}, err
 	}
-	st, err := store.Open(db)
-	if err != nil {
-		return api.SignupResult{}, err
-	}
-	defer st.Close()
+	st := reg.ForWorkspace(w.ID)
 	u, err := st.UserByEmail(email)
 	if err != nil {
 		return api.SignupResult{}, err
@@ -156,81 +170,4 @@ func normalizeEmail(raw string) (string, error) {
 		return "", &api.SignupInputError{Detail: "enter a valid email address"}
 	}
 	return email, nil
-}
-
-// writePending keeps only the address; the capability is the token, whose hash
-// is the file name. shortcut: pending signups never expire (no TTL by design), so
-// a link nobody clicks stays on disk until someone removes the directory.
-func (s *Signup) writePending(hash, email string) error {
-	dir := filepath.Join(s.dir, pendingDir)
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return err
-	}
-	b, err := json.Marshal(struct {
-		Email string `json:"email"`
-	}{email})
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(filepath.Join(dir, hash+".json"), b, 0o600)
-}
-
-func (s *Signup) pendingPath(hash string) string {
-	return filepath.Join(s.dir, pendingDir, hash+".json")
-}
-
-// claim renames the pending record to its used name. Rename is atomic, so exactly
-// one submit can claim a link even when two arrive together.
-func (s *Signup) claim(hash string) (string, error) {
-	used := s.pendingPath(hash) + ".used"
-	if err := os.Rename(s.pendingPath(hash), used); err != nil {
-		if errors.Is(err, fs.ErrNotExist) {
-			return "", api.ErrInvalidToken
-		}
-		return "", err
-	}
-	b, err := os.ReadFile(used)
-	if err != nil {
-		s.release(hash)
-		return "", err
-	}
-	var rec struct {
-		Email string `json:"email"`
-	}
-	if err := json.Unmarshal(b, &rec); err != nil {
-		s.release(hash)
-		return "", err
-	}
-	return rec.Email, nil
-}
-
-// release puts a claim back, so a form error does not burn the link.
-func (s *Signup) release(hash string) {
-	_ = os.Rename(s.pendingPath(hash)+".used", s.pendingPath(hash))
-}
-
-func (s *Signup) discard(hash string) {
-	_ = os.Remove(s.pendingPath(hash) + ".used")
-}
-
-func (s *Signup) readPending(hash string) (string, error) {
-	b, err := os.ReadFile(s.pendingPath(hash))
-	if err != nil {
-		return "", err
-	}
-	var rec struct {
-		Email string `json:"email"`
-	}
-	if err := json.Unmarshal(b, &rec); err != nil {
-		return "", err
-	}
-	return rec.Email, nil
-}
-
-func (s *Signup) removePending(hash string) error {
-	err := os.Remove(s.pendingPath(hash))
-	if errors.Is(err, fs.ErrNotExist) {
-		return nil
-	}
-	return err
 }

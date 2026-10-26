@@ -53,10 +53,11 @@ func TestUserCLI(t *testing.T) {
 	assertExit(t, cli, 2, "tstamps-server", "serve")
 	assertExit(t, cli, 2, "usage: tstamps")
 
-	adminPassword := passwordFrom(t, mustWith(t, env, serverBin, "admin", "create", "--db", db,
+	adminPassword := passwordFrom(t, mustWith(t, env, serverBin, "workspace", "create", "example.com", "--db", db,
 		"--email", "admin@example.com", "--name", "Ada Admin"))
-	url, stopServer := startServer(t, serverBin, db)
+	base, stopServer := startServer(t, serverBin, db)
 	defer stopServer()
+	url := base + "/w/example.com"
 
 	// Teams, users and memberships are admin screens in v1; the CLI reads them.
 	login := func() string {

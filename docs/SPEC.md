@@ -1,6 +1,6 @@
 # Tstamps — specification
 
-A team time tracker in the spirit of timeTagger, minus the one-person focus: a personal infinite timeline for logging, a plain table for whoever needs the numbers. One Go binary, one SQLite file per workspace.
+A team time tracker in the spirit of timeTagger, minus the one-person focus: a personal infinite timeline for logging, a plain table for whoever needs the numbers. One Go binary, one SQLite database holding one or more workspaces.
 
 Vocabulary lives in [GLOSSARY.md](../GLOSSARY.md). Decisions that are expensive to reverse live in [docs/adr](./adr/). The paid hosted service, SSO, remote MCP and mobile app are specified in [SPEC-v2.md](./SPEC-v2.md).
 
@@ -13,8 +13,8 @@ In v1:
 - Admins manage users, teams, memberships, and restore deleted data.
 - Reports per person / project / day or week, plus CSV.
 - A REST API, a CLI, and an MCP server (stdio), all over the same HTTP API.
-- An operator may host several workspaces on one server, each with its own database and slug ([ADR-0011](./adr/0011-host-workspaces-as-separate-sqlite-files.md)).
-- A hosted server may offer self-service signup: an email owner verifies the address, then creates a workspace and becomes its first admin ([ADR-0014](./adr/0014-self-service-workspace-signup.md)).
+- An operator may host several workspaces on one server, each with its own slug and rows scoped by `workspace_id` ([ADR-0019](./adr/0019-workspaces-share-one-sqlite-file.md)).
+- A server may offer self-service signup: an email owner verifies the address, then creates a workspace and becomes its first admin ([ADR-0014](./adr/0014-self-service-workspace-signup.md)).
 
 Out of v1, deliberately: approvals, leave and holidays, invoicing and rates, reminders and notifications, mobile app, screenshots, Jira/Linear sync, realtime multi-user editing, project budgets, a team-wide timeline, SSO, i18n, drafting entries from coding-agent session history, billing, and workspace suspension or deletion workflows.
 
@@ -38,6 +38,8 @@ A lead's report scope is *entries booked on projects owned by a team they lead*,
 ## Domain model
 
 ```
+workspaces(id, slug)
+pending_signups(token_hash, email, created_at)
 users(id, email, name, password_hash, timezone, is_admin, active, must_change_password, created_at, updated_at)
 teams(id, name, created_at, updated_at, archived_at)
 team_memberships(id, team_id, user_id, role, created_at)         unique(team_id, user_id)
@@ -47,6 +49,8 @@ sessions(id, user_id, token_hash, expires_at, created_at)
 api_tokens(id, user_id, name, token_hash, created_at, last_used_at, revoked_at)
 audit_events(id, at, actor_user_id, actor_token_id, actor_role, action, target_type, target_id, changes)
 ```
+
+Every tenant row (`users` through `audit_events`) also carries `workspace_id`, and unique keys such as email are composite with it. `workspaces` and `pending_signups` are server-wide; a pending signup belongs to no workspace until its link is submitted.
 
 Rules the store enforces, with tests:
 
@@ -86,7 +90,7 @@ date,iso_week,user,email,team,project,timezone,start,end,seconds,note
 
 ## HTTP API
 
-`/api/v1`, JSON in and out, generated from the Go handlers by Huma. In hosted mode every workspace route is prefixed with `/w/{slug}`; one-workspace mode keeps the unprefixed paths below. The OpenAPI 3.1 document is served at `/api/v1/openapi.json` (or `/w/{slug}/api/v1/openapi.json`) and drives both the web client's types ([ADR-0006](./adr/0006-generated-api-contract.md)) and the API reference at `/api/v1/docs`. Huma validates bodies and query parameters from struct tags (`422` for malformed input); authentication failures stay `401`/`403` from middleware.
+`/api/v1`, JSON in and out, generated from the Go handlers by Huma. Every workspace route is under `/w/{slug}`, so the paths below are relative to that prefix. The OpenAPI 3.1 document is served at `/w/{slug}/api/v1/openapi.json` and drives both the web client's types ([ADR-0006](./adr/0006-generated-api-contract.md)) and the API reference at `/w/{slug}/api/v1/docs`. Huma validates bodies and query parameters from struct tags (`422` for malformed input); authentication failures stay `401`/`403` from middleware.
 
 Errors are RFC 9457 problem+json. The stable machine-readable code lives in the `type` URI, not in prose:
 
@@ -122,14 +126,17 @@ Errors are RFC 9457 problem+json. The stable machine-readable code lives in the 
 | GET | `/reports?from&to&by=week\|day\|month\|none[&team_id][&user_id][&project_id]` | aggregated seconds |
 | GET | `/reports.csv` | same filters, entry-per-day rows |
 | GET | `/audit?from&to[&actor_user_id][&action][&target_type][&target_id][&limit]` | admin: role-based actions, newest first |
-| GET | `/healthz` | database reachability + schema version; hosted root checks the workspace directory; 503 when it cannot answer |
+| GET | `/healthz` | database reachability + schema version |
 | GET | `/openapi.json` | OpenAPI 3.1 document, generated from handlers |
 | GET | `/docs` | browsable API reference |
 
-In hosted mode three more routes answer at the root, before any workspace exists, so they are not in the per-workspace OpenAPI document:
+The root `/healthz`, outside the workspace prefix, only pings the database.
+
+Four more routes answer at the root, before any workspace is selected, so they are not in the per-workspace OpenAPI document:
 
 | Method | Path | Purpose |
 | --- | --- | --- |
+| GET | `/api/v1/workspace` | `{slug}` when exactly one workspace exists, otherwise `{"slug":""}`; lets the SPA skip the prompt |
 | POST | `/api/v1/signup` | `{email}`: send the verification link; `202` for a well-formed address |
 | GET | `/api/v1/signup/verify?token=...` | the address the link was sent to; does not consume it |
 | POST | `/api/v1/signup/verify` | `{token, slug, name, password}`: create the workspace and its first admin, set a session cookie |
@@ -138,7 +145,7 @@ They exist only when self-service signup is configured; otherwise each answers `
 
 Authentication: `POST /auth/login` returns an opaque session token in an `HttpOnly`, `SameSite=Lax` cookie, 30-day fixed expiry, stored hashed. The cookie is named `__Host-tstamps_session` and marked `Secure` when the request arrives over TLS or with `X-Forwarded-Proto: https`; over plain http it is `tstamps_session` without `Secure`, because browsers reject the `__Host-` prefix there. Production therefore sits behind a TLS-terminating proxy, bound to localhost. Every other request may instead send `Authorization: Bearer ts_...`. Tokens are shown once at creation, stored as SHA-256, and act as the owning user. Login is rate limited per IP in memory. A user with `must_change_password` can authenticate but is confined to the three endpoints listed in the rules above.
 
-In hosted mode the selected workspace is resolved from `/w/{slug}` before authentication, and credentials are only looked up in that workspace's database. A browser holds one workspace login per server: logging into another workspace replaces the shared session cookie. CLI and MCP clients carry the workspace in their configured base URL.
+The selected workspace is resolved from `/w/{slug}` before authentication, and credentials are only looked up within that workspace. `GET /login` redirects to `/w/{slug}/login` when the database holds exactly one workspace, and shows the slug prompt when it holds more. A browser holds one workspace login per server: logging into another workspace replaces the shared session cookie. CLI and MCP clients carry the workspace in their configured base URL.
 
 Mutations over the cookie require a same-origin `Origin` header. There is no CORS: the SPA is served from the same origin.
 
@@ -154,7 +161,7 @@ An audit event records a change made by a user whose authority over the target c
 - **Not recorded:** anything a user does to their own data — logging, editing, deleting entries, timer start and stop, own password change, own tokens — and login traffic, which stays in the stderr request line.
 - `changes` holds the audited fields before and after. Password and token hashes never appear; a password reset records that it happened.
 - Cascades write their own events: a team archive writes one `project.archive` per archived project, and a deactivation writes one `entry.stop` for the running entry it ends.
-- Events are append-only: no update or delete path and no retention job. They live in the workspace database, so backup and restore carry them. The log resists the application, not an operator who owns the file.
+- Events are append-only: no update or delete path and no retention job. They live in the workspace's rows, so backup and restore carry them. The log resists the application, not an operator who owns the file.
 - Reading is admin-only, newest first, default 200 rows, maximum 1000, over `GET /audit` and `tstamps audit`. There is no web page and no MCP tool.
 - No backfill: the log starts empty on the day the binary that writes it ships.
 
@@ -163,14 +170,11 @@ An audit event records a change made by a user whose authority over the target c
 The server and the CLI are two binaries ([ADR-0008](./adr/0008-user-cli-and-server-are-two-binaries.md)). `tstamps-server` runs a workspace and owns the database; `tstamps` is the user CLI, shipped for linux, macOS and Windows, and talks to the API, never to the database. Config from `--url` / `--token`, then `TSTAMPS_URL` / `TSTAMPS_TOKEN`, then `~/.config/tstamps/config.json` (mode 0600). The CLI and the MCP server share `internal/client` and the API's Go structs, so neither needs generated code.
 
 ```
-tstamps-server serve [--addr :8080] [--db ./tstamps.db]   # runs one workspace (web UI + API)
-tstamps-server serve [--workspace-dir ./workspaces]       # hosted mode: /w/{slug}/ URLs
-tstamps-server admin create --email x --name y            # bootstraps the first admin, prints an initial password
-tstamps-server workspace create example.com --workspace-dir ./workspaces --email x --name y
-tstamps-server backup [--db path | --workspace-dir dir] <destination>
+tstamps-server serve [--addr :8080] [--db ./tstamps.db]   # web UI + API for every workspace
+tstamps-server workspace create example.com --db ./tstamps.db --email x --name y
+tstamps-server backup [--db path] <destination-file>
 tstamps-server openapi                                    # the OpenAPI document, for the web build
-tstamps login --url https://tstamps.example.com      # password prompt, stores a personal token
-tstamps login --url https://tstamps.example.com/w/example.com  # hosted workspace
+tstamps login --url https://tstamps.example.com/w/example.com  # password prompt, stores a personal token
 tstamps whoami
 tstamps start <project> [--note "..."]             # project matched by name, then id
 tstamps stop [--note "..."]
@@ -199,11 +203,11 @@ Tool descriptions state the permission each one needs, so an agent can explain a
 
 ## Web UI
 
-Svelte 5 + Vite, built to static assets and embedded with `go:embed`. The SPA calls the same API; no server-side rendering. In hosted mode `/` serves the public homepage; signing in opens the workspace prompt at `/login`, which takes the browser to `/w/{slug}/login` for the normal sign-in form; every in-app link and API call keeps the prefix. A hosted homepage also offers **Create a workspace**, leading to `/signup` (email) and `/signup/verify?token=...` (the workspace form); on an install without email configured the signup page says so instead of creating anything.
+Svelte 5 + Vite, built to static assets and embedded with `go:embed`. The SPA calls the same API; no server-side rendering. `/` serves the public homepage. Signing in goes to `/login`, which redirects to `/w/{slug}/login` when there is one workspace and asks for the slug when there are several; every in-app link and API call keeps the prefix. The homepage offers **Create a workspace**, leading to `/signup` (email) and `/signup/verify?token=...` (the workspace form); when email is not configured the signup page says so instead of creating anything.
 
 - **/timeline** — personal canvas timeline, infinite horizontally, wheel to zoom (day ↔ week), drag to create, drag edges to retime, drag body to move, click to edit project and note, running entry pinned at "now", overlaps marked, project colors, 15-minute snap with `Alt` for 1-minute precision, `space` start/stop, `n` new, `Esc` cancel, `Delete` remove.
 - **/reports** — a summary strip (total hours, people who logged, average per person, busiest project and its share) over one table: projects as rows, one column per day, ISO week or calendar month across the range, plus a total column; rows ordered by hours, biggest first, with a grand total row at the bottom. Click a project to unfold one line per person. A Day | Week | Month switch, a range preset (this week / last week / this month / custom) that picks the granularity, a team filter when more than one team is readable, and CSV. Read-only; leads and admins only.
-- **/admin/users**, **/admin/teams**, **/admin/projects** — tables with inline create and edit. No separate settings screen; a hosted workspace is identified by its slug.
+- **/admin/users**, **/admin/teams**, **/admin/projects** — tables with inline create and edit. No separate settings screen; a workspace is identified by its slug.
 
 Leads do not get a team timeline in v1; the report table answers their question.
 
@@ -211,23 +215,23 @@ Leads do not get a team timeline in v1; the report table answers their question.
 
 Production is one VM: `tstamps-server` under systemd, Caddy terminating TLS on the same host, no container ([ADR-0009](./adr/0009-deploy-on-one-vm.md)). The unit files and Caddyfile live in `deploy/`. The server binds `127.0.0.1` and honors `X-Forwarded-Proto` for cookies and its last `X-Forwarded-For` hop for client addresses only from a loopback peer, so a direct client cannot forge either.
 
-- **Backup** — `tstamps-server backup --db path <destination>` writes a consistent snapshot with SQLite's `VACUUM INTO`. With `--workspace-dir`, it writes one snapshot per workspace into a new destination directory, published only when every snapshot succeeds. Both are safe while the server is running and refuse an existing destination, so a date-stamped name never overwrites yesterday. The deploy timer runs it nightly and keeps 14 days. Operators copy that directory off the box; a backup on the same disk is not a backup.
-- **Restore** — stop the server, replace the database file (or one/all files in the workspace directory), remove stale `-wal`/`-shm`, start the server. `AutoMigrate` runs at boot in one-workspace mode and on first open of each hosted workspace. Restore is verified by `/healthz` and one report read.
-- **Schema version** — the applied version is stored in `PRAGMA user_version`; one-workspace `/healthz` and a workspace's `/w/{slug}/healthz` report it. A binary refuses a database written by a newer schema; there is no downgrade path, restore the backup instead.
-- **Retention** — logged hours are the company's timekeeping record. A leaver is deactivated, not deleted; their entries stay visible. Erasing a person means erasing the workspace. There is no per-user erasure in v1. Deleting a hosted workspace and its backups is deliberately an operator filesystem action.
-- **Self-service signup** — off unless the hosted server has `--email-api-key`, `--email-from` and `--public-url` (and optionally `--email-api-url`), which makes it an email dependency on Resend's API. Pending signups are `0600` files in `<workspace-dir>/pending/`, named by the token hash; they are not workspaces, are not in the backup, and never expire. Deleting that directory cancels every outstanding link. An operator still cannot suspend or delete a workspace from the app; that stays a filesystem action.
+- **Backup** — `tstamps-server backup [--db path] <destination>` writes a consistent snapshot of the one database with SQLite's `VACUUM INTO`. The destination is a new file, written mode `0600`, published only when the snapshot succeeds. The snapshot is a single point in time for every workspace. It is safe while the server is running and refuses an existing destination, so a date-stamped name never overwrites yesterday. The deploy timer runs it nightly and keeps 14 days. Operators copy that file off the box; a backup on the same disk is not a backup.
+- **Restore** — stop the server, replace the database file, remove stale `-wal`/`-shm`, start the server. `AutoMigrate` runs once at boot for every workspace. Restore is verified by `/healthz` and one report read. It restores every workspace together: there is no per-workspace restore or export command.
+- **Schema version** — the applied version is stored in `PRAGMA user_version`; a workspace's `/w/{slug}/healthz` reports it, and the root `/healthz` only checks reachability. A binary refuses a database written by a newer schema; there is no downgrade path, restore the backup instead.
+- **Retention** — logged hours are the company's timekeeping record. A leaver is deactivated, not deleted; their entries stay visible. Erasing a person means erasing the workspace. There is no per-user erasure in v1. Deleting a workspace is a transaction across its rows, not removing a file, and stays out of scope until a command exists.
+- **Self-service signup** — off unless the server has `--email-api-key`, `--email-from` and `--public-url` (and optionally `--email-api-url`), which makes it an email dependency on Resend's API. Pending signups are rows in the same database, keyed by the token hash and holding only the address; they never expire, belong to no workspace, and are claimed by deleting the row when the form is submitted. Until then nothing is created, so an unverified address cannot make a workspace. An operator still cannot suspend or delete a workspace from the app.
 - **Upgrade** — stop, back up, replace the binary, start. Schema changes are additive via `AutoMigrate`; a newer database is refused rather than guessed at.
 
 ## Layout and stack
 
 ```
 cmd/tstamps/          user CLI: main, client subcommands, MCP
-cmd/tstamps-server/   server: main, serve, admin, backup, openapi
+cmd/tstamps-server/   server: main, serve, workspace, backup, openapi
 deploy/             systemd units, backup timer and Caddyfile
 e2e/                the acceptance walk over both binaries
 internal/config/    flags, env, config file
 internal/store/     GORM models, AutoMigrate, queries
-internal/workspace/ workspace slugs, creation, signup, per-workspace store cache and /w routing
+internal/workspace/ workspace slugs, creation, signup, shared registry and /w routing
 internal/auth/      argon2id passwords, sessions, tokens, rate limit
 internal/entry/     entry and timer rules
 internal/report/    bucketing, aggregation, CSV
@@ -251,21 +255,21 @@ One build pipeline, in this order: `go run ./cmd/tstamps-server openapi > web/op
 - **entry/report unit tests** — local-midnight splits, DST spring-forward and fall-back, ISO week edges around New Year, calendar month edges, 14-hour padding, overlap detection, CSV escaping.
 - **store tests** — `AutoMigrate` on an empty temp-dir database, a second boot being a no-op, the schema version being recorded and a newer one refused, the partial index actually rejecting a second running entry, archived-project filtering, deleted-entry exclusion, soft delete and restore, and a backup that can be opened with the rows intact.
 - **API tests** — `httptest` with the full router; table-driven permission matrix (member / lead of that team / lead of another team / admin) over every endpoint; session and bearer auth incl. expired and revoked; range validation; 409 on double start; `/healthz` failing when the database is gone; security headers; the request body cap; the access-log line. One test asserts `/openapi.json` lists every route in the spec table, so a missing Huma registration fails CI.
-- **CLI tests** — subcommands against a fake `client.Interface`. The `e2e` package builds both binaries, bootstraps an admin, serves on a free port, logs in, creates a project and entry, reads a report and a CSV, performs an MCP initialize + tool call over stdio, and runs signup against a stand-in email endpoint.
-- **Workspace tests** — slug/path validation, atomic creation with its first admin, all-workspace backup, unknown slugs writing nothing, and two workspaces with the same email where neither a session nor an API token crosses databases. Signup is tested verify-first: no file exists before the link is used, a token works once, an invalid form leaves the link usable, a slug collision keeps it usable, a mail failure leaves nothing, and the pending directory is invisible to listing and backup. A path-bearing client base URL is tested against the hosted router.
-- **Frontend** — `pnpm run check` (svelte-check + tsc) runs against freshly generated types, so an API change the UI did not follow fails the build. Vitest covers timeline math (pixels ↔ time, snapping, resize clamps) and workspace-prefixed CSV URLs. Playwright runs the legacy smoke walk and a hosted walk — choose a workspace, log in, reload a deep link, reject an unknown slug, and reach signup from the hosted homepage — in CI.
+- **CLI tests** — subcommands against a fake `client.Interface`. The `e2e` package builds both binaries, bootstraps a workspace with its first admin, serves on a free port, logs in, creates a project and entry, reads a report and a CSV, performs an MCP initialize + tool call over stdio, and runs signup against a stand-in email endpoint.
+- **Workspace tests** — slug/path validation, atomic creation with its first admin, all-workspace backup, unknown slugs writing nothing, and two workspaces with the same email where neither a session nor an API token crosses workspaces. Signup is tested verify-first: no workspace exists before the link is used, a token works once, an invalid form leaves the link usable, a slug collision keeps it usable, a mail failure leaves nothing, and the pending row lives in the same database. The single-workspace `/login` redirect and the multi-workspace prompt are both covered. A path-bearing client base URL is tested against the router.
+- **Frontend** — `pnpm run check` (svelte-check + tsc) runs against freshly generated types, so an API change the UI did not follow fails the build. Vitest covers timeline math (pixels ↔ time, snapping, resize clamps) and workspace-prefixed CSV URLs. Playwright runs a smoke walk on a one-workspace server and a prompt walk on a two-workspace server — choose a workspace, log in, reload a deep link, reject an unknown slug, and reach signup from the homepage — in CI.
 - **CI** — `ci.yml` runs vet, `go test -race`, the web checks, both builds and the browser smoke test on every push and pull request; the release workflow reuses it, so a tag cannot ship code that did not pass.
 
 Time is injected (`Clock` interface) anywhere "now" matters; tests never sleep.
 
 ## Build order
 
-1. **Walking skeleton** — config, SQLite, AutoMigrate, Huma + `/openapi.json`, `users`, password login, session cookie, `/healthz`, `tstamps serve`, `tstamps admin create`, first tests.
+1. **Walking skeleton** — config, SQLite, AutoMigrate, Huma + `/openapi.json`, `users`, password login, session cookie, `/healthz`, `tstamps serve`, `tstamps workspace create`, first tests.
 2. **Structure** — teams, memberships, projects, permission middleware, personal API tokens, `tstamps login`.
 3. **Time** — entries, timer, overlap handling, report bucketing, CSV, permission matrix tests.
 4. **Web** — login, timeline, reports, admin screens, typed client generation, embedded build.
 5. **Agents** — CLI completion, MCP tools, end-to-end test, README with install and backup notes.
-6. **Hosted workspaces** — per-workspace databases, slug routing, operator creation and backup, legacy URLs unchanged.
-7. **Self-service signup** — verified email, workspace creation from the link, hosted homepage entry point, email configuration and its off switch.
+6. **Workspaces in one database** — every workspace as a row, `/w/{slug}` routing, operator creation and backup, single-workspace login redirect.
+7. **Self-service signup** — verified email, workspace creation from the link, homepage entry point, email configuration and its off switch.
 
-v1 is done when a fresh install can: create an admin from the CLI, add two teams and a lead each, create a member, log a day on the timeline, start and stop the timer from the CLI, export the week as CSV, and let an MCP client report last week's hours. Hosted mode is done when an operator can create two slugged workspaces, log into one by URL, and back up both files without the API ever reaching the other. Signup is done when a visitor on a configured hosted server can receive the link, create a workspace and land on its timeline signed in, and the same server with email unset creates nothing.
+v1 is done when a fresh install can: create a workspace and its first admin from the CLI, add two teams and a lead each, create a member, log a day on the timeline, start and stop the timer from the CLI, export the week as CSV, and let an MCP client report last week's hours. Multi-workspace mode is done when an operator can create two slugged workspaces in one database, log into one by URL, and back both up in one snapshot without the API ever reaching the other. Signup is done when a visitor on a configured server can receive the link, create a workspace and land on its timeline signed in, and the same server with email unset creates nothing.

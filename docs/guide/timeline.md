@@ -1,6 +1,6 @@
 # Timeline
 
-Open `/timeline` after signing in. The timeline is one day, one column per project, hours running down the page. It is where most people log.
+Open `/w/{slug}/timeline` after signing in. The timeline is one day, one column per project, hours running down the page. It is where most people log.
 
 ![The timeline: one column per project, one day of entries](/screenshots/timeline.webp)
 

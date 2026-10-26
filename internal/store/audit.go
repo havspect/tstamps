@@ -18,8 +18,8 @@ type Change struct {
 	After  map[string]any `json:"after"`
 }
 
-// RecordAudit appends one event. Marshalling happens here so no caller can
-// forget it or store something that is not JSON.
+// RecordAudit appends one event to this workspace's log. Marshalling happens
+// here so no caller can forget it or store something that is not JSON.
 func (s *Store) RecordAudit(at time.Time, actor AuditActor, action, targetType string, targetID uint, c Change) error {
 	if c.Before == nil {
 		c.Before = map[string]any{}
@@ -32,6 +32,7 @@ func (s *Store) RecordAudit(at time.Time, actor AuditActor, action, targetType s
 		return err
 	}
 	return s.db.Create(&AuditEvent{
+		WorkspaceID:  s.workspaceID,
 		At:           at,
 		ActorUserID:  actor.UserID,
 		ActorTokenID: actor.TokenID,
@@ -58,7 +59,7 @@ const (
 	auditMaxLimit     = 1000
 )
 
-// AuditEvents returns the events matching f, newest first.
+// AuditEvents returns this workspace's events matching f, newest first.
 func (s *Store) AuditEvents(f AuditFilter) ([]AuditEvent, error) {
 	limit := f.Limit
 	if limit <= 0 {
@@ -67,7 +68,7 @@ func (s *Store) AuditEvents(f AuditFilter) ([]AuditEvent, error) {
 	if limit > auditMaxLimit {
 		limit = auditMaxLimit
 	}
-	q := s.db
+	q := s.scoped()
 	if !f.From.IsZero() {
 		q = q.Where("at >= ?", f.From)
 	}

@@ -1,9 +1,10 @@
 import { defineConfig } from 'vitest/config'
 import { svelte } from '@sveltejs/vite-plugin-svelte'
 
-// Vite serves the shell in dev, so mirror the marker the Go handler injects in
-// hosted mode. Without it the SPA shows the one-workspace login form.
-const hosted = process.env.TSTAMPS_WORKSPACE_DIR !== undefined
+// Every server serves workspaces under /w/{slug}; the root is the public
+// homepage and the workspace prompt. Vite serves the shell in dev, so mirror the
+// marker the Go handler injects.
+const hosted = true
 
 export default defineConfig({
   plugins: [
@@ -42,6 +43,10 @@ export default defineConfig({
             request.setHeader('origin', 'http://localhost:8080')
           })
         },
+      },
+      '/login': {
+        target: 'http://localhost:8080',
+        changeOrigin: true,
       },
       '/docs': {
         target: 'http://localhost:5174',

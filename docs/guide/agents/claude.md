@@ -7,7 +7,7 @@ read a skill folder from disk: upload the skill as a ZIP.
 ## Prerequisites
 
 ```sh
-tstamps login --url https://tstamps.example.com
+tstamps login --url https://tstamps.example.com/w/example.com
 tstamps whoami
 tstamps tokens create agent     # for the agent, shown once
 ```
@@ -51,7 +51,7 @@ Claude Code, user scope:
 
 ```sh
 claude mcp add --scope user \
-  --env TSTAMPS_URL=https://tstamps.example.com \
+  --env TSTAMPS_URL=https://tstamps.example.com/w/example.com \
   --env TSTAMPS_TOKEN=ts_... \
   --transport stdio tstamps -- tstamps mcp
 ```
@@ -73,7 +73,7 @@ the server to `claude_desktop_config.json`:
       "command": "tstamps",
       "args": ["mcp"],
       "env": {
-        "TSTAMPS_URL": "https://tstamps.example.com",
+        "TSTAMPS_URL": "https://tstamps.example.com/w/example.com",
         "TSTAMPS_TOKEN": "ts_..."
       }
     }

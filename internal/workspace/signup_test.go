@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"net/url"
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -30,15 +29,12 @@ type fakeMailer struct {
 func (m *fakeMailer) Send(_ context.Context, to, _, text string) error {
 	m.sent++
 	m.to, m.text = to, text
-	if m.err != nil {
-		return m.err
-	}
 	for _, field := range strings.Fields(text) {
 		if strings.Contains(field, "/signup/verify?token=") {
 			m.links = append(m.links, field)
 		}
 	}
-	return nil
+	return m.err
 }
 
 func linkToken(t *testing.T, link string) string {
@@ -55,13 +51,10 @@ func linkToken(t *testing.T, link string) string {
 }
 
 func TestSignupCreatesWorkspaceAfterVerification(t *testing.T) {
-	dir := filepath.Join(t.TempDir(), "workspaces")
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		t.Fatal(err)
-	}
+	db := filepath.Join(t.TempDir(), "tstamps.db")
 	now := time.Date(2026, 10, 24, 12, 0, 0, 0, time.UTC)
 	mail := &fakeMailer{}
-	s := NewSignup(dir, "https://time.example.com/", mail, fixedClock{at: now})
+	s := NewSignup(db, "https://time.example.com/", mail, fixedClock{at: now})
 	ctx := context.Background()
 
 	if err := s.Start(ctx, "  Ada@Example.COM "); err != nil {
@@ -75,18 +68,17 @@ func TestSignupCreatesWorkspaceAfterVerification(t *testing.T) {
 	}
 	token := linkToken(t, mail.links[0])
 
-	// Nothing is served and nothing is written until the link is used.
-	if n, err := Databases(dir); err != nil || len(n) != 0 {
-		t.Fatalf("Databases = %v, %v; want none before verification", n, err)
-	}
-	db, err := DatabasePath(dir, "acme")
+	// No workspace exists until the link is used, but the pending row does.
+	reg, err := store.OpenRegistry(db)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("open registry: %v", err)
 	}
-	if _, err := os.Stat(db); !errors.Is(err, os.ErrNotExist) {
-		t.Fatalf("workspace file exists before verification: %v", err)
+	defer reg.Close()
+	workspaces, err := reg.Workspaces()
+	if err != nil || len(workspaces) != 0 {
+		t.Fatalf("workspaces before verification = %v, %v; want none", workspaces, err)
 	}
-	if _, err := os.Stat(filepath.Join(dir, pendingDir, auth.HashToken(token)+".json")); err != nil {
+	if _, err := reg.PendingSignupEmail(auth.HashToken(token)); err != nil {
 		t.Fatalf("pending record missing: %v", err)
 	}
 
@@ -108,11 +100,10 @@ func TestSignupCreatesWorkspaceAfterVerification(t *testing.T) {
 		t.Fatalf("expiry = %v, want the clock plus the session TTL", res.Expires)
 	}
 
-	st, err := store.Open(db)
+	st, err := openWorkspace(t, db, "acme")
 	if err != nil {
-		t.Fatalf("open: %v", err)
+		t.Fatalf("open workspace: %v", err)
 	}
-	defer st.Close()
 	u, err := st.UserByEmail("ada@example.com")
 	if err != nil {
 		t.Fatalf("admin missing: %v", err)
@@ -127,7 +118,7 @@ func TestSignupCreatesWorkspaceAfterVerification(t *testing.T) {
 		t.Fatalf("signup session missing: %v", err)
 	}
 
-	// The link is single use, and its file is gone.
+	// The link is single use, and its pending row is gone.
 	if _, err := s.Verify(ctx, token); !errors.Is(err, api.ErrInvalidToken) {
 		t.Fatalf("second Verify = %v, want ErrInvalidToken", err)
 	}
@@ -136,18 +127,15 @@ func TestSignupCreatesWorkspaceAfterVerification(t *testing.T) {
 	}); !errors.Is(err, api.ErrInvalidToken) {
 		t.Fatalf("second Complete = %v, want ErrInvalidToken", err)
 	}
-	if _, err := os.Stat(filepath.Join(dir, pendingDir, auth.HashToken(token)+".json")); !errors.Is(err, os.ErrNotExist) {
+	if _, err := reg.PendingSignupEmail(auth.HashToken(token)); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("pending record survived: %v", err)
 	}
 }
 
 func TestSignupRejectsBadInputAndKeepsTheLink(t *testing.T) {
-	dir := filepath.Join(t.TempDir(), "workspaces")
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		t.Fatal(err)
-	}
+	db := filepath.Join(t.TempDir(), "tstamps.db")
 	mail := &fakeMailer{}
-	s := NewSignup(dir, "https://time.example.com", mail, fixedClock{at: time.Now()})
+	s := NewSignup(db, "https://time.example.com", mail, fixedClock{at: time.Now()})
 	ctx := context.Background()
 
 	var input *api.SignupInputError
@@ -163,19 +151,21 @@ func TestSignupRejectsBadInputAndKeepsTheLink(t *testing.T) {
 	if err := s.Start(ctx, "ada@example.com"); !errors.Is(err, api.ErrMailFailed) {
 		t.Fatalf("Start(mail failure) = %v, want ErrMailFailed", err)
 	}
-	entries, err := os.ReadDir(filepath.Join(dir, pendingDir))
-	if err != nil && !errors.Is(err, os.ErrNotExist) {
-		t.Fatal(err)
+	failedToken := linkToken(t, mail.links[0])
+	reg, err := store.OpenRegistry(db)
+	if err != nil {
+		t.Fatalf("open registry: %v", err)
 	}
-	if len(entries) != 0 {
-		t.Fatalf("pending records after failed send: %d", len(entries))
+	if _, err := reg.PendingSignupEmail(auth.HashToken(failedToken)); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("pending record after failed send: %v", err)
 	}
+	_ = reg.Close()
 
 	mail.err = nil
 	if err := s.Start(ctx, "ada@example.com"); err != nil {
 		t.Fatalf("Start: %v", err)
 	}
-	token := linkToken(t, mail.links[0])
+	token := linkToken(t, mail.links[1])
 
 	for _, tt := range []struct {
 		name string
@@ -197,12 +187,12 @@ func TestSignupRejectsBadInputAndKeepsTheLink(t *testing.T) {
 }
 
 func TestSignupSlugCollisionKeepsTheLinkUsable(t *testing.T) {
-	dir := filepath.Join(t.TempDir(), "workspaces")
-	if _, err := Create(dir, "acme", "admin@example.com", "Admin"); err != nil {
+	db := filepath.Join(t.TempDir(), "tstamps.db")
+	if _, err := Create(db, "acme", "admin@example.com", "Admin"); err != nil {
 		t.Fatal(err)
 	}
 	mail := &fakeMailer{}
-	s := NewSignup(dir, "https://time.example.com", mail, fixedClock{at: time.Now()})
+	s := NewSignup(db, "https://time.example.com", mail, fixedClock{at: time.Now()})
 	ctx := context.Background()
 	if err := s.Start(ctx, "ada@example.com"); err != nil {
 		t.Fatal(err)
@@ -225,12 +215,9 @@ func TestSignupSlugCollisionKeepsTheLinkUsable(t *testing.T) {
 }
 
 func TestSignupClaimIsSingleUseUnderConcurrency(t *testing.T) {
-	dir := filepath.Join(t.TempDir(), "workspaces")
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		t.Fatal(err)
-	}
+	db := filepath.Join(t.TempDir(), "tstamps.db")
 	mail := &fakeMailer{}
-	s := NewSignup(dir, "https://time.example.com", mail, fixedClock{at: time.Now()})
+	s := NewSignup(db, "https://time.example.com", mail, fixedClock{at: time.Now()})
 	ctx := context.Background()
 	if err := s.Start(ctx, "ada@example.com"); err != nil {
 		t.Fatal(err)
@@ -259,9 +246,15 @@ func TestSignupClaimIsSingleUseUnderConcurrency(t *testing.T) {
 	if created != 1 {
 		t.Fatalf("created %d workspaces from one link, want 1", created)
 	}
-	if n, err := Databases(dir); err != nil || len(n) != 1 {
-		t.Fatalf("Databases = %v, %v; want exactly one workspace", n, err)
+	reg, err := store.OpenRegistry(db)
+	if err != nil {
+		t.Fatalf("open registry: %v", err)
 	}
+	n, err := reg.Workspaces()
+	if err != nil || len(n) != 1 {
+		t.Fatalf("Workspaces = %v, %v; want exactly one workspace", n, err)
+	}
+	_ = reg.Close()
 	if _, err := s.Verify(ctx, token); !errors.Is(err, api.ErrInvalidToken) {
 		t.Fatalf("link still verifies after creation: %v", err)
 	}

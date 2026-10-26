@@ -14,7 +14,7 @@ use the Tstamps tools you run a small bridge on a host Langdock can reach.
   create skills.
 
 ```sh
-tstamps login --url https://tstamps.example.com
+tstamps login --url https://tstamps.example.com/w/example.com
 tstamps whoami
 tstamps tokens create agent
 ```
@@ -43,7 +43,7 @@ Run the bridge on the host that can reach the Tstamps server. This example uses
 Supergateway, a third-party stdio-to-HTTP gateway:
 
 ```sh
-export TSTAMPS_URL=https://tstamps.example.com
+export TSTAMPS_URL=https://tstamps.example.com/w/example.com
 export TSTAMPS_TOKEN=ts_...
 export BRIDGE_KEY='a-long-random-string'
 

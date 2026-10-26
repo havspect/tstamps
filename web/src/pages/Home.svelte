@@ -36,7 +36,7 @@
       <p class="lede">
         Tstamps is a team time tracker built around a timeline. Drag on a lane to log an entry, drag its
         edges to retime it, and let the report do the remembering. Run it yourself for one company, or
-        several as separate workspaces: one Go binary, one SQLite file per workspace. Hosted by us is
+        several as separate workspaces: one Go binary, one SQLite database. Hosted by us is
         coming.
       </p>
       <div class="actions">
@@ -195,21 +195,21 @@
         <h2 id="host-title">Yours to run.</h2>
         <p>
           One <code>tstamps-server</code> process on one VM, behind Caddy on the same host. Run it for a
-          single company, or host several: each workspace is one SQLite file with its own users and
-          projects. Backups use <code>VACUUM INTO</code> and are safe while the server is running.
+          single company, or host several: each workspace has its own users and
+          projects, scoped inside the same SQLite database. Backups use <code>VACUUM INTO</code> and are safe while the server is running.
         </p>
         <ul class="paths">
           <li>
-            <strong>One company.</strong> One workspace, one SQLite file, one admin you create from the
+            <strong>One company.</strong> One workspace, one SQLite database, one admin you create from the
             CLI.
           </li>
           <li>
-            <strong>Several companies.</strong> One workspace per company, each with its own SQLite file
-            and its own logins. Operators invite companies, or let people create their own workspace.
+            <strong>Several companies.</strong> One workspace per company, each with its own users and
+            logins, all in one SQLite database. Operators invite companies, or let people create their own workspace.
           </li>
           <li>
-            <strong>Hosted by us.</strong> Coming soon — we run the same binary and the same per-workspace
-            files.
+            <strong>Hosted by us.</strong> Coming soon — we run the same binary and the same shared
+            database.
             <a href="https://github.com/havspect/tstamps">
               Follow along on GitHub <span aria-hidden="true">↗</span>
             </a>
@@ -217,7 +217,7 @@
         </ul>
         <ul class="facts">
           <li><strong>1</strong>binary</li>
-          <li><strong>1</strong>SQLite file per workspace</li>
+          <li><strong>1</strong>SQLite database</li>
           <li><strong>0</strong>containers</li>
         </ul>
       </div>
@@ -227,7 +227,7 @@
   https://github.com/havspect/tstamps/releases/latest/download/tstamps_linux_amd64.tar.gz \
   | tar -xz
 sudo install -m 0755 tstamps /usr/local/bin/tstamps
-tstamps login --url https://time.example.com</code></pre>
+tstamps login --url https://time.example.com/w/example.com</code></pre>
         <p class="install-note">
           Linux, macOS and Windows builds. The server runs under systemd behind Caddy.
         </p>

@@ -104,7 +104,7 @@ func TestProjectCreate(t *testing.T) {
 
 	rec = f.do(http.MethodPost, "/api/v1/projects", projectBody(f.TeamB.ID, "Billing"), origin, f.as(t, f.Admin))
 	if rec.Code != http.StatusCreated {
-		t.Fatalf("admin create = %d, want 201: %s", rec.Code, rec.Body)
+		t.Fatalf("create user = %d, want 201: %s", rec.Code, rec.Body)
 	}
 	if p := decode[projectResponse](t, rec); p.TeamID != f.TeamB.ID {
 		t.Fatalf("admin created in team %d, want %d", p.TeamID, f.TeamB.ID)

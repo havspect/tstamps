@@ -26,7 +26,7 @@ MCP is configured separately in every client except Amp: `mcp.json` next to `SKI
 ## Prerequisites
 
 ```sh
-tstamps login --url https://time.example.com
+tstamps login --url https://time.example.com/w/example.com
 tstamps whoami
 tstamps tokens create agent
 ```

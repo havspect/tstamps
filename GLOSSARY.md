@@ -29,7 +29,7 @@ The first 14 days of a self-service workspace, before the first payment. It has 
 _Avoid_: free plan, beta, free tier
 
 **Suspended workspace**:
-A workspace whose trial ended or whose payment failed. Everyone may sign in, read and export; logging and admin changes are refused. Its data stays until the Operator deletes the workspace by hand.
+A workspace whose trial ended or whose payment failed. Everyone may sign in, read and export; logging and admin changes are refused. Its data stays until the Operator deletes the workspace.
 _Avoid_: locked, disabled, dormant, frozen
 
 **Billing contact**:

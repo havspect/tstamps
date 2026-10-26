@@ -10,8 +10,7 @@ User=tstamps
 Group=tstamps
 StateDirectory=tstamps
 StateDirectoryMode=0750
-# One workspace. For hosted mode, replace --db with:
-# --workspace-dir /var/lib/tstamps/workspaces
+# Every workspace lives in this one database.
 ExecStart=/usr/local/bin/tstamps-server serve --addr 127.0.0.1:8080 --db /var/lib/tstamps/tstamps.db
 Restart=on-failure
 RestartSec=2

@@ -5,7 +5,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -17,10 +16,7 @@ import (
 func TestSelfServiceSignup(t *testing.T) {
 	dir := t.TempDir()
 	serverBin := build(t, dir, "tstamps-server", "../cmd/tstamps-server")
-	workspaceDir := filepath.Join(dir, "workspaces")
-	if err := os.MkdirAll(workspaceDir, 0o700); err != nil {
-		t.Fatal(err)
-	}
+	db := filepath.Join(dir, "tstamps.db")
 
 	var sentTo, sentLink string
 	mail := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -47,7 +43,7 @@ func TestSelfServiceSignup(t *testing.T) {
 	defer mail.Close()
 
 	base, stop := startServe(t, serverBin,
-		"serve", "--workspace-dir", workspaceDir, "--addr", "127.0.0.1:0",
+		"serve", "--db", db, "--addr", "127.0.0.1:0",
 		"--email-api-key", "re_test",
 		"--email-api-url", mail.URL,
 		"--email-from", "Tstamps <hello@example.com>",
@@ -79,8 +75,13 @@ func TestSelfServiceSignup(t *testing.T) {
 	}
 
 	// No workspace exists until the link is used, even though the host runs.
-	if _, err := os.Stat(filepath.Join(workspaceDir, "acme.db")); !os.IsNotExist(err) {
-		t.Fatalf("workspace file before verification: %v", err)
+	before, err := http.Get(base + "/w/acme/healthz")
+	if err != nil {
+		t.Fatal(err)
+	}
+	before.Body.Close()
+	if before.StatusCode != http.StatusNotFound {
+		t.Fatalf("workspace before verification = %d, want 404", before.StatusCode)
 	}
 
 	link, err := url.Parse(sentLink)
