@@ -2,6 +2,7 @@
 package store
 
 import (
+	cryptoRand "crypto/rand"
 	"errors"
 	"fmt"
 	"os"
@@ -15,12 +16,14 @@ import (
 // SchemaVersion is the model set this binary understands. It is stored in the
 // database's PRAGMA user_version so /healthz reports what is on disk, not what
 // the binary hopes is there, and an older binary refuses a newer database.
-const SchemaVersion = 7
+const SchemaVersion = 8
 
 // DefaultWorkspaceID is the workspace Open scopes to. The server always uses
 // Registry; Open is for tests and tools that work on a database before a
 // workspace row exists.
 const DefaultWorkspaceID = 1
+
+var cryptoRandRead = cryptoRand.Read
 
 // ErrNotFound is returned when a lookup matches no row.
 var ErrNotFound = errors.New("not found")
@@ -129,9 +132,47 @@ func (r *Registry) Migrate() error {
 	return migrate(r.db)
 }
 
+// OAuthSecret returns the server-wide Fosite HMAC secret, generating it if not present.
+func (s *Store) OAuthSecret() ([]byte, error) {
+	var secret ServerSecret
+	if err := s.db.First(&secret, 1).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			buf := make([]byte, 32)
+			if _, err := cryptoRandRead(buf); err != nil {
+				return nil, err
+			}
+			if err := s.db.Create(&ServerSecret{ID: 1, Secret: buf}).Error; err != nil {
+				return nil, err
+			}
+			return buf, nil
+		}
+		return nil, err
+	}
+	return secret.Secret, nil
+}
+
 // BackupTo writes one consistent snapshot of every workspace to dest.
 func (r *Registry) BackupTo(dest string) error {
 	return backupTo(r.db, dest)
+}
+
+// OAuthSecret returns the server-wide Fosite HMAC secret from the registry.
+func (r *Registry) OAuthSecret() ([]byte, error) {
+	var secret ServerSecret
+	if err := r.db.First(&secret, 1).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			buf := make([]byte, 32)
+			if _, err := cryptoRandRead(buf); err != nil {
+				return nil, err
+			}
+			if err := r.db.Create(&ServerSecret{ID: 1, Secret: buf}).Error; err != nil {
+				return nil, err
+			}
+			return buf, nil
+		}
+		return nil, err
+	}
+	return secret.Secret, nil
 }
 
 // WorkspaceBySlug returns the workspace with this slug, or ErrNotFound.
@@ -200,8 +241,23 @@ func migrate(db *gorm.DB) error {
 	if version == SchemaVersion {
 		return nil
 	}
-	if err := db.AutoMigrate(&Workspace{}, &PendingSignup{}, &User{}, &Session{}, &Team{}, &TeamMembership{}, &Project{}, &APIToken{}, &Entry{}, &AuditEvent{}); err != nil {
+	if err := db.AutoMigrate(&Workspace{}, &PendingSignup{}, &User{}, &Session{}, &Team{}, &TeamMembership{}, &Project{}, &APIToken{}, &Entry{}, &AuditEvent{}, &ServerSecret{}, &OAuthClient{}, &OAuthCode{}, &OAuthAccessToken{}, &OAuthRefreshToken{}, &OAuthDeviceCode{}); err != nil {
 		return err
+	}
+	// Ensure server-wide HMAC secret exists (ID = 1)
+	var secret ServerSecret
+	if err := db.First(&secret, 1).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			buf := make([]byte, 32)
+			if _, err := cryptoRandRead(buf); err != nil {
+				return err
+			}
+			if err := db.Create(&ServerSecret{ID: 1, Secret: buf}).Error; err != nil {
+				return err
+			}
+		} else {
+			return err
+		}
 	}
 	// A row with an empty zone gets its owner's zone. That is a guess: the zone
 	// it was logged in is not recoverable.

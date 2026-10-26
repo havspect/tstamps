@@ -76,7 +76,7 @@ curl -fsS http://127.0.0.1:8080/healthz
 
 `AutoMigrate` runs at boot and records the schema version in the database file. Migrations are additive. A binary refuses to start on a database written by a newer schema, so there is no silent downgrade; restore the backup to go back.
 
-Migrations run once at boot for every workspace in the database, so no workspace stays on an old schema until someone opens it. The schema is version 7.
+Migrations run once at boot for every workspace in the database, so no workspace stays on an old schema until someone opens it. The schema is version 8.
 
 There is no migration path from the earlier per-file layout or from a schema-5 `--db` database: `workspace_id` has no column default. Nothing was deployed under either schema; recreate them rather than upgrading in place.
 

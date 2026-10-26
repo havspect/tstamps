@@ -28,19 +28,26 @@ Projects are matched by name (case-insensitive), then by id; two projects with t
 
 ### login
 
-Stores a personal API token after a password login. Prompts for email and password; `--email` skips the email prompt.
+Authenticates with the workspace and saves credentials to `~/.config/tstamps/config.json` (mode `0600`).
+
+By default, `tstamps login` uses the **OAuth 2.1 Device Grant** (`RFC 8628`): it prints a short verification code, opens `/w/<slug>/auth/device` in your browser (or prints the URL when `--no-browser` is passed), and stores both the access token and rotating refresh token once approved. The CLI and `tstamps mcp` automatically rotate expired access tokens using the saved refresh token.
+
+For non-interactive scripts, passing `--email` (and `--password`) logs in with a password and creates a personal token (`ts_...`) instead.
 
 ::: code-group
 ```sh [Linux]
 tstamps login --url https://time.example.com/w/example.com
+tstamps login --url https://time.example.com/w/example.com --no-browser
 ```
 
 ```sh [macOS]
 tstamps login --url https://time.example.com/w/example.com
+tstamps login --url https://time.example.com/w/example.com --no-browser
 ```
 
 ```powershell [Windows]
 tstamps login --url https://time.example.com/w/example.com
+tstamps login --url https://time.example.com/w/example.com --no-browser
 ```
 :::
 

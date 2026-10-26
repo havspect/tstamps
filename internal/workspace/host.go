@@ -77,6 +77,38 @@ func (h *Host) route(w http.ResponseWriter, r *http.Request) {
 		h.health(w)
 		return
 	}
+	if strings.HasPrefix(r.URL.Path, "/.well-known/oauth-authorization-server/w/") {
+		slugPrefix := "/.well-known/oauth-authorization-server/w/"
+		slug := strings.TrimPrefix(r.URL.Path, slugPrefix)
+		if idx := strings.Index(slug, "/"); idx != -1 {
+			slug = slug[:idx]
+		}
+		if slug != "" {
+			if handler, err := h.instance(slug); err == nil {
+				r = r.Clone(r.Context())
+				r.URL.Path = "/.well-known/oauth-authorization-server"
+				r = api.WithWorkspace(r, slug)
+				handler.ServeHTTP(w, r)
+				return
+			}
+		}
+	}
+	if strings.HasPrefix(r.URL.Path, "/.well-known/oauth-protected-resource/w/") {
+		slugPrefix := "/.well-known/oauth-protected-resource/w/"
+		slug := strings.TrimPrefix(r.URL.Path, slugPrefix)
+		if idx := strings.Index(slug, "/"); idx != -1 {
+			slug = slug[:idx]
+		}
+		if slug != "" {
+			if handler, err := h.instance(slug); err == nil {
+				r = r.Clone(r.Context())
+				r.URL.Path = "/.well-known/oauth-protected-resource"
+				r = api.WithWorkspace(r, slug)
+				handler.ServeHTTP(w, r)
+				return
+			}
+		}
+	}
 	if r.URL.Path == "/robots.txt" {
 		api.Robots(w, r)
 		return
@@ -219,7 +251,7 @@ func splitWorkspace(path string) (slug, rest string, ok bool) {
 }
 
 func (h *Host) notFound(w http.ResponseWriter, rest string) {
-	if strings.HasPrefix(rest, "/api/") {
+	if strings.HasPrefix(rest, "/api/") || strings.HasPrefix(rest, "/.well-known/") || strings.HasPrefix(rest, "/oauth/") || strings.HasPrefix(rest, "/mcp") {
 		api.WriteNotFound(w)
 		return
 	}

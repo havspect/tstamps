@@ -1,5 +1,6 @@
 <script lang="ts">
   import { session } from '../lib/session.svelte'
+  import { router } from '../lib/router.svelte'
   import Button from '../lib/ui/Button.svelte'
   import Input from '../lib/ui/Input.svelte'
 
@@ -14,6 +15,13 @@
     pending = true
     try {
       await session.login(email, password)
+      const params = new URLSearchParams(router.search)
+      const next = params.get('next')
+      if (next && next.startsWith('/') && !next.startsWith('//')) {
+        router.navigate(next, { replace: true })
+      } else {
+        router.navigate('/timeline', { replace: true })
+      }
     } catch (err) {
       error = err instanceof Error ? err.message : String(err)
     } finally {

@@ -6,6 +6,10 @@ function currentPath(): string {
   return location.pathname.replace(/\/+$/, '') || '/'
 }
 
+function currentSearch(): string {
+  return location.search
+}
+
 function split(pathname: string): { base: string; path: string } {
   const match = /^\/w\/([^/]+)(\/.*)?$/.exec(pathname)
   if (!match) return { base: '', path: pathname }
@@ -18,6 +22,7 @@ const hosted =
 
 let base = $state(initial.base)
 let path = $state(initial.path)
+let search = $state(currentSearch())
 
 export const router = {
   get hosted(): boolean {
@@ -29,17 +34,21 @@ export const router = {
   get path(): string {
     return path
   },
+  get search(): string {
+    return search
+  },
   href(to: string): string {
     return base + (to.startsWith('/') ? to : `/${to}`)
   },
   navigate(to: string, options: { replace?: boolean } = {}): void {
-    if (to === path) return
+    if (to === path && location.search === search) return
     const target = base + (to.startsWith('/') ? to : `/${to}`)
     if (options.replace) history.replaceState(null, '', target)
     else history.pushState(null, '', target)
     const next = split(currentPath())
     base = next.base
     path = next.path
+    search = currentSearch()
   },
 }
 
@@ -47,4 +56,5 @@ window.addEventListener('popstate', () => {
   const next = split(currentPath())
   base = next.base
   path = next.path
+  search = currentSearch()
 })

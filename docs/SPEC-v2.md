@@ -32,7 +32,7 @@ Exactly one active admin may hold the break-glass flag per workspace, with a pas
 
 ### OAuth server and remote MCP
 
-Each workspace is its own OAuth 2.1 authorization server, under `/w/{slug}`. Discovery documents, dynamic client registration, authorization code with PKCE (S256), the device grant (RFC 8628), refresh-token rotation, and resource indicators (RFC 8707) bind every token to one workspace. There is no implicit flow and no client secret on public clients.
+Each workspace is its own OAuth 2.1 authorization server, under `/w/{slug}`, powered by Ory Fosite over GORM SQLite ([ADR-0020](./adr/0020-fosite-sqlite-oauth-server.md)). Discovery documents, dynamic client registration, authorization code with PKCE (S256), the device grant (RFC 8628), refresh-token rotation, and resource indicators (RFC 8707) bind every token to one workspace. There is no implicit flow and no client secret on public clients.
 
 - Redirect URIs: `https` or loopback only. Authorization codes live 60 seconds and are single use. Access tokens live 1 hour, refresh tokens 30 days and rotate on use; reuse revokes the family. Revocation is immediate and audited.
 - Scopes: `tstamps.read` and `tstamps.write`. What a token may do is still decided by the user's role; a scope can narrow a token, never widen it. Admin-only operations are not a scope; they stay role-checked.

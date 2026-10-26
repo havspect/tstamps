@@ -46,6 +46,16 @@ func (s *Store) SaveUser(u *User, at time.Time) error {
 				UpdateColumns(map[string]any{"end_at": at, "note": DeactivationNote, "updated_at": at}).Error; err != nil {
 				return err
 			}
+			if err := tx.Model(&OAuthAccessToken{}).
+				Where("workspace_id = ? AND user_id = ? AND revoked_at IS NULL", s.workspaceID, u.ID).
+				Update("revoked_at", at).Error; err != nil {
+				return err
+			}
+			if err := tx.Model(&OAuthRefreshToken{}).
+				Where("workspace_id = ? AND user_id = ? AND active = ? AND revoked_at IS NULL", s.workspaceID, u.ID, true).
+				Updates(map[string]any{"active": false, "revoked_at": at}).Error; err != nil {
+				return err
+			}
 		}
 		return tx.Model(&User{}).Where("workspace_id = ? AND id = ?", s.workspaceID, u.ID).Updates(map[string]any{
 			"name":     u.Name,
@@ -73,8 +83,28 @@ func (s *Store) SetUserPassword(id uint, hash string, mustChange bool, keepSessi
 			Delete(&Session{}).Error; err != nil {
 			return err
 		}
-		return tx.Model(&APIToken{}).
+		if err := tx.Model(&APIToken{}).
 			Where("workspace_id = ? AND user_id = ? AND revoked_at IS NULL", s.workspaceID, id).
-			Update("revoked_at", at).Error
+			Update("revoked_at", at).Error; err != nil {
+			return err
+		}
+		if err := tx.Model(&OAuthAccessToken{}).
+			Where("workspace_id = ? AND user_id = ? AND revoked_at IS NULL", s.workspaceID, id).
+			Update("revoked_at", at).Error; err != nil {
+			return err
+		}
+		if err := tx.Model(&OAuthRefreshToken{}).
+			Where("workspace_id = ? AND user_id = ? AND active = ? AND revoked_at IS NULL", s.workspaceID, id, true).
+			Updates(map[string]any{"active": false, "revoked_at": at}).Error; err != nil {
+			return err
+		}
+		if err := tx.Model(&OAuthCode{}).
+			Where("workspace_id = ? AND user_id = ? AND used = ?", s.workspaceID, id, false).
+			Update("used", true).Error; err != nil {
+			return err
+		}
+		return tx.Model(&OAuthDeviceCode{}).
+			Where("workspace_id = ? AND user_id = ?", s.workspaceID, id).
+			Update("status", 2).Error // 2 = denied/invalidated status for device codes
 	})
 }

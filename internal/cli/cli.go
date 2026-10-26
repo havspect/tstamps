@@ -3,6 +3,7 @@
 package cli
 
 import (
+	"context"
 	"errors"
 	"flag"
 	"fmt"
@@ -20,6 +21,9 @@ import (
 type Client interface {
 	Login(email, password string) (*client.Me, error)
 	Me() (*client.Me, error)
+	StartDeviceAuth() (*client.DeviceAuthResponse, error)
+	PollDeviceToken(ctx context.Context, deviceCode string, interval time.Duration) (*client.TokenSet, error)
+	RefreshOAuthToken() (*client.TokenSet, error)
 
 	ListProjects(all bool) ([]client.Project, error)
 	CreateProject(in client.ProjectInput) (*client.Project, error)

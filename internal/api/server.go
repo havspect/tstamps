@@ -72,6 +72,10 @@ func New(st *store.Store, clk clock.Clock) http.Handler {
 	s.timerRoutes(api)
 	s.tokenRoutes(api)
 	s.userRoutes(api)
+	s.registerOAuthRoutes(apiMux)
+
+	apiMux.HandleFunc("POST "+apiPrefix+"/mcp", s.handleMCP)
+	apiMux.HandleFunc("GET "+apiPrefix+"/mcp", s.handleMCP)
 
 	// An unknown path under /api/ is still an API client: answer in the same
 	// problem+json shape rather than net/http's plain-text 404.
@@ -81,10 +85,13 @@ func New(st *store.Store, clk clock.Clock) http.Handler {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", s.health)
+	mux.HandleFunc("GET /.well-known/oauth-authorization-server", discoveryHandler)
+	mux.HandleFunc("GET /.well-known/oauth-protected-resource", protectedResourceHandler)
 	// The origin is per install, so these are built per request rather than
 	// checked in as static files.
 	mux.HandleFunc("GET /robots.txt", robots)
 	mux.HandleFunc("GET /sitemap.xml", sitemap)
+	mux.Handle("/mcp", s.withAccessLog(s.withRequest(http.HandlerFunc(s.handleMCP))))
 	// Only the API subtree needs a session: the SPA shell must load so a user
 	// with must_change_password can reach the password screen.
 	mux.Handle("/api/", s.withAccessLog(s.withRequest(apiMux)))

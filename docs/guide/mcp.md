@@ -1,12 +1,38 @@
 # MCP
 
-`tstamps mcp` is an MCP server over stdio. It uses the same config file and token as the CLI, and it talks to the same HTTP API as the timeline. It never opens the database.
+Tstamps supports two MCP connection modes over the same tool registry:
 
-Use it when an agent should start, stop, correct or read entries with the permissions of the token you gave it. The shipped agent skill wraps this setup for Amp, Claude, Codex, Langdock and OpenCode: see [Agents](./agents/index.md).
+1. **Remote MCP (Streamable HTTP)** at `https://time.example.com/w/<slug>/mcp`, authenticated via the workspace's built-in **OAuth 2.1** authorization server (discovery, dynamic client registration, and PKCE `S256`).
+2. **Local stdio MCP (`tstamps mcp`)**, which uses the same config file and token as the CLI and talks to the HTTP API without opening the database.
 
-## Give the agent its own token
+Use either mode when an agent should start, stop, correct or read entries with the permissions of the user who authorized it. The shipped agent skill wraps this setup for Amp, Claude, Codex, Langdock and OpenCode: see [Agents](./agents/index.md).
 
-Create a token named for the agent. It is shown once.
+## Connect over Remote MCP (OAuth 2.1)
+
+Point an MCP client that supports Streamable HTTP and OAuth 2.1 directly at your workspace's `/mcp` endpoint:
+
+```json
+{
+  "mcpServers": {
+    "tstamps": {
+      "url": "https://time.example.com/w/example.com/mcp"
+    }
+  }
+}
+```
+
+When the client connects without a token:
+
+1. `/w/<slug>/mcp` replies `401` with `WWW-Authenticate` pointing to `/.well-known/oauth-protected-resource`.
+2. The client discovers the workspace's OAuth 2.1 endpoints from `/.well-known/oauth-authorization-server`, registers itself as a public client at `POST /api/v1/oauth/register`, and opens `/w/<slug>/oauth/authorize` in your browser with PKCE (`S256`).
+3. You sign in (if not already signed in) and approve the requested scopes (`tstamps.read`, `tstamps.write`).
+4. You can review and revoke connected OAuth clients at any time on **/tokens** in the web UI.
+
+## Connect over local stdio (`tstamps mcp`)
+
+### Give the agent its own token
+
+If you are not using `tstamps login` (OAuth device grant) on the same machine, create a personal token named for the agent. It is shown once.
 
 ::: code-group
 ```sh [Linux]

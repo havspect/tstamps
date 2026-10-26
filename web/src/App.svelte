@@ -18,6 +18,9 @@
   import AdminProjects from './pages/AdminProjects.svelte'
   import AdminTeams from './pages/AdminTeams.svelte'
   import AdminUsers from './pages/AdminUsers.svelte'
+  import OAuthAuthorize from './pages/OAuthAuthorize.svelte'
+  import DeviceApprove from './pages/DeviceApprove.svelte'
+  import Tokens from './pages/Tokens.svelte'
 
   const routes: Record<string, Component> = {
     '/': Home,
@@ -31,6 +34,10 @@
     '/admin/teams': AdminTeams,
     '/admin/projects': AdminProjects,
     '/admin/entries': AdminEntries,
+    '/oauth/authorize': OAuthAuthorize,
+    '/auth/device': DeviceApprove,
+    '/tokens': Tokens,
+    '/me/tokens': Tokens,
   }
 
   let ready = $state(false)
@@ -84,7 +91,15 @@
       if (!hostedPublic) router.navigate('/', { replace: true })
     } else if (!user) {
       const publicHome = path === '/' && !router.hosted
-      if (path !== '/login' && !publicHome) router.navigate('/login', { replace: true })
+      const isAuthRoute = path === '/oauth/authorize' || path === '/auth/device'
+      if (path !== '/login' && !publicHome) {
+        if (isAuthRoute) {
+          const target = `/login?next=${encodeURIComponent(router.path + router.search)}`
+          router.navigate(target, { replace: true })
+        } else {
+          router.navigate('/login', { replace: true })
+        }
+      }
     } else if (session.mustChangePassword) {
       if (path !== '/password') router.navigate('/password', { replace: true })
     } else if (path.startsWith('/admin') && !user.is_admin) {
@@ -123,6 +138,7 @@
       </nav>
       <div class="who">
         <span>{user.name} · {user.timezone}</span>
+        <Link href="/tokens">Tokens</Link>
         <Button variant="secondary" onclick={logout}>Log out</Button>
       </div>
     {/if}

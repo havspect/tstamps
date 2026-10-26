@@ -68,6 +68,18 @@ _Avoid_: temporary password, one-time password, OTP
 A user who can no longer log in; their hours stay in reports.
 _Avoid_: deleted user, disabled user
 
+**Personal token**:
+A user-created bearer credential with the user's full access in one workspace, used by scripts and local tools until revoked.
+_Avoid_: API key, pat, static token
+
+**OAuth client**:
+An application — the CLI, the mobile app, or an MCP agent — that requests scoped access to a workspace on a user's behalf.
+_Avoid_: app, integration, consumer, service account
+
+**Grant**:
+A user's revocable authorization letting an OAuth client act on their behalf in one workspace with specific scopes.
+_Avoid_: consent record, connected app, OAuth session
+
 **Identity provider**:
 The external OIDC service a workspace trusts to prove who a user is. It proves identity only: it grants no team, role or workspace access.
 _Avoid_: SSO server, auth server, login provider

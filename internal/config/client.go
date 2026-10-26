@@ -42,12 +42,14 @@ func loadClient(urlFlag, tokenFlag string, getenv func(string) string, home stri
 	}
 	if v := getenv("TSTAMPS_TOKEN"); v != "" {
 		cfg.Token = v
+		cfg.RefreshToken = ""
 	}
 	if urlFlag != "" {
 		cfg.URL = urlFlag
 	}
 	if tokenFlag != "" {
 		cfg.Token = tokenFlag
+		cfg.RefreshToken = ""
 	}
 	return cfg, nil
 }

@@ -43,6 +43,19 @@ type Session struct {
 	CreatedAt   time.Time
 }
 
+// APIToken is a personal access token for CLI or API use, stored as a hash.
+type APIToken struct {
+	ID          uint       `gorm:"primarykey"`
+	WorkspaceID uint       `gorm:"not null;index"`
+	UserID      uint       `gorm:"index;not null"`
+	Name        string     `gorm:"not null"`
+	TokenHash   string     `gorm:"uniqueIndex;not null"`
+	ExpiresAt   time.Time  `gorm:"not null"`
+	LastUsedAt  *time.Time
+	RevokedAt   *time.Time `gorm:"index"`
+	CreatedAt   time.Time
+}
+
 // Membership roles. A user has at most one membership per team.
 const (
 	RoleLead   = "lead"
@@ -99,29 +112,106 @@ type Entry struct {
 	DeletedAt   *time.Time `gorm:"index"`
 }
 
-// AuditEvent is one change made by an actor whose authority came from a role.
-// Changes is JSON {"before":{...},"after":{...}}; hashes never enter it.
+// AuditEvent is one record in the workspace's tamper-evident audit log.
 type AuditEvent struct {
 	ID           uint      `gorm:"primarykey"`
 	WorkspaceID  uint      `gorm:"not null;index"`
 	At           time.Time `gorm:"not null;index"`
 	ActorUserID  uint      `gorm:"not null;index"`
-	ActorTokenID *uint
-	ActorRole    string `gorm:"not null"`
-	Action       string `gorm:"not null;index"`
-	TargetType   string `gorm:"not null;index:idx_audit_target"`
-	TargetID     uint   `gorm:"not null;index:idx_audit_target"`
-	Changes      string `gorm:"not null"`
+	ActorTokenID *uint     `gorm:"index"`
+	ActorRole    string    `gorm:"not null"`
+	Action       string    `gorm:"not null"`
+	TargetType   string    `gorm:"not null"`
+	TargetID     uint      `gorm:"not null"`
+	Changes      string    `gorm:"not null"` // JSON {before, after}
+	CreatedAt    time.Time
 }
 
-// APIToken is a personal token that acts as its user; only the hash is stored.
-type APIToken struct {
-	ID          uint   `gorm:"primarykey"`
-	WorkspaceID uint   `gorm:"not null;index"`
-	UserID      uint   `gorm:"not null;index"`
-	Name        string `gorm:"not null"`
-	TokenHash   string `gorm:"uniqueIndex;not null"` // sha256 hex, never the raw token
-	CreatedAt   time.Time
-	LastUsedAt  *time.Time
-	RevokedAt   *time.Time
+// ServerSecret stores the server-wide Fosite HMAC secret (row ID=1).
+type ServerSecret struct {
+	ID        uint      `gorm:"primaryKey"`
+	Secret    []byte    `gorm:"not null"`
+	CreatedAt time.Time
+}
+
+// OAuthClient stores OAuth2 clients per workspace.
+type OAuthClient struct {
+	ID               uint   `gorm:"primarykey"`
+	WorkspaceID      uint   `gorm:"not null;uniqueIndex:idx_oauth_clients_ws_cid,priority:1"`
+	ClientID         string `gorm:"not null;uniqueIndex:idx_oauth_clients_ws_cid,priority:2"`
+	ClientName       string `gorm:"not null"`
+	ClientSecretHash string
+	RedirectURIs     string `gorm:"not null"` // JSON []string
+	GrantTypes       string `gorm:"not null"` // JSON []string
+	ResponseTypes    string `gorm:"not null"` // JSON []string
+	Scopes           string `gorm:"not null"` // JSON []string
+	Public           bool   `gorm:"not null;default:true"`
+	CreatedAt        time.Time
+}
+
+// OAuthCode stores authorization codes.
+type OAuthCode struct {
+	ID            uint      `gorm:"primarykey"`
+	WorkspaceID   uint      `gorm:"not null;index"`
+	SignatureHash string    `gorm:"uniqueIndex;not null"`
+	RequestID     string    `gorm:"not null;index"`
+	ClientID      string    `gorm:"not null;index"`
+	UserID        uint      `gorm:"not null;index"`
+	SessionData   string    `gorm:"not null"`
+	PKCEActive    bool      `gorm:"not null;default:false"`
+	Used          bool      `gorm:"not null;default:false"`
+	ExpiresAt     time.Time `gorm:"not null;index"`
+	CreatedAt     time.Time
+}
+
+// OAuthAccessToken stores access tokens.
+type OAuthAccessToken struct {
+	ID            uint       `gorm:"primarykey"`
+	WorkspaceID   uint       `gorm:"not null;index"`
+	SignatureHash string     `gorm:"uniqueIndex;not null"`
+	RequestID     string     `gorm:"not null;index"`
+	ClientID      string     `gorm:"not null;index"`
+	UserID        uint       `gorm:"not null;index"`
+	Scopes        string     `gorm:"not null"` // JSON []string
+	Audience      string     `gorm:"not null"` // JSON []string
+	SessionData   string     `gorm:"not null"`
+	ExpiresAt     time.Time  `gorm:"not null;index"`
+	LastUsedAt    *time.Time
+	RevokedAt     *time.Time `gorm:"index"`
+	CreatedAt     time.Time
+}
+
+// OAuthRefreshToken stores refresh tokens.
+type OAuthRefreshToken struct {
+	ID                  uint       `gorm:"primarykey"`
+	WorkspaceID         uint       `gorm:"not null;index"`
+	SignatureHash       string     `gorm:"uniqueIndex;not null"`
+	AccessSignatureHash string     `gorm:"not null;index"`
+	RequestID           string     `gorm:"not null;index"`
+	ClientID            string     `gorm:"not null;index"`
+	UserID              uint       `gorm:"not null;index"`
+	Scopes              string     `gorm:"not null"` // JSON []string
+	SessionData         string     `gorm:"not null"`
+	Active              bool       `gorm:"not null;default:true"`
+	ExpiresAt           time.Time  `gorm:"not null;index"`
+	LastUsedAt          *time.Time
+	RevokedAt           *time.Time `gorm:"index"`
+	CreatedAt           time.Time
+}
+
+// OAuthDeviceCode stores device authorization codes.
+type OAuthDeviceCode struct {
+	ID             uint       `gorm:"primarykey"`
+	WorkspaceID    uint       `gorm:"not null;index"`
+	DeviceCodeHash string     `gorm:"uniqueIndex;not null"`
+	UserCodeHash   string     `gorm:"not null;uniqueIndex:idx_oauth_device_ws_ucode,priority:2"`
+	RequestID      string     `gorm:"not null;index"`
+	ClientID       string     `gorm:"not null;index"`
+	UserID         uint       `gorm:"index"`
+	Status         int        `gorm:"not null;default:0"`
+	Scopes         string     `gorm:"not null"` // JSON []string
+	SessionData    string     `gorm:"not null"`
+	ExpiresAt      time.Time  `gorm:"not null;index"`
+	LastCheckedAt  *time.Time
+	CreatedAt      time.Time
 }
