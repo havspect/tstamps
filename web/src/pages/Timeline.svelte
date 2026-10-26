@@ -667,7 +667,7 @@
     <p class="error" role="alert">{error}</p>
   {/if}
 
-  <div class="toolbar">
+  <div class="toolbar timeline-toolbar">
     <div class="timeline-nav">
       <Button variant="secondary" onclick={() => shiftDay(-1)}>
         <span aria-hidden="true">◀</span><span class="sr-only">Previous day</span>
@@ -678,8 +678,18 @@
       </Button>
     </div>
     <span class="day-title">{dayTitle}</span>
-    <p class="hint">
-      Drag on a lane to log · Alt for 1-minute steps · space start/stop · n new · Delete remove · Esc cancel
+    <p class="hint timeline-hints">
+      <span class="hint-item">Drag on a lane to log</span>
+      <span class="sep" aria-hidden="true">·</span>
+      <span class="hint-item"><kbd>Alt</kbd> for 1-minute steps</span>
+      <span class="sep" aria-hidden="true">·</span>
+      <span class="hint-item"><kbd>space</kbd> start/stop</span>
+      <span class="sep" aria-hidden="true">·</span>
+      <span class="hint-item"><kbd>n</kbd> new</span>
+      <span class="sep" aria-hidden="true">·</span>
+      <span class="hint-item"><kbd>Delete</kbd> remove</span>
+      <span class="sep" aria-hidden="true">·</span>
+      <span class="hint-item"><kbd>Esc</kbd> cancel</span>
     </p>
   </div>
 
