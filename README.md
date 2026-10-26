@@ -112,6 +112,7 @@ Vocabulary is [GLOSSARY.md](GLOSSARY.md); decisions worth not reversing are in
 
 ```sh
 pnpm install     # web and docs workspaces
+brew install hivemind go-air   # `just dev` needs both
 just check       # go vet, go test, svelte-check, vitest, docs build
 just dev         # API, Vite and the manual, all hot reloading
 just e2e         # build the server, then the one- and two-workspace Playwright walks

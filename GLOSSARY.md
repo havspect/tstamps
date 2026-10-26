@@ -72,6 +72,10 @@ _Avoid_: deleted user, disabled user
 The external OIDC service a workspace trusts to prove who a user is. It proves identity only: it grants no team, role or workspace access.
 _Avoid_: SSO server, auth server, login provider
 
+**External identity**:
+The stable link between a User and their issuer and subject at the workspace's Identity provider. The first login may adopt a User by verified email; later logins follow this link rather than treating email as the identifier.
+_Avoid_: SSO account, email identity, linked account
+
 **SSO**:
 Signing in through the workspace's Identity provider instead of a workspace password. Once enforced, only the Break-glass admin still uses a password and TOTP.
 _Avoid_: enterprise login, social login
