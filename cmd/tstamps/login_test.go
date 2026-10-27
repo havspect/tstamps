@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -10,10 +11,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/havspect/tstamps/internal/api"
+	"github.com/havspect/tstamps/internal/app"
 	"github.com/havspect/tstamps/internal/auth"
-	"github.com/havspect/tstamps/internal/clock"
-	"github.com/havspect/tstamps/internal/store"
+	gormrepo "github.com/havspect/tstamps/internal/repository/gorm"
 )
 
 const loginPassword = "correct horse battery staple"
@@ -21,26 +21,28 @@ const loginPassword = "correct horse battery staple"
 // loginServer starts the API over a store holding one active admin.
 func loginServer(t *testing.T) *httptest.Server {
 	t.Helper()
-	st, err := store.Open(filepath.Join(t.TempDir(), "tstamps.db"))
+	dbPath := filepath.Join(t.TempDir(), "tstamps.db")
+	handler, db, err := app.BuildServer(app.Config{DB: dbPath})
 	if err != nil {
-		t.Fatalf("open store: %v", err)
+		t.Fatalf("build server: %v", err)
 	}
-	t.Cleanup(func() { _ = st.Close() })
-	if err := st.Migrate(); err != nil {
-		t.Fatalf("migrate: %v", err)
-	}
+	sqlDB, _ := db.DB()
+	t.Cleanup(func() { _ = sqlDB.Close() })
+
 	hash, err := auth.HashPassword(loginPassword)
 	if err != nil {
 		t.Fatalf("hash password: %v", err)
 	}
-	u := &store.User{
-		Email: "ada@example.com", Name: "Ada Lovelace", PasswordHash: hash,
-		Timezone: "UTC", IsAdmin: true, Active: true,
+	onbRepo := gormrepo.NewOnboardingRepository(db)
+	ws, err := onbRepo.CreateWorkspace(context.Background(), "example.com")
+	if err != nil {
+		t.Fatalf("create workspace: %v", err)
 	}
-	if err := st.CreateUser(u); err != nil {
+	_, err = onbRepo.CreateInitialAdmin(context.Background(), ws.ID, "ada@example.com", "Ada Lovelace", hash, "UTC")
+	if err != nil {
 		t.Fatalf("create user: %v", err)
 	}
-	srv := httptest.NewServer(api.New(st, clock.System{}))
+	srv := httptest.NewServer(handler)
 	t.Cleanup(srv.Close)
 	return srv
 }

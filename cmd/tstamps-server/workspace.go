@@ -1,13 +1,15 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"io"
 	"os"
 
 	"github.com/havspect/tstamps/internal/config"
-	"github.com/havspect/tstamps/internal/workspace"
+	"github.com/havspect/tstamps/internal/onboarding"
+	gormrepo "github.com/havspect/tstamps/internal/repository/gorm"
 )
 
 func workspaceCmd(args []string, stdout, stderr io.Writer) int {
@@ -33,7 +35,24 @@ func workspaceCmd(args []string, stdout, stderr io.Writer) int {
 		return workspaceUsage(stderr)
 	}
 
-	password, err := workspace.Create(*db, slug, *email, *name)
+	gdb, err := gormrepo.Open(*db)
+	if err != nil {
+		fmt.Fprintf(stderr, "tstamps-server workspace create: %v\n", err)
+		return 1
+	}
+	sqlDB, _ := gdb.DB()
+	if sqlDB != nil {
+		defer sqlDB.Close()
+	}
+
+	if err := gormrepo.Migrate(gdb); err != nil {
+		fmt.Fprintf(stderr, "tstamps-server workspace create: %v\n", err)
+		return 1
+	}
+
+	repo := gormrepo.NewOnboardingRepository(gdb)
+	svc := onboarding.NewService(repo)
+	_, password, err := svc.CreateWorkspace(context.Background(), slug, *email, *name)
 	if err != nil {
 		fmt.Fprintf(stderr, "tstamps-server workspace create: %v\n", err)
 		return 1

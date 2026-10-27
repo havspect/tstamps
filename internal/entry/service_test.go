@@ -1,324 +1,448 @@
 package entry
 
 import (
+	"context"
 	"errors"
 	"testing"
 	"time"
 
-	"github.com/havspect/tstamps/internal/store"
+	"github.com/havspect/tstamps/internal/auth"
+	"github.com/havspect/tstamps/internal/authz"
 )
 
-// fixedClock keeps the service tests off the wall clock.
-type fixedClock struct{ now time.Time }
+var testNow = time.Date(2026, 3, 4, 12, 0, 0, 0, time.UTC)
 
-func (c fixedClock) Now() time.Time { return c.now }
-
-// fakeStore is the in-memory adapter; it records the last UpdateEntry changes.
-type fakeStore struct {
-	entries  map[uint]*store.Entry
-	projects map[uint]store.Project
-	nextID   uint
-	changes  map[string]any
+type mockClock struct {
+	now time.Time
 }
 
-func (f *fakeStore) EntryByID(id uint) (*store.Entry, error) {
-	e, ok := f.entries[id]
+func (c *mockClock) Now() time.Time {
+	return c.now
+}
+
+func (c *mockClock) Advance(d time.Duration) {
+	c.now = c.now.Add(d)
+}
+
+type fakeUOW struct{}
+
+func (u *fakeUOW) Run(ctx context.Context, fn func(ctx context.Context) error) error {
+	return fn(ctx)
+}
+
+type recordedAudit struct {
+	action     string
+	targetType string
+	targetID   uint
+	changes    any
+}
+
+type fakeAudit struct {
+	records []recordedAudit
+}
+
+func (a *fakeAudit) Record(ctx context.Context, action string, targetType string, targetID uint, changes any) error {
+	a.records = append(a.records, recordedAudit{
+		action:     action,
+		targetType: targetType,
+		targetID:   targetID,
+		changes:    changes,
+	})
+	return nil
+}
+
+type fakeProjects struct {
+	loggable map[uint]bool
+}
+
+func (p *fakeProjects) IsProjectLoggable(ctx context.Context, projectID uint) (bool, error) {
+	return p.loggable[projectID], nil
+}
+
+type fakeRepo struct {
+	entries map[uint]*Entry
+	nextID  uint
+}
+
+func newFakeRepo() *fakeRepo {
+	return &fakeRepo{
+		entries: make(map[uint]*Entry),
+		nextID:  1,
+	}
+}
+
+func (r *fakeRepo) GetByID(ctx context.Context, id uint) (*Entry, error) {
+	e, ok := r.entries[id]
 	if !ok {
-		return nil, store.ErrNotFound
+		return nil, ErrNotFound
 	}
 	cp := *e
 	return &cp, nil
 }
 
-func (f *fakeStore) CreateEntry(e *store.Entry) error {
-	if e.EndAt == nil {
-		for _, other := range f.entries {
-			if other.UserID == e.UserID && other.EndAt == nil && other.DeletedAt == nil {
-				return store.ErrEntryRunning
-			}
-		}
-	}
-	e.ID = f.nextID
-	f.nextID++
-	cp := *e
-	f.entries[e.ID] = &cp
-	return nil
-}
-
-func (f *fakeStore) RunningEntry(userID uint) (*store.Entry, error) {
-	for _, e := range f.entries {
+func (r *fakeRepo) GetRunning(ctx context.Context, userID uint) (*Entry, error) {
+	for _, e := range r.entries {
 		if e.UserID == userID && e.EndAt == nil && e.DeletedAt == nil {
 			cp := *e
 			return &cp, nil
 		}
 	}
-	return nil, store.ErrNotFound
+	return nil, ErrNotFound
 }
 
-func (f *fakeStore) StopRunning(userID uint, at time.Time, note string) error {
-	for _, e := range f.entries {
-		if e.UserID == userID && e.EndAt == nil && e.DeletedAt == nil {
-			end := at
-			e.EndAt = &end
-			if note != "" {
-				e.Note = note
+func (r *fakeRepo) List(ctx context.Context, filter ListFilter) ([]Entry, error) {
+	var out []Entry
+	for _, e := range r.entries {
+		if !filter.IncludeDeleted && e.DeletedAt != nil {
+			continue
+		}
+		if filter.UserID != 0 && e.UserID != filter.UserID {
+			continue
+		}
+		if filter.ProjectID != 0 && e.ProjectID != filter.ProjectID {
+			continue
+		}
+		out = append(out, *e)
+	}
+	return out, nil
+}
+
+func (r *fakeRepo) Create(ctx context.Context, e *Entry) error {
+	if e.EndAt == nil {
+		for _, other := range r.entries {
+			if other.UserID == e.UserID && other.EndAt == nil && other.DeletedAt == nil {
+				return ErrRunningExists
 			}
-			e.UpdatedAt = at
-			return nil
 		}
 	}
-	return store.ErrNotFound
-}
-
-func (f *fakeStore) UpdateEntry(id uint, _ time.Time, changes map[string]any) error {
-	if _, ok := f.entries[id]; !ok {
-		return store.ErrNotFound
-	}
-	f.changes = changes
+	e.ID = r.nextID
+	r.nextID++
+	cp := *e
+	r.entries[e.ID] = &cp
 	return nil
 }
 
-func (f *fakeStore) SoftDeleteEntry(id uint, at time.Time) error {
-	e, ok := f.entries[id]
-	if !ok {
-		return store.ErrNotFound
+func (r *fakeRepo) Update(ctx context.Context, e *Entry) error {
+	if _, ok := r.entries[e.ID]; !ok {
+		return ErrNotFound
 	}
-	e.DeletedAt = &at
+	cp := *e
+	r.entries[e.ID] = &cp
 	return nil
 }
 
-func (f *fakeStore) RestoreEntry(id uint, _ time.Time) error {
-	e, ok := f.entries[id]
+func (r *fakeRepo) SoftDelete(ctx context.Context, id uint, deletedAt time.Time) error {
+	e, ok := r.entries[id]
+	if !ok || e.DeletedAt != nil {
+		return ErrNotFound
+	}
+	e.DeletedAt = &deletedAt
+	return nil
+}
+
+func (r *fakeRepo) Restore(ctx context.Context, id uint) error {
+	e, ok := r.entries[id]
 	if !ok {
-		return store.ErrNotFound
+		return ErrNotFound
 	}
 	e.DeletedAt = nil
 	return nil
 }
 
-func (f *fakeStore) ProjectByID(id uint) (*store.Project, error) {
-	p, ok := f.projects[id]
-	if !ok {
-		return nil, store.ErrNotFound
-	}
-	return &p, nil
+func testContext(user *auth.Principal) context.Context {
+	return auth.WithPrincipal(context.Background(), user)
 }
 
-// seed inserts an entry and returns its id.
-func (f *fakeStore) seed(t *testing.T, e store.Entry) uint {
-	t.Helper()
-	if err := f.CreateEntry(&e); err != nil {
-		t.Fatalf("seed entry: %v", err)
+func newTestService() (*Service, *fakeRepo, *fakeAudit, *fakeProjects, *mockClock) {
+	repo := newFakeRepo()
+	audit := &fakeAudit{}
+	projects := &fakeProjects{
+		loggable: map[uint]bool{1: true, 2: false},
 	}
-	return e.ID
+	clk := &mockClock{now: testNow}
+	svc := NewService(
+		repo,
+		&fakeUOW{},
+		audit,
+		projects,
+		authz.NewPolicyEngine(),
+		clk,
+	)
+	return svc, repo, audit, projects, clk
 }
 
-func newService() (*Service, *fakeStore) {
-	f := &fakeStore{
-		entries:  map[uint]*store.Entry{},
-		projects: map[uint]store.Project{1: {ID: 1, Name: "Timeline"}},
-		nextID:   1,
-	}
-	return New(f, fixedClock{now}), f
-}
+func TestLogEntry(t *testing.T) {
+	svc, repo, _, _, _ := newTestService()
+	user := &auth.Principal{WorkspaceID: 1, UserID: 10, Roles: []string{"member"}}
+	ctx := testContext(user)
 
-func TestCreateRefusesTheRules(t *testing.T) {
-	svc, st := newService()
-	archived := now
-	st.projects[2] = store.Project{ID: 2, Name: "Old", ArchivedAt: &archived}
-
-	cases := []struct {
-		name      string
-		projectID uint
-		start     time.Time
-		end       time.Time
-		want      error
-	}{
-		{"unknown project", 99, now.Add(-time.Hour), now, ErrUnknownProject},
-		{"archived project", 2, now.Add(-time.Hour), now, ErrArchivedProject},
-		{"too long", 1, now.Add(-25 * time.Hour), now, ErrTooLong},
-		{"end before start", 1, now, now.Add(-time.Hour), ErrInvalidRange},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			if _, err := svc.Create(1, tc.projectID, tc.start, tc.end, "UTC", ""); !errors.Is(err, tc.want) {
-				t.Errorf("Create = %v, want %v", err, tc.want)
-			}
-		})
+	// 1. Unloggable project
+	_, err := svc.LogEntry(ctx, 2, testNow.Add(-time.Hour), testNow, "UTC", "unloggable")
+	if !errors.Is(err, ErrProjectNotLoggable) {
+		t.Fatalf("LogEntry unloggable project: got %v, want ErrProjectNotLoggable", err)
 	}
 
-	e, err := svc.Create(1, 1, now.Add(-time.Hour), now, "UTC", "note")
+	// 2. Invalid range (end <= start)
+	_, err = svc.LogEntry(ctx, 1, testNow, testNow.Add(-time.Hour), "UTC", "invalid")
+	if !errors.Is(err, ErrInvalidRange) {
+		t.Fatalf("LogEntry end < start: got %v, want ErrInvalidRange", err)
+	}
+
+	// 3. Too long (> 24h)
+	_, err = svc.LogEntry(ctx, 1, testNow.Add(-25*time.Hour), testNow, "UTC", "too long")
+	if !errors.Is(err, ErrTooLong) {
+		t.Fatalf("LogEntry too long: got %v, want ErrTooLong", err)
+	}
+
+	// 4. Valid entry
+	entry, err := svc.LogEntry(ctx, 1, testNow.Add(-time.Hour), testNow, "Europe/Berlin", "valid work")
 	if err != nil {
-		t.Fatalf("Create: %v", err)
+		t.Fatalf("LogEntry valid: unexpected error %v", err)
 	}
-	if e.ID == 0 || !e.CreatedAt.Equal(now) {
-		t.Errorf("created entry = %+v, want an id and CreatedAt = now", e)
+	if entry.ID == 0 || entry.UserID != 10 || entry.ProjectID != 1 {
+		t.Errorf("entry fields mismatch: %+v", entry)
+	}
+	if len(repo.entries) != 1 {
+		t.Errorf("expected 1 entry in repo, got %d", len(repo.entries))
+	}
+
+	// 5. Read-only token scope rejects mutation
+	roUser := &auth.Principal{WorkspaceID: 1, UserID: 10, Scopes: []string{"tstamps.read"}}
+	roCtx := testContext(roUser)
+	_, err = svc.LogEntry(roCtx, 1, testNow.Add(-time.Hour), testNow, "UTC", "")
+	if !errors.Is(err, authz.ErrReadOnly) {
+		t.Fatalf("LogEntry with read-only token: got %v, want ErrReadOnly", err)
 	}
 }
 
-func TestPatchRules(t *testing.T) {
-	finished := now.Add(-time.Minute)
+func TestPatchEntry(t *testing.T) {
+	svc, repo, _, _, _ := newTestService()
+	user1 := &auth.Principal{WorkspaceID: 1, UserID: 10, Roles: []string{"member"}}
+	user2 := &auth.Principal{WorkspaceID: 1, UserID: 20, Roles: []string{"member"}}
 
-	t.Run("foreign entry", func(t *testing.T) {
-		svc, st := newService()
-		id := st.seed(t, store.Entry{UserID: 1, ProjectID: 1, StartAt: now.Add(-time.Hour), EndAt: &finished})
-		if _, err := svc.Patch(2, id, Patch{}); !errors.Is(err, ErrForbidden) {
-			t.Errorf("Patch = %v, want ErrForbidden", err)
-		}
-	})
-
-	t.Run("deleted entry is not found", func(t *testing.T) {
-		svc, st := newService()
-		deleted := now.Add(-time.Minute)
-		id := st.seed(t, store.Entry{UserID: 1, ProjectID: 1, StartAt: now.Add(-time.Hour), EndAt: &finished, DeletedAt: &deleted})
-		if _, err := svc.Patch(1, id, Patch{}); !errors.Is(err, store.ErrNotFound) {
-			t.Errorf("Patch = %v, want store.ErrNotFound", err)
-		}
-	})
-
-	t.Run("unknown entry", func(t *testing.T) {
-		svc, _ := newService()
-		if _, err := svc.Patch(1, 99, Patch{}); !errors.Is(err, store.ErrNotFound) {
-			t.Errorf("Patch = %v, want store.ErrNotFound", err)
-		}
-	})
-
-	t.Run("retiming a running entry needs an end", func(t *testing.T) {
-		svc, st := newService()
-		id := st.seed(t, store.Entry{UserID: 1, ProjectID: 1, StartAt: now.Add(-time.Hour)})
-		start := now.Add(-2 * time.Hour)
-		if _, err := svc.Patch(1, id, Patch{StartAt: &start}); !errors.Is(err, ErrRetimeRunning) {
-			t.Errorf("Patch = %v, want ErrRetimeRunning", err)
-		}
-	})
-
-	t.Run("a note edit leaves a running entry running", func(t *testing.T) {
-		svc, st := newService()
-		id := st.seed(t, store.Entry{UserID: 1, ProjectID: 1, StartAt: now.Add(-time.Hour)})
-		note := "still going"
-		if _, err := svc.Patch(1, id, Patch{Note: &note}); err != nil {
-			t.Fatalf("Patch: %v", err)
-		}
-		if st.changes["note"] != note {
-			t.Errorf("changes = %v, want the note", st.changes)
-		}
-		if _, ok := st.changes["end_at"]; ok {
-			t.Error("changes include end_at, want the entry left running")
-		}
-	})
-
-	t.Run("a retime writes both ends", func(t *testing.T) {
-		svc, st := newService()
-		id := st.seed(t, store.Entry{UserID: 1, ProjectID: 1, StartAt: now.Add(-2 * time.Hour), EndAt: &finished})
-		start, end := now.Add(-3*time.Hour), now.Add(-time.Hour)
-		if _, err := svc.Patch(1, id, Patch{StartAt: &start, EndAt: &end}); err != nil {
-			t.Fatalf("Patch: %v", err)
-		}
-		for _, key := range []string{"start_at", "end_at"} {
-			if _, ok := st.changes[key]; !ok {
-				t.Errorf("changes = %v, want %s", st.changes, key)
-			}
-		}
-	})
-
-	t.Run("moving to an archived project", func(t *testing.T) {
-		svc, st := newService()
-		archived := now
-		st.projects[2] = store.Project{ID: 2, ArchivedAt: &archived}
-		id := st.seed(t, store.Entry{UserID: 1, ProjectID: 1, StartAt: now.Add(-time.Hour), EndAt: &finished})
-		project := uint(2)
-		if _, err := svc.Patch(1, id, Patch{ProjectID: &project}); !errors.Is(err, ErrArchivedProject) {
-			t.Errorf("Patch = %v, want ErrArchivedProject", err)
-		}
-	})
-}
-
-func TestDeleteAndRestore(t *testing.T) {
-	svc, st := newService()
-	finished := now.Add(-time.Minute)
-	id := st.seed(t, store.Entry{UserID: 1, ProjectID: 1, StartAt: now.Add(-time.Hour), EndAt: &finished})
-
-	if err := svc.Delete(2, id); !errors.Is(err, ErrForbidden) {
-		t.Errorf("Delete = %v, want ErrForbidden", err)
+	end := testNow.Add(-10 * time.Minute)
+	e := &Entry{
+		WorkspaceID: 1,
+		UserID:      10,
+		ProjectID:   1,
+		StartAt:     testNow.Add(-time.Hour),
+		EndAt:       &end,
+		Note:        "initial",
 	}
-	if err := svc.Delete(1, id); err != nil {
-		t.Fatalf("Delete: %v", err)
+	if err := repo.Create(context.Background(), e); err != nil {
+		t.Fatalf("create fixture: %v", err)
 	}
 
-	e, err := svc.Restore(id)
+	// 1. Foreign user cannot modify entry
+	note := "hacked"
+	_, err := svc.PatchEntry(testContext(user2), e.ID, nil, nil, nil, nil, &note)
+	if !errors.Is(err, authz.ErrForbidden) {
+		t.Fatalf("PatchEntry foreign user: got %v, want ErrForbidden", err)
+	}
+
+	// 2. Owner modifies note
+	newNote := "updated"
+	patched, err := svc.PatchEntry(testContext(user1), e.ID, nil, nil, nil, nil, &newNote)
 	if err != nil {
-		t.Fatalf("Restore: %v", err)
+		t.Fatalf("PatchEntry note: %v", err)
 	}
-	if e.DeletedAt != nil {
-		t.Error("Restore returned a deleted entry")
+	if patched.Note != "updated" {
+		t.Errorf("expected note %q, got %q", "updated", patched.Note)
 	}
-	if _, err := svc.Restore(99); !errors.Is(err, store.ErrNotFound) {
-		t.Errorf("Restore = %v, want store.ErrNotFound", err)
+
+	// 3. Move to unloggable project rejected
+	unloggable := uint(2)
+	_, err = svc.PatchEntry(testContext(user1), e.ID, &unloggable, nil, nil, nil, nil)
+	if !errors.Is(err, ErrProjectNotLoggable) {
+		t.Fatalf("PatchEntry to unloggable project: got %v, want ErrProjectNotLoggable", err)
+	}
+
+	// 4. Retiming running entry without end rejected
+	running := &Entry{
+		WorkspaceID: 1,
+		UserID:      10,
+		ProjectID:   1,
+		StartAt:     testNow.Add(-time.Hour),
+		EndAt:       nil,
+	}
+	if err := repo.Create(context.Background(), running); err != nil {
+		t.Fatalf("create running fixture: %v", err)
+	}
+	newStart := testNow.Add(-2 * time.Hour)
+	_, err = svc.PatchEntry(testContext(user1), running.ID, nil, &newStart, nil, nil, nil)
+	if !errors.Is(err, ErrRetimeRunning) {
+		t.Fatalf("PatchEntry retime running: got %v, want ErrRetimeRunning", err)
 	}
 }
 
-func TestStart(t *testing.T) {
-	svc, st := newService()
-	archived := now
-	st.projects[2] = store.Project{ID: 2, ArchivedAt: &archived}
+func TestDeleteAndRestoreEntry(t *testing.T) {
+	svc, repo, audit, _, _ := newTestService()
+	member := &auth.Principal{WorkspaceID: 1, UserID: 10, Roles: []string{"member"}}
+	otherMember := &auth.Principal{WorkspaceID: 1, UserID: 20, Roles: []string{"member"}}
+	admin := &auth.Principal{WorkspaceID: 1, UserID: 99, Roles: []string{"admin"}}
 
-	if _, err := svc.Start(1, 2, "UTC", ""); !errors.Is(err, ErrArchivedProject) {
-		t.Errorf("Start on an archived project = %v, want ErrArchivedProject", err)
+	end := testNow.Add(-time.Minute)
+	e := &Entry{
+		WorkspaceID: 1,
+		UserID:      10,
+		ProjectID:   1,
+		StartAt:     testNow.Add(-time.Hour),
+		EndAt:       &end,
+	}
+	if err := repo.Create(context.Background(), e); err != nil {
+		t.Fatalf("create fixture: %v", err)
 	}
 
-	e, err := svc.Start(1, 1, "UTC", "fresh")
+	// 1. Other user cannot delete
+	err := svc.DeleteEntry(testContext(otherMember), e.ID)
+	if !errors.Is(err, authz.ErrForbidden) {
+		t.Fatalf("Delete foreign: got %v, want ErrForbidden", err)
+	}
+
+	// 2. Owner can delete
+	err = svc.DeleteEntry(testContext(member), e.ID)
 	if err != nil {
-		t.Fatalf("Start: %v", err)
+		t.Fatalf("Delete own: %v", err)
 	}
-	if e.ID == 0 || !e.StartAt.Equal(now) {
-		t.Errorf("started entry = %+v, want an id and StartAt = now", e)
-	}
-
-	running, err := svc.Running(1)
-	if err != nil || running == nil || running.ID != e.ID {
-		t.Fatalf("Running = %+v, %v, want entry %d", running, err, e.ID)
+	stored, _ := repo.GetByID(context.Background(), e.ID)
+	if stored.DeletedAt == nil {
+		t.Fatal("entry was not soft deleted")
 	}
 
-	var already *AlreadyRunning
-	if _, err := svc.Start(1, 1, "UTC", ""); !errors.As(err, &already) {
-		t.Errorf("second Start = %v, want AlreadyRunning", err)
-	} else if already.Entry.ID != e.ID {
-		t.Errorf("AlreadyRunning names entry %d, want %d", already.Entry.ID, e.ID)
+	// 3. Non-admin cannot restore
+	_, err = svc.RestoreEntry(testContext(member), e.ID)
+	if !errors.Is(err, authz.ErrForbidden) {
+		t.Fatalf("Restore non-admin: got %v, want ErrForbidden", err)
 	}
 
-	if running, err := svc.Running(2); err != nil || running != nil {
-		t.Errorf("Running for a user with no timer = %+v, %v, want nil", running, err)
-	}
-}
-
-func TestStop(t *testing.T) {
-	svc, st := newService()
-	st.seed(t, store.Entry{UserID: 1, ProjectID: 1, StartAt: now.Add(-2 * time.Hour), Note: "old"})
-
-	e, err := svc.Stop(1, "done")
+	// 4. Admin restores successfully and records audit
+	restored, err := svc.RestoreEntry(testContext(admin), e.ID)
 	if err != nil {
-		t.Fatalf("Stop: %v", err)
+		t.Fatalf("Restore admin: %v", err)
 	}
-	if e.EndAt == nil || !e.EndAt.Equal(now) {
-		t.Errorf("EndAt = %v, want now", e.EndAt)
+	if restored.DeletedAt != nil {
+		t.Fatal("restored entry still has DeletedAt")
 	}
-	if e.Note != "done" {
-		t.Errorf("Note = %q, want the stop note", e.Note)
+	if len(audit.records) != 1 {
+		t.Fatalf("expected 1 audit record, got %d", len(audit.records))
 	}
-
-	if _, err := svc.Stop(1, ""); !errors.Is(err, store.ErrNotFound) {
-		t.Errorf("second Stop = %v, want store.ErrNotFound", err)
+	if audit.records[0].action != "entry.restore" || audit.records[0].targetID != e.ID {
+		t.Errorf("audit record mismatch: %+v", audit.records[0])
 	}
 }
 
-func TestStopLeavesAnEntryOver24HoursRunning(t *testing.T) {
-	svc, st := newService()
-	st.seed(t, store.Entry{UserID: 1, ProjectID: 1, StartAt: now.Add(-25 * time.Hour)})
+func TestTimerOperations(t *testing.T) {
+	svc, _, _, _, clk := newTestService()
+	member := &auth.Principal{WorkspaceID: 1, UserID: 10, Roles: []string{"member"}}
+	ctx := testContext(member)
 
-	if _, err := svc.Stop(1, ""); !errors.Is(err, ErrTooLong) {
-		t.Errorf("Stop = %v, want ErrTooLong", err)
+	// 1. GetRunning returns nil initially
+	running, err := svc.GetRunning(ctx)
+	if err != nil || running != nil {
+		t.Fatalf("GetRunning initial: got (%+v, %v), want (nil, nil)", running, err)
 	}
-	if running, err := svc.Running(1); err != nil || running == nil {
-		t.Error("stopping a too-long entry must leave it running")
+
+	// 2. StartTimer
+	started, err := svc.StartTimer(ctx, 1, "UTC", "first timer")
+	if err != nil {
+		t.Fatalf("StartTimer: %v", err)
+	}
+	if started.ID == 0 || started.EndAt != nil {
+		t.Fatalf("StartTimer returned invalid entry: %+v", started)
+	}
+
+	// Advance clock by 1 hour
+	clk.Advance(time.Hour)
+
+	// 3. Second StartTimer conflicts
+	_, err = svc.StartTimer(ctx, 1, "UTC", "second timer")
+	var conflict *AlreadyRunning
+	if !errors.As(err, &conflict) {
+		t.Fatalf("StartTimer duplicate: got %v, want AlreadyRunning", err)
+	}
+	if conflict.Entry.ID != started.ID {
+		t.Errorf("conflict entry ID = %d, want %d", conflict.Entry.ID, started.ID)
+	}
+
+	// 4. StopTimer keeps existing note if blank passed
+	blank := ""
+	stopped, err := svc.StopTimer(ctx, &blank)
+	if err != nil {
+		t.Fatalf("StopTimer: %v", err)
+	}
+	if stopped.EndAt == nil || !stopped.EndAt.Equal(testNow.Add(time.Hour)) {
+		t.Errorf("stopped EndAt mismatch: %v", stopped.EndAt)
+	}
+	if stopped.Note != "first timer" {
+		t.Errorf("expected note preserved 'first timer', got %q", stopped.Note)
+	}
+
+	// 5. StopTimer when none running returns ErrNotFound
+	_, err = svc.StopTimer(ctx, nil)
+	if !errors.Is(err, ErrNotFound) {
+		t.Fatalf("StopTimer with none running: got %v, want ErrNotFound", err)
+	}
+}
+
+func TestStopTimerExceeding24HoursLeavesRunning(t *testing.T) {
+	svc, repo, _, _, _ := newTestService()
+	member := &auth.Principal{WorkspaceID: 1, UserID: 10, Roles: []string{"member"}}
+	ctx := testContext(member)
+
+	e := &Entry{
+		WorkspaceID: 1,
+		UserID:      10,
+		ProjectID:   1,
+		StartAt:     testNow.Add(-25 * time.Hour),
+		EndAt:       nil,
+	}
+	if err := repo.Create(context.Background(), e); err != nil {
+		t.Fatalf("create fixture: %v", err)
+	}
+
+	_, err := svc.StopTimer(ctx, nil)
+	if !errors.Is(err, ErrTooLong) {
+		t.Fatalf("StopTimer too long: got %v, want ErrTooLong", err)
+	}
+
+	running, err := svc.GetRunning(ctx)
+	if err != nil || running == nil {
+		t.Fatalf("expected timer to stay running, got %+v, %v", running, err)
+	}
+}
+
+func TestListEntries(t *testing.T) {
+	svc, repo, _, _, _ := newTestService()
+	member := &auth.Principal{WorkspaceID: 1, UserID: 10, Roles: []string{"member"}}
+	admin := &auth.Principal{WorkspaceID: 1, UserID: 99, Roles: []string{"admin"}}
+
+	end := testNow.Add(-time.Hour)
+	del := testNow.Add(-30 * time.Minute)
+	repo.Create(context.Background(), &Entry{WorkspaceID: 1, UserID: 10, ProjectID: 1, StartAt: testNow.Add(-2 * time.Hour), EndAt: &end})
+	repo.Create(context.Background(), &Entry{WorkspaceID: 1, UserID: 20, ProjectID: 1, StartAt: testNow.Add(-2 * time.Hour), EndAt: &end})
+	repo.Create(context.Background(), &Entry{WorkspaceID: 1, UserID: 10, ProjectID: 1, StartAt: testNow.Add(-3 * time.Hour), EndAt: &end, DeletedAt: &del})
+
+	// Member only sees own non-deleted entries
+	entries, err := svc.ListEntries(testContext(member), ListFilter{})
+	if err != nil {
+		t.Fatalf("ListEntries member: %v", err)
+	}
+	if len(entries) != 1 || entries[0].UserID != 10 {
+		t.Errorf("expected 1 entry for user 10, got %d", len(entries))
+	}
+
+	// Member cannot request IncludeDeleted
+	_, err = svc.ListEntries(testContext(member), ListFilter{IncludeDeleted: true})
+	if !errors.Is(err, authz.ErrForbidden) {
+		t.Fatalf("member IncludeDeleted: got %v, want ErrForbidden", err)
+	}
+
+	// Admin can request IncludeDeleted and see all
+	adminEntries, err := svc.ListEntries(testContext(admin), ListFilter{IncludeDeleted: true})
+	if err != nil {
+		t.Fatalf("ListEntries admin: %v", err)
+	}
+	if len(adminEntries) != 3 {
+		t.Errorf("expected 3 entries for admin, got %d", len(adminEntries))
 	}
 }

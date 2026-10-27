@@ -1,215 +1,355 @@
 package entry
 
 import (
+	"context"
 	"errors"
 	"time"
 
+	"github.com/havspect/tstamps/internal/auth"
+	"github.com/havspect/tstamps/internal/authz"
 	"github.com/havspect/tstamps/internal/clock"
-	"github.com/havspect/tstamps/internal/store"
 )
 
-// This file is the write side of entries: every mutation and the rules it must
-// obey. Handlers decode, call one method and map the error; nothing here knows
-// about HTTP or the database beyond the Store interface.
-
-var (
-	// ErrForbidden is returned for an entry that belongs to another user.
-	ErrForbidden = errors.New("entry belongs to another user")
-	// ErrUnknownProject is returned when an entry points at a project that does not exist.
-	ErrUnknownProject = errors.New("unknown project")
-	// ErrArchivedProject is returned when an entry points at an archived project.
-	ErrArchivedProject = errors.New("project is archived")
-	// ErrRetimeRunning is returned when a running entry's start moves without an end.
-	ErrRetimeRunning = errors.New("a running entry needs an end_at to be retimed")
-)
-
-// AlreadyRunning is returned by Start when the user already has a running
-// entry; it carries that entry so the reply can name it.
-type AlreadyRunning struct{ Entry *store.Entry }
-
-func (e *AlreadyRunning) Error() string { return "user already has a running entry" }
-
-// Store is the persistence the service needs. *store.Store is the production
-// adapter; tests use a map.
-type Store interface {
-	EntryByID(id uint) (*store.Entry, error)
-	CreateEntry(e *store.Entry) error
-	UpdateEntry(id uint, at time.Time, changes map[string]any) error
-	SoftDeleteEntry(id uint, at time.Time) error
-	RestoreEntry(id uint, at time.Time) error
-	RunningEntry(userID uint) (*store.Entry, error)
-	StopRunning(userID uint, at time.Time, note string) error
-	ProjectByID(id uint) (*store.Project, error)
-}
-
-// Service applies the entry rules to the store.
+// Service provides entry domain operations enforcing authorization and invariant rules.
 type Service struct {
-	store Store
-	clock clock.Clock
+	repo       Repository
+	uow        UnitOfWork
+	audit      AuditRecorder
+	projects   ProjectChecker
+	authorizer authz.Authorizer
+	clock      clock.Clock
 }
 
-// New returns a Service writing through st, with "now" taken from clk.
-func New(st Store, clk clock.Clock) *Service {
-	return &Service{store: st, clock: clk}
+// NewService creates a new entry domain Service.
+func NewService(
+	repo Repository,
+	uow UnitOfWork,
+	audit AuditRecorder,
+	projects ProjectChecker,
+	authorizer authz.Authorizer,
+	clk clock.Clock,
+) *Service {
+	return &Service{
+		repo:       repo,
+		uow:        uow,
+		audit:      audit,
+		projects:   projects,
+		authorizer: authorizer,
+		clock:      clk,
+	}
 }
 
-// Create logs a finished entry for userID on projectID in timezone.
-func (s *Service) Create(userID, projectID uint, start, end time.Time, timezone, note string) (*store.Entry, error) {
-	if err := s.loggable(projectID); err != nil {
+// LogEntry logs a completed time entry.
+func (s *Service) LogEntry(
+	ctx context.Context,
+	projectID uint,
+	start, end time.Time,
+	tz, note string,
+) (*Entry, error) {
+	p, ok := auth.PrincipalFrom(ctx)
+	if !ok || p == nil {
+		return nil, authz.ErrUnauthorized
+	}
+	if err := s.authorizer.Check(ctx, p, authz.ActionLogEntry, authz.EntryResource{UserID: p.UserID, ProjectID: projectID}); err != nil {
 		return nil, err
 	}
+
+	loggable, err := s.projects.IsProjectLoggable(ctx, projectID)
+	if err != nil {
+		return nil, err
+	}
+	if !loggable {
+		return nil, ErrProjectNotLoggable
+	}
+
 	now := s.clock.Now()
 	if err := Validate(start, end, now); err != nil {
 		return nil, err
 	}
-	e := &store.Entry{
-		UserID: userID, ProjectID: projectID,
-		StartAt: start, EndAt: &end, Timezone: timezone, Note: note,
-		CreatedAt: now, UpdatedAt: now,
+	if tz == "" {
+		tz = "UTC"
 	}
-	if err := s.store.CreateEntry(e); err != nil {
+
+	e := &Entry{
+		WorkspaceID: p.WorkspaceID,
+		UserID:      p.UserID,
+		ProjectID:   projectID,
+		StartAt:     start,
+		EndAt:       &end,
+		Timezone:    tz,
+		Note:        note,
+		CreatedAt:   now,
+		UpdatedAt:   now,
+	}
+
+	err = s.uow.Run(ctx, func(txCtx context.Context) error {
+		return s.repo.Create(txCtx, e)
+	})
+	if err != nil {
 		return nil, err
 	}
 	return e, nil
 }
 
-// Patch changes the fields in in that are set, on an entry the user owns. It
-// writes only those fields, so a stop that landed since the entry was read is
-// not undone by a note edit.
-type Patch struct {
-	ProjectID *uint
-	StartAt   *time.Time
-	EndAt     *time.Time
-	Timezone  *string
-	Note      *string
-}
+// PatchEntry modifies an existing live entry.
+func (s *Service) PatchEntry(
+	ctx context.Context,
+	id uint,
+	projectID *uint,
+	start, end *time.Time,
+	timezone *string,
+	note *string,
+) (*Entry, error) {
+	p, ok := auth.PrincipalFrom(ctx)
+	if !ok || p == nil {
+		return nil, authz.ErrUnauthorized
+	}
 
-func (s *Service) Patch(userID, id uint, in Patch) (*store.Entry, error) {
-	e, err := s.own(userID, id)
+	var updated *Entry
+	err := s.uow.Run(ctx, func(txCtx context.Context) error {
+		e, err := s.repo.GetByID(txCtx, id)
+		if err != nil || e == nil || e.DeletedAt != nil {
+			return ErrNotFound
+		}
+
+		if err := s.authorizer.Check(txCtx, p, authz.ActionModifyEntry, authz.EntryResource{UserID: e.UserID, ProjectID: e.ProjectID}); err != nil {
+			return err
+		}
+
+		if projectID != nil && *projectID != e.ProjectID {
+			loggable, err := s.projects.IsProjectLoggable(txCtx, *projectID)
+			if err != nil {
+				return err
+			}
+			if !loggable {
+				return ErrProjectNotLoggable
+			}
+			e.ProjectID = *projectID
+		}
+
+		if note != nil {
+			e.Note = *note
+		}
+
+		if timezone != nil {
+			if _, err := time.LoadLocation(*timezone); err != nil {
+				return errors.New("invalid timezone")
+			}
+			e.Timezone = *timezone
+		}
+
+		startVal := e.StartAt
+		if start != nil {
+			startVal = *start
+		}
+		var endVal time.Time
+		switch {
+		case end != nil:
+			endVal = *end
+		case e.EndAt != nil:
+			endVal = *e.EndAt
+		default:
+			if start != nil {
+				return ErrRetimeRunning
+			}
+		}
+
+		now := s.clock.Now()
+		if !endVal.IsZero() && (start != nil || end != nil) {
+			if err := Validate(startVal, endVal, now); err != nil {
+				return err
+			}
+			e.StartAt = startVal
+			e.EndAt = &endVal
+		}
+		e.UpdatedAt = now
+
+		if err := s.repo.Update(txCtx, e); err != nil {
+			return err
+		}
+		updated = e
+		return nil
+	})
 	if err != nil {
 		return nil, err
 	}
-	now := s.clock.Now()
-	changes := map[string]any{}
-	if in.ProjectID != nil && *in.ProjectID != e.ProjectID {
-		if err := s.loggable(*in.ProjectID); err != nil {
-			return nil, err
-		}
-		e.ProjectID = *in.ProjectID
-		changes["project_id"] = e.ProjectID
-	}
-	if in.Note != nil {
-		e.Note = *in.Note
-		changes["note"] = e.Note
-	}
-	if in.Timezone != nil {
-		e.Timezone = *in.Timezone
-		changes["timezone"] = e.Timezone
-	}
-
-	start := e.StartAt
-	if in.StartAt != nil {
-		start = *in.StartAt
-	}
-	var end time.Time
-	switch {
-	case in.EndAt != nil:
-		end = *in.EndAt
-	case e.EndAt != nil:
-		end = *e.EndAt
-	default:
-		// A running entry keeps running until it is given an end time; that is
-		// how a user answers entry-too-long without losing hours.
-		if in.StartAt != nil {
-			return nil, ErrRetimeRunning
-		}
-	}
-	if !end.IsZero() && (in.StartAt != nil || in.EndAt != nil) {
-		if err := Validate(start, end, now); err != nil {
-			return nil, err
-		}
-		e.StartAt, e.EndAt = start, &end
-		changes["start_at"], changes["end_at"] = start, end
-	}
-	if len(changes) > 0 {
-		if err := s.store.UpdateEntry(e.ID, now, changes); err != nil {
-			return nil, err
-		}
-	}
-	return e, nil
+	return updated, nil
 }
 
-// Delete soft-deletes an entry the user owns.
-func (s *Service) Delete(userID, id uint) error {
-	if _, err := s.own(userID, id); err != nil {
-		return err
+// DeleteEntry soft-deletes a live entry.
+func (s *Service) DeleteEntry(ctx context.Context, id uint) error {
+	p, ok := auth.PrincipalFrom(ctx)
+	if !ok || p == nil {
+		return authz.ErrUnauthorized
 	}
-	return s.store.SoftDeleteEntry(id, s.clock.Now())
+
+	return s.uow.Run(ctx, func(txCtx context.Context) error {
+		e, err := s.repo.GetByID(txCtx, id)
+		if err != nil || e == nil || e.DeletedAt != nil {
+			return ErrNotFound
+		}
+
+		if err := s.authorizer.Check(txCtx, p, authz.ActionDeleteEntry, authz.EntryResource{UserID: e.UserID, ProjectID: e.ProjectID}); err != nil {
+			return err
+		}
+
+		return s.repo.SoftDelete(txCtx, id, s.clock.Now())
+	})
 }
 
-// Restore brings a deleted entry back. The admin gate belongs to the caller.
-func (s *Service) Restore(id uint) (*store.Entry, error) {
-	if err := s.store.RestoreEntry(id, s.clock.Now()); err != nil {
-		return nil, err
+// RestoreEntry restores a soft-deleted entry (admin only, audited).
+func (s *Service) RestoreEntry(ctx context.Context, id uint) (*Entry, error) {
+	p, ok := auth.PrincipalFrom(ctx)
+	if !ok || p == nil {
+		return nil, authz.ErrUnauthorized
 	}
-	return s.store.EntryByID(id)
-}
 
-// Start begins a running entry for userID on projectID in timezone.
-func (s *Service) Start(userID, projectID uint, timezone, note string) (*store.Entry, error) {
-	if err := s.loggable(projectID); err != nil {
-		return nil, err
-	}
-	running, err := s.Running(userID)
+	var restored *Entry
+	err := s.uow.Run(ctx, func(txCtx context.Context) error {
+		before, err := s.repo.GetByID(txCtx, id)
+		if err != nil || before == nil {
+			return ErrNotFound
+		}
+
+		if err := s.authorizer.Check(txCtx, p, authz.ActionRestoreEntry, authz.EntryResource{UserID: before.UserID, ProjectID: before.ProjectID}); err != nil {
+			return err
+		}
+
+		if err := s.repo.Restore(txCtx, id); err != nil {
+			return err
+		}
+
+		after, err := s.repo.GetByID(txCtx, id)
+		if err != nil {
+			return err
+		}
+
+		if s.audit != nil {
+			if err := s.audit.Record(txCtx, "entry.restore", "entry", id, map[string]any{
+				"before": before.AuditFields(),
+				"after":  after.AuditFields(),
+			}); err != nil {
+				return err
+			}
+		}
+
+		restored = after
+		return nil
+	})
 	if err != nil {
 		return nil, err
 	}
-	if running != nil {
+	return restored, nil
+}
+
+// StartTimer starts a running timer for the authenticated user.
+func (s *Service) StartTimer(ctx context.Context, projectID uint, tz, note string) (*Entry, error) {
+	p, ok := auth.PrincipalFrom(ctx)
+	if !ok || p == nil {
+		return nil, authz.ErrUnauthorized
+	}
+	if err := s.authorizer.Check(ctx, p, authz.ActionLogEntry, authz.EntryResource{UserID: p.UserID, ProjectID: projectID}); err != nil {
+		return nil, err
+	}
+
+	loggable, err := s.projects.IsProjectLoggable(ctx, projectID)
+	if err != nil {
+		return nil, err
+	}
+	if !loggable {
+		return nil, ErrProjectNotLoggable
+	}
+
+	running, err := s.repo.GetRunning(ctx, p.UserID)
+	if err == nil && running != nil {
 		return nil, &AlreadyRunning{Entry: running}
 	}
+
 	now := s.clock.Now()
-	e := &store.Entry{
-		UserID: userID, ProjectID: projectID,
-		StartAt: now, Timezone: timezone, Note: note, CreatedAt: now, UpdatedAt: now,
+	if tz == "" {
+		tz = "UTC"
 	}
-	if err := s.store.CreateEntry(e); err != nil {
-		if !errors.Is(err, store.ErrEntryRunning) {
-			return nil, err
+
+	e := &Entry{
+		WorkspaceID: p.WorkspaceID,
+		UserID:      p.UserID,
+		ProjectID:   projectID,
+		StartAt:     now,
+		EndAt:       nil,
+		Timezone:    tz,
+		Note:        note,
+		CreatedAt:   now,
+		UpdatedAt:   now,
+	}
+
+	err = s.uow.Run(ctx, func(txCtx context.Context) error {
+		createErr := s.repo.Create(txCtx, e)
+		if createErr != nil {
+			if errors.Is(createErr, ErrRunningExists) {
+				if cur, rErr := s.repo.GetRunning(txCtx, p.UserID); rErr == nil && cur != nil {
+					return &AlreadyRunning{Entry: cur}
+				}
+			}
+			return createErr
 		}
-		// The index caught a start that raced this one; report it the same way.
-		if running, rErr := s.Running(userID); rErr == nil && running != nil {
-			return nil, &AlreadyRunning{Entry: running}
-		}
+		return nil
+	})
+	if err != nil {
 		return nil, err
 	}
 	return e, nil
 }
 
-// Stop ends the user's running entry at now; a missing one is store.ErrNotFound.
-// A stop that would exceed 24 hours returns ErrTooLong and leaves it running.
-func (s *Service) Stop(userID uint, note string) (*store.Entry, error) {
-	running, err := s.store.RunningEntry(userID)
+// StopTimer stops the user's running entry.
+func (s *Service) StopTimer(ctx context.Context, note *string) (*Entry, error) {
+	p, ok := auth.PrincipalFrom(ctx)
+	if !ok || p == nil {
+		return nil, authz.ErrUnauthorized
+	}
+
+	var stopped *Entry
+	err := s.uow.Run(ctx, func(txCtx context.Context) error {
+		running, err := s.repo.GetRunning(txCtx, p.UserID)
+		if err != nil || running == nil {
+			return ErrNotFound
+		}
+
+		if err := s.authorizer.Check(txCtx, p, authz.ActionModifyEntry, authz.EntryResource{UserID: running.UserID, ProjectID: running.ProjectID}); err != nil {
+			return err
+		}
+
+		now := s.clock.Now()
+		if err := Validate(running.StartAt, now, now); err != nil {
+			return err
+		}
+
+		running.EndAt = &now
+		if note != nil && *note != "" {
+			running.Note = *note
+		}
+		running.UpdatedAt = now
+
+		if err := s.repo.Update(txCtx, running); err != nil {
+			return err
+		}
+		stopped = running
+		return nil
+	})
 	if err != nil {
 		return nil, err
 	}
-	now := s.clock.Now()
-	if err := Validate(running.StartAt, now, now); err != nil {
-		return nil, err
-	}
-	if err := s.store.StopRunning(userID, now, note); err != nil {
-		return nil, err
-	}
-	running.EndAt = &now
-	if note != "" {
-		running.Note = note
-	}
-	return running, nil
+	return stopped, nil
 }
 
-// Running returns the user's running entry, or nil when none runs.
-func (s *Service) Running(userID uint) (*store.Entry, error) {
-	running, err := s.store.RunningEntry(userID)
-	if errors.Is(err, store.ErrNotFound) {
+// GetRunning returns the user's current running timer, or nil if none.
+func (s *Service) GetRunning(ctx context.Context) (*Entry, error) {
+	p, ok := auth.PrincipalFrom(ctx)
+	if !ok || p == nil {
+		return nil, authz.ErrUnauthorized
+	}
+
+	running, err := s.repo.GetRunning(ctx, p.UserID)
+	if errors.Is(err, ErrNotFound) {
 		return nil, nil
 	}
 	if err != nil {
@@ -218,31 +358,20 @@ func (s *Service) Running(userID uint) (*store.Entry, error) {
 	return running, nil
 }
 
-// own loads a live entry the user may change; a deleted one is not found.
-func (s *Service) own(userID, id uint) (*store.Entry, error) {
-	e, err := s.store.EntryByID(id)
-	if err != nil {
-		return nil, err
+// ListEntries returns entries matching filter within user's permissions.
+func (s *Service) ListEntries(ctx context.Context, filter ListFilter) ([]Entry, error) {
+	p, ok := auth.PrincipalFrom(ctx)
+	if !ok || p == nil {
+		return nil, authz.ErrUnauthorized
 	}
-	if e.DeletedAt != nil {
-		return nil, store.ErrNotFound
-	}
-	if e.UserID != userID {
-		return nil, ErrForbidden
-	}
-	return e, nil
-}
 
-// loggable checks the project an entry points at: unknown or archived is refused.
-func (s *Service) loggable(projectID uint) error {
-	p, err := s.store.ProjectByID(projectID)
-	switch {
-	case errors.Is(err, store.ErrNotFound):
-		return ErrUnknownProject
-	case err != nil:
-		return err
-	case p.ArchivedAt != nil:
-		return ErrArchivedProject
+	if filter.IncludeDeleted && !p.IsAdmin() {
+		return nil, authz.ErrForbidden
 	}
-	return nil
+
+	if !p.IsAdmin() && !p.HasRole("lead") {
+		filter.UserID = p.UserID
+	}
+
+	return s.repo.List(ctx, filter)
 }

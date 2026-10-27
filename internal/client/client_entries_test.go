@@ -1,47 +1,57 @@
 package client
 
 import (
+	"context"
 	"net/http/httptest"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/havspect/tstamps/internal/api"
 	"github.com/havspect/tstamps/internal/auth"
-	"github.com/havspect/tstamps/internal/clock"
-	"github.com/havspect/tstamps/internal/store"
+	"github.com/havspect/tstamps/internal/project"
+	gormrepo "github.com/havspect/tstamps/internal/repository/gorm"
+	"github.com/havspect/tstamps/internal/team"
 )
 
 // seed starts the API over a store with an admin, a team and a project, and
 // returns a bearer client plus the project id.
 func seed(t *testing.T) (*Client, uint) {
 	t.Helper()
-	st, err := store.Open(filepath.Join(t.TempDir(), "tstamps.db"))
-	if err != nil {
-		t.Fatalf("open store: %v", err)
-	}
-	t.Cleanup(func() { _ = st.Close() })
-	if err := st.Migrate(); err != nil {
-		t.Fatalf("migrate: %v", err)
-	}
+	dbPath := filepath.Join(t.TempDir(), "tstamps.db")
+	handler, db := buildTestServer(t, dbPath)
+
 	hash, err := auth.HashPassword(testPassword)
 	if err != nil {
 		t.Fatalf("hash password: %v", err)
 	}
-	u := &store.User{Email: "ada@example.com", Name: "Ada Lovelace", PasswordHash: hash, Timezone: "UTC", IsAdmin: true, Active: true}
-	if err := st.CreateUser(u); err != nil {
+	onbRepo := gormrepo.NewOnboardingRepository(db)
+	ws, err := onbRepo.CreateWorkspace(context.Background(), "example.com")
+	if err != nil {
+		t.Fatalf("create workspace: %v", err)
+	}
+	adminID, err := onbRepo.CreateInitialAdmin(context.Background(), ws.ID, "ada@example.com", "Ada Lovelace", hash, "UTC")
+	if err != nil {
 		t.Fatalf("create user: %v", err)
 	}
-	team := &store.Team{Name: "Platform"}
-	if err := st.CreateTeam(team); err != nil {
+
+	ctx := gormrepo.WithWorkspaceID(context.Background(), ws.ID)
+	teamRepo := gormrepo.NewTeamRepository(db)
+	tm := &team.Team{Name: "Platform", CreatedAt: time.Now(), UpdatedAt: time.Now()}
+	if err := teamRepo.Create(ctx, tm); err != nil {
 		t.Fatalf("create team: %v", err)
 	}
-	project := &store.Project{TeamID: team.ID, Name: "Timeline"}
-	if err := st.CreateProject(project); err != nil {
+	if err := teamRepo.ReplaceMemberships(ctx, tm.ID, []team.Membership{{TeamID: tm.ID, UserID: adminID, Role: "lead"}}); err != nil {
+		t.Fatalf("replace memberships: %v", err)
+	}
+
+	projRepo := gormrepo.NewProjectRepository(db)
+	proj := &project.Project{TeamID: tm.ID, Name: "Timeline", CreatedAt: time.Now(), UpdatedAt: time.Now()}
+	if err := projRepo.Create(ctx, proj); err != nil {
 		t.Fatalf("create project: %v", err)
 	}
-	srv := httptest.NewServer(api.New(st, clock.System{}))
+
+	srv := httptest.NewServer(handler)
 	t.Cleanup(srv.Close)
 
 	c := New(Config{URL: srv.URL})
@@ -52,7 +62,7 @@ func seed(t *testing.T) (*Client, uint) {
 	if err != nil {
 		t.Fatalf("create token: %v", err)
 	}
-	return New(Config{URL: srv.URL, Token: tok.Token}), project.ID
+	return New(Config{URL: srv.URL, Token: tok.Token}), proj.ID
 }
 
 func TestEntriesReportsAndAdminReads(t *testing.T) {

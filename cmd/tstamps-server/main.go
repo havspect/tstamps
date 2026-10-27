@@ -12,7 +12,7 @@ import (
 	// on the hosts this ships to, so the database is embedded.
 	_ "time/tzdata"
 
-	"github.com/havspect/tstamps/internal/api"
+	"github.com/havspect/tstamps/internal/httpapi"
 	"github.com/havspect/tstamps/internal/version"
 )
 
@@ -39,7 +39,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	case "openapi":
 		// The document goes to stdout; the request log would only pollute a pipe.
 		slog.SetDefault(slog.New(slog.NewTextHandler(io.Discard, nil)))
-		spec, err := api.Spec()
+		spec, err := httpapi.Spec()
 		if err != nil {
 			fmt.Fprintf(stderr, "tstamps-server openapi: %v\n", err)
 			return 1

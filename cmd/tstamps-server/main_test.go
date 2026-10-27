@@ -2,13 +2,14 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/havspect/tstamps/internal/auth"
-	"github.com/havspect/tstamps/internal/store"
+	gormrepo "github.com/havspect/tstamps/internal/repository/gorm"
 )
 
 func TestUsageErrors(t *testing.T) {
@@ -65,16 +66,22 @@ func TestBackup(t *testing.T) {
 		t.Fatalf("stdout %q does not name the destination", stdout.String())
 	}
 
-	reg, err := store.OpenRegistry(dest)
+	dbConn, err := gormrepo.Open(dest)
 	if err != nil {
 		t.Fatalf("open backup: %v", err)
 	}
-	defer reg.Close()
-	w, err := reg.WorkspaceBySlug("example.com")
+	sqlDB, _ := dbConn.DB()
+	if sqlDB != nil {
+		defer sqlDB.Close()
+	}
+	onbRepo := gormrepo.NewOnboardingRepository(dbConn)
+	w, err := onbRepo.GetWorkspaceBySlug(context.Background(), "example.com")
 	if err != nil {
 		t.Fatalf("workspace missing from backup: %v", err)
 	}
-	if _, err := reg.ForWorkspace(w.ID).UserByEmail("ada@example.com"); err != nil {
+	userRepo := gormrepo.NewUserRepository(dbConn)
+	ctx := gormrepo.WithWorkspaceID(context.Background(), w.ID)
+	if _, err := userRepo.GetByEmail(ctx, "ada@example.com"); err != nil {
 		t.Fatalf("admin missing from backup: %v", err)
 	}
 
@@ -96,11 +103,22 @@ func TestWorkspaceCreate(t *testing.T) {
 	}
 	password := passwordFrom(t, stdout.String())
 
-	ws, err := openTestWorkspace(t, db, "example.com")
+	dbConn, err := gormrepo.Open(db)
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	sqlDB, _ := dbConn.DB()
+	if sqlDB != nil {
+		defer sqlDB.Close()
+	}
+	onbRepo := gormrepo.NewOnboardingRepository(dbConn)
+	w, err := onbRepo.GetWorkspaceBySlug(context.Background(), "example.com")
 	if err != nil {
 		t.Fatalf("open workspace: %v", err)
 	}
-	u, err := ws.UserByEmail("ada@example.com")
+	userRepo := gormrepo.NewUserRepository(dbConn)
+	ctx := gormrepo.WithWorkspaceID(context.Background(), w.ID)
+	u, err := userRepo.GetByEmail(ctx, "ada@example.com")
 	if err != nil {
 		t.Fatalf("admin missing: %v", err)
 	}
@@ -133,18 +151,24 @@ func TestBackupWorkspaces(t *testing.T) {
 	if !strings.Contains(stdout.String(), "2 workspaces") {
 		t.Fatalf("stdout = %q, want the workspace count", stdout.String())
 	}
-	reg, err := store.OpenRegistry(dest)
+	dbConn, err := gormrepo.Open(dest)
 	if err != nil {
 		t.Fatalf("open backup: %v", err)
 	}
-	defer reg.Close()
+	sqlDB, _ := dbConn.DB()
+	if sqlDB != nil {
+		defer sqlDB.Close()
+	}
+	onbRepo := gormrepo.NewOnboardingRepository(dbConn)
+	userRepo := gormrepo.NewUserRepository(dbConn)
 	for _, slug := range []string{"alpha", "beta"} {
-		w, err := reg.WorkspaceBySlug(slug)
+		w, err := onbRepo.GetWorkspaceBySlug(context.Background(), slug)
 		if err != nil {
 			t.Errorf("backup missing workspace %s: %v", slug, err)
 			continue
 		}
-		if _, err := reg.ForWorkspace(w.ID).UserByEmail("admin@" + slug + ".example"); err != nil {
+		ctx := gormrepo.WithWorkspaceID(context.Background(), w.ID)
+		if _, err := userRepo.GetByEmail(ctx, "admin@"+slug+".example"); err != nil {
 			t.Errorf("admin missing from backup %s: %v", slug, err)
 		}
 	}
@@ -161,19 +185,4 @@ func TestBackupMissingDatabase(t *testing.T) {
 	if _, err := os.Stat(db); !os.IsNotExist(err) {
 		t.Fatalf("backup created the missing database %s", db)
 	}
-}
-
-// openTestWorkspace opens slug in the database at db.
-func openTestWorkspace(t *testing.T, db, slug string) (*store.Store, error) {
-	t.Helper()
-	reg, err := store.OpenRegistry(db)
-	if err != nil {
-		return nil, err
-	}
-	t.Cleanup(func() { _ = reg.Close() })
-	w, err := reg.WorkspaceBySlug(slug)
-	if err != nil {
-		return nil, err
-	}
-	return reg.ForWorkspace(w.ID), nil
 }

@@ -1,17 +1,16 @@
 package client
 
 import (
+	"context"
 	"errors"
 	"net/http/httptest"
 	"path/filepath"
 	"strings"
 	"testing"
 
-	"github.com/havspect/tstamps/internal/api"
 	"github.com/havspect/tstamps/internal/auth"
-	"github.com/havspect/tstamps/internal/clock"
-	"github.com/havspect/tstamps/internal/store"
-	"github.com/havspect/tstamps/internal/workspace"
+	"github.com/havspect/tstamps/internal/onboarding"
+	gormrepo "github.com/havspect/tstamps/internal/repository/gorm"
 )
 
 const testPassword = "correct horse battery staple"
@@ -19,23 +18,23 @@ const testPassword = "correct horse battery staple"
 // newServer starts the real API over a store with one active user.
 func newServer(t *testing.T, email string) *httptest.Server {
 	t.Helper()
-	st, err := store.Open(filepath.Join(t.TempDir(), "tstamps.db"))
-	if err != nil {
-		t.Fatalf("open store: %v", err)
-	}
-	t.Cleanup(func() { _ = st.Close() })
-	if err := st.Migrate(); err != nil {
-		t.Fatalf("migrate: %v", err)
-	}
+	dbPath := filepath.Join(t.TempDir(), "tstamps.db")
+	handler, db := buildTestServer(t, dbPath)
+
 	hash, err := auth.HashPassword(testPassword)
 	if err != nil {
 		t.Fatalf("hash password: %v", err)
 	}
-	u := &store.User{Email: email, Name: "Ada Lovelace", PasswordHash: hash, Timezone: "UTC", Active: true}
-	if err := st.CreateUser(u); err != nil {
+	onbRepo := gormrepo.NewOnboardingRepository(db)
+	ws, err := onbRepo.CreateWorkspace(context.Background(), "example.com")
+	if err != nil {
+		t.Fatalf("create workspace: %v", err)
+	}
+	_, err = onbRepo.CreateInitialAdmin(context.Background(), ws.ID, email, "Ada Lovelace", hash, "UTC")
+	if err != nil {
 		t.Fatalf("create user: %v", err)
 	}
-	srv := httptest.NewServer(api.New(st, clock.System{}))
+	srv := httptest.NewServer(handler)
 	t.Cleanup(srv.Close)
 	return srv
 }
@@ -63,20 +62,18 @@ func TestLogin(t *testing.T) {
 }
 
 func TestWorkspaceBaseURL(t *testing.T) {
-	db := filepath.Join(t.TempDir(), "tstamps.db")
-	password, err := workspace.Create(db, "example.com", "ada@example.com", "Ada Lovelace")
+	dbPath := filepath.Join(t.TempDir(), "tstamps.db")
+	handler, db := buildTestServer(t, dbPath)
+
+	onbRepo := gormrepo.NewOnboardingRepository(db)
+	onbSvc := onboarding.NewService(onbRepo)
+	_, password, err := onbSvc.CreateWorkspace(context.Background(), "example.com", "ada@example.com", "Ada Lovelace")
 	if err != nil {
 		t.Fatalf("create workspace: %v", err)
 	}
-	host, err := workspace.New(db, clock.System{}, nil)
-	if err != nil {
-		t.Fatalf("workspace host: %v", err)
-	}
-	srv := httptest.NewServer(host)
-	t.Cleanup(func() {
-		srv.Close()
-		_ = host.Close()
-	})
+
+	srv := httptest.NewServer(handler)
+	t.Cleanup(srv.Close)
 
 	c := New(Config{URL: srv.URL + "/w/example.com/"})
 	me, err := c.Login("ada@example.com", password)
