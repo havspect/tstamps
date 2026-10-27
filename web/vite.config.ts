@@ -16,37 +16,28 @@ export default defineConfig({
     },
   ],
   server: {
+    // Keep the browser's Host header (localhost:5173) on Go routes instead of
+    // setting changeOrigin: true. That satisfies the API's Origin == Host CSRF
+    // check without header rewriting and ensures OAuth/MCP discovery advertises
+    // http://localhost:5173 (where Vite serves /w/{slug}/oauth/authorize and
+    // /w/{slug}/auth/device) rather than the UI-less Go server on :8080.
     proxy: {
       '/api': {
         target: 'http://localhost:8080',
-        changeOrigin: true,
-        // The server compares Origin to Host for cookie-authenticated writes;
-        // the browser sends localhost:5173, so speak as the API server.
-        configure(proxy) {
-          proxy.on('proxyReq', (request) => {
-            request.setHeader('origin', 'http://localhost:8080')
-          })
-        },
+      },
+      '/.well-known': {
+        target: 'http://localhost:8080',
       },
       '/w': {
         target: 'http://localhost:8080',
-        changeOrigin: true,
         // A browser navigation under /w is an SPA route, not an API call: let
         // Vite serve the shell instead of the Go build's embedded HTML.
         bypass(req) {
           if (req.headers.accept?.includes('text/html')) return req.url
         },
-        // The server compares Origin to Host for cookie-authenticated writes;
-        // the browser sends localhost:5173, so speak as the API server.
-        configure(proxy) {
-          proxy.on('proxyReq', (request) => {
-            request.setHeader('origin', 'http://localhost:8080')
-          })
-        },
       },
       '/login': {
         target: 'http://localhost:8080',
-        changeOrigin: true,
       },
       '/docs': {
         target: 'http://localhost:5174',

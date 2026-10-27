@@ -28,6 +28,8 @@ When the client connects without a token:
 3. You sign in (if not already signed in) and approve the requested scopes (`tstamps.read`, `tstamps.write`).
 4. You can review and revoke connected OAuth clients at any time on **/tokens** in the web UI.
 
+In local development (`just dev`), point the client at Vite on `http://localhost:5173/w/<slug>/mcp` rather than `:8080` so `/w/<slug>/oauth/authorize` opens in the dev UI.
+
 ## Connect over local stdio (`tstamps mcp`)
 
 ### Give the agent its own token

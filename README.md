@@ -118,6 +118,10 @@ just dev         # API, Vite and the manual, all hot reloading
 just e2e         # build the server, then the one- and two-workspace Playwright walks
 ```
 
+In `just dev`, Vite on `http://localhost:5173` is the front door for the UI, API
+and OAuth/MCP discovery (the Go process on `:8080` runs without `-tags web`), so
+point browsers, `tstamps login` and remote MCP clients at
+`http://localhost:5173/w/example.com`.
 `just docs-dev` previews the manual at `http://localhost:5174/docs/`.
 `just e2e` needs the browser once:
 `pnpm --dir web exec playwright install chromium`.
