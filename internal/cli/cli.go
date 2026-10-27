@@ -68,7 +68,13 @@ type App struct {
 func New(out, errOut io.Writer) *App {
 	return &App{
 		Out: out, Err: errOut, In: os.Stdin,
-		NewClient: func(cfg client.Config) Client { return client.New(cfg) },
+		NewClient: func(cfg client.Config) Client {
+			c := client.New(cfg)
+			c.SetOnTokenRefresh(func(newCfg client.Config) {
+				_ = config.SaveClient(newCfg)
+			})
+			return c
+		},
 		LoadConfig: func(urlFlag, tokenFlag string) (client.Config, error) {
 			return config.LoadClient(urlFlag, tokenFlag, os.Getenv)
 		},
@@ -193,7 +199,13 @@ func (a *App) connect(urlFlag, tokenFlag string) (Client, error) {
 	if cfg.URL == "" {
 		return nil, errNoURL
 	}
-	return a.NewClient(cfg), nil
+	c := a.NewClient(cfg)
+	if sc, ok := c.(interface{ SetOnTokenRefresh(func(client.Config)) }); ok {
+		sc.SetOnTokenRefresh(func(newCfg client.Config) {
+			_ = a.SaveConfig(newCfg)
+		})
+	}
+	return c, nil
 }
 
 // fail prints one line and returns 1.

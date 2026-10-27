@@ -562,6 +562,10 @@ func (s *Server) registerOAuthRoutes(apiMux *http.ServeMux) {
 		}
 
 		code := strings.ToUpper(strings.TrimSpace(req.UserCode))
+		code = strings.ReplaceAll(code, " ", "-")
+		if len(code) == 8 && !strings.Contains(code, "-") {
+			code = code[:4] + "-" + code[4:]
+		}
 		if code == "" {
 			writeProblem(w, problem(http.StatusBadRequest, urnInvalidInput, "user_code required"))
 			return

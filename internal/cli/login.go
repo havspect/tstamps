@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"os/signal"
 	"runtime"
 	"strings"
 	"time"
@@ -85,7 +86,10 @@ func (a *App) login(args []string) int {
 		go openBrowser(uri)
 	}
 
-	tokenSet, err := c.PollDeviceToken(context.Background(), deviceAuth.DeviceCode, time.Duration(deviceAuth.Interval)*time.Second)
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer stop()
+
+	tokenSet, err := c.PollDeviceToken(ctx, deviceAuth.DeviceCode, time.Duration(deviceAuth.Interval)*time.Second)
 	if err != nil {
 		return a.fail("login", err)
 	}
@@ -98,6 +102,11 @@ func (a *App) login(args []string) int {
 
 	// Re-create client with new token to fetch me
 	c2 := a.NewClient(cfg)
+	if sc, ok := c2.(interface{ SetOnTokenRefresh(func(client.Config)) }); ok {
+		sc.SetOnTokenRefresh(func(newCfg client.Config) {
+			_ = a.SaveConfig(newCfg)
+		})
+	}
 	me, err := c2.Me()
 	if err != nil {
 		return a.fail("login", err)

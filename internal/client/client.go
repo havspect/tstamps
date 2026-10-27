@@ -27,14 +27,25 @@ type Config struct {
 // Client talks to one Tstamps server. Login keeps its session cookie in the
 // jar; a Config.Token is sent as a bearer header on every request.
 type Client struct {
-	cfg  Config
-	http *http.Client
+	cfg            Config
+	http           *http.Client
+	onTokenRefresh func(Config)
 }
 
 // New returns a client for cfg with a cookie jar, so Login can keep its session.
 func New(cfg Config) *Client {
 	jar, _ := cookiejar.New(nil)
 	return &Client{cfg: cfg, http: &http.Client{Jar: jar, Timeout: 30 * time.Second}}
+}
+
+// SetOnTokenRefresh sets a callback to be notified when an OAuth token is refreshed.
+func (c *Client) SetOnTokenRefresh(fn func(Config)) {
+	c.onTokenRefresh = fn
+}
+
+// SetTransport sets the HTTP transport used by the client.
+func (c *Client) SetTransport(rt http.RoundTripper) {
+	c.http.Transport = rt
 }
 
 // Membership is a team role the authenticated user holds.
@@ -224,6 +235,9 @@ func (c *Client) RefreshOAuthToken() (*TokenSet, error) {
 	c.cfg.Token = tok.AccessToken
 	if tok.RefreshToken != "" {
 		c.cfg.RefreshToken = tok.RefreshToken
+	}
+	if c.onTokenRefresh != nil {
+		c.onTokenRefresh(c.cfg)
 	}
 	return &tok, nil
 }

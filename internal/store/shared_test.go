@@ -157,6 +157,27 @@ func TestRegistryScopesEveryWorkspace(t *testing.T) {
 		t.Fatalf("beta audit = %v, %v; want none", events, err)
 	}
 
+	// OAuth models are workspace-isolated too.
+	clientAlpha := &OAuthClient{ClientID: "client-a", ClientName: "Alpha App", RedirectURIs: "[]", GrantTypes: "[]", ResponseTypes: "[]", Scopes: "[]"}
+	clientBeta := &OAuthClient{ClientID: "client-b", ClientName: "Beta App", RedirectURIs: "[]", GrantTypes: "[]", ResponseTypes: "[]", Scopes: "[]"}
+	if err := as.scoped().Create(clientAlpha).Error; err != nil {
+		t.Fatalf("create alpha oauth client: %v", err)
+	}
+	if err := bs.scoped().Create(clientBeta).Error; err != nil {
+		t.Fatalf("create beta oauth client: %v", err)
+	}
+	if client, err := as.OAuthClientByID("client-b"); err == nil && client != nil {
+		t.Fatalf("alpha read beta oauth client, want error")
+	}
+
+	tokBeta := &OAuthAccessToken{RequestID: "req-tok-beta", SignatureHash: "sig-beta", ClientID: "client-b", UserID: bu.ID, Scopes: "[]", Audience: "[]", SessionData: "{}", ExpiresAt: now.Add(time.Hour)}
+	if err := bs.scoped().Create(tokBeta).Error; err != nil {
+		t.Fatalf("create beta access token: %v", err)
+	}
+	if _, err := as.OAuthAccessTokenBySignatureHash("sig-beta"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("alpha read beta access token: %v, want ErrNotFound", err)
+	}
+
 	// One file holds both workspaces: this is the architecture, not two stores
 	// that happen to point at a copy.
 	all, err := reg.Workspaces()

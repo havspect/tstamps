@@ -577,7 +577,7 @@ func (s *Store) DeviceCodeByDeviceCodeHash(hash string) (*OAuthDeviceCode, error
 
 func (s *Store) ApproveDeviceCodeByUserCode(userCodeHash string, userID uint, status int) error {
 	res := s.scoped().Model(&OAuthDeviceCode{}).
-		Where("user_code_hash = ? AND status = ?", userCodeHash, DeviceStatusPending).
+		Where("user_code_hash = ? AND status = ? AND expires_at > ?", userCodeHash, DeviceStatusPending, time.Now()).
 		Updates(map[string]any{
 			"user_id": userID,
 			"status":  status,

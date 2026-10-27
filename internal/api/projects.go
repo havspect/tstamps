@@ -7,6 +7,7 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
+	"github.com/havspect/tstamps/internal/change"
 	"github.com/havspect/tstamps/internal/store"
 )
 
@@ -123,15 +124,8 @@ func (s *Server) createProject(ctx context.Context, in *projectCreateInput) (*pr
 	if err != nil {
 		return nil, err
 	}
-	now := s.Clock.Now()
-	p := &store.Project{TeamID: in.Body.TeamID, Name: in.Body.Name, Color: in.Body.Color, CreatedAt: now, UpdatedAt: now}
-	err = s.Store.InTx(func(tx *store.Store) error {
-		if err := tx.CreateProject(p); err != nil {
-			return err
-		}
-		return tx.RecordAudit(now, s.actorOf(ctx, u), "project.create", "project", p.ID,
-			store.Change{After: p.AuditFields()})
-	})
+	actor := s.changeActorOf(ctx, u)
+	p, err := s.change.Projects.Create(ctx, actor, in.Body.TeamID, in.Body.Name, in.Body.Color)
 	if err != nil {
 		return nil, internal(err)
 	}
@@ -191,44 +185,12 @@ func (s *Server) patchProject(ctx context.Context, in *projectPatchInput) (*proj
 			}
 		}
 	}
-	now := s.Clock.Now()
-	var after *store.Project
-	err = s.Store.InTx(func(tx *store.Store) error {
-		before, err := tx.ProjectByID(in.ID)
-		if err != nil {
-			return err
-		}
-		p := *before
-		if body.TeamID != nil && *body.TeamID != p.TeamID {
-			// The check and the write are one statement, so an entry created in
-			// between cannot land on a project that just changed teams.
-			if err := tx.MoveProject(p.ID, *body.TeamID, now); err != nil {
-				return err
-			}
-			p.TeamID = *body.TeamID
-		}
-		if body.Archived != nil {
-			if *body.Archived {
-				at := now
-				p.ArchivedAt = &at
-			} else {
-				p.ArchivedAt = nil
-			}
-		}
-		if body.Name != nil {
-			p.Name = *body.Name
-		}
-		if body.Color != nil {
-			p.Color = *body.Color
-		}
-		if err := tx.UpdateProject(&p); err != nil {
-			return err
-		}
-		if after, err = tx.ProjectByID(in.ID); err != nil {
-			return err
-		}
-		return tx.RecordAudit(now, s.actorOf(ctx, u), "project.update", "project", in.ID,
-			store.Change{Before: before.AuditFields(), After: after.AuditFields()})
+	actor := s.changeActorOf(ctx, u)
+	after, err := s.change.Projects.Update(ctx, actor, in.ID, change.ProjectPatch{
+		Name:     body.Name,
+		Color:    body.Color,
+		TeamID:   body.TeamID,
+		Archived: body.Archived,
 	})
 	if err != nil {
 		return nil, fail(err)
@@ -253,24 +215,8 @@ func (s *Server) restoreProject(ctx context.Context, in *projectRestoreInput) (*
 	if err := s.requireProjectTeam(p.TeamID); err != nil {
 		return nil, err
 	}
-	now := s.Clock.Now()
-	var after *store.Project
-	err = s.Store.InTx(func(tx *store.Store) error {
-		before, err := tx.ProjectByID(in.ID)
-		if err != nil {
-			return err
-		}
-		p := *before
-		p.ArchivedAt = nil
-		if err := tx.UpdateProject(&p); err != nil {
-			return err
-		}
-		if after, err = tx.ProjectByID(in.ID); err != nil {
-			return err
-		}
-		return tx.RecordAudit(now, s.actorOf(ctx, admin), "project.restore", "project", in.ID,
-			store.Change{Before: before.AuditFields(), After: after.AuditFields()})
-	})
+	actor := s.changeActorOf(ctx, admin)
+	after, err := s.change.Projects.Restore(ctx, actor, in.ID)
 	if err != nil {
 		return nil, fail(err)
 	}

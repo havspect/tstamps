@@ -107,7 +107,8 @@ type entryPage struct {
 }
 
 // readEntries fetches the caller's readable entries for rng, already narrowed by
-// filter, and the projects those entries reference.
+// filter and strictly trimmed to the requested date range in each entry's
+// timezone, plus the projects those entries reference.
 func (s *Server) readEntries(scope store.Scope, rng dateRange, filter entryFilter) (entryPage, error) {
 	from, to := rng.padded()
 	entries, err := s.Store.EntriesInRange(from, to, scope)
@@ -126,5 +127,47 @@ func (s *Server) readEntries(scope store.Scope, rng dateRange, filter entryFilte
 	for _, p := range projects {
 		byID[p.ID] = p
 	}
-	return entryPage{entries: filter.matching(entries, byID), projects: byID}, nil
+
+	fromDate := rng.From.Format("2006-01-02")
+	toDate := rng.To.Format("2006-01-02")
+	locations := map[string]*time.Location{}
+
+	filtered := make([]store.Entry, 0, len(entries))
+	for _, e := range filter.matching(entries, byID) {
+		loc, ok := locations[e.Timezone]
+		if !ok {
+			var err error
+			loc, err = time.LoadLocation(e.Timezone)
+			if err != nil {
+				loc = time.UTC
+			}
+			locations[e.Timezone] = loc
+		}
+
+		// An entry overlaps [fromDate, toDate) if its local start is before toDate
+		// and its local end (or start, if running) is on or after fromDate.
+		startLocal := e.StartAt.In(loc)
+		startDate := startLocal.Format("2006-01-02")
+		if startDate >= toDate {
+			continue
+		}
+
+		endDate := startDate
+		if e.EndAt != nil {
+			endLocal := e.EndAt.In(loc)
+			// If end is exact midnight, the previous day was the last active day
+			if endLocal.Hour() == 0 && endLocal.Minute() == 0 && endLocal.Second() == 0 && endLocal.Nanosecond() == 0 && endLocal.After(startLocal) {
+				endDate = endLocal.Add(-time.Second).Format("2006-01-02")
+			} else {
+				endDate = endLocal.Format("2006-01-02")
+			}
+		}
+		if endDate < fromDate {
+			continue
+		}
+
+		filtered = append(filtered, e)
+	}
+
+	return entryPage{entries: filtered, projects: byID}, nil
 }

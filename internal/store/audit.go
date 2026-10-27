@@ -7,9 +7,11 @@ import (
 
 // AuditActor is who acted and the role their authority over the target came from.
 type AuditActor struct {
-	UserID  uint
-	TokenID *uint
-	Role    string // "admin" or "lead"
+	UserID   uint
+	TokenID  *uint
+	ClientID string
+	GrantID  string
+	Role     string // "admin" or "lead"
 }
 
 // Change is the audited state of the target before and after the mutation.
@@ -32,15 +34,17 @@ func (s *Store) RecordAudit(at time.Time, actor AuditActor, action, targetType s
 		return err
 	}
 	return s.db.Create(&AuditEvent{
-		WorkspaceID:  s.workspaceID,
-		At:           at,
-		ActorUserID:  actor.UserID,
-		ActorTokenID: actor.TokenID,
-		ActorRole:    actor.Role,
-		Action:       action,
-		TargetType:   targetType,
-		TargetID:     targetID,
-		Changes:      string(changes),
+		WorkspaceID:   s.workspaceID,
+		At:            at,
+		ActorUserID:   actor.UserID,
+		ActorTokenID:  actor.TokenID,
+		ActorClientID: actor.ClientID,
+		ActorGrantID:  actor.GrantID,
+		ActorRole:     actor.Role,
+		Action:        action,
+		TargetType:    targetType,
+		TargetID:      targetID,
+		Changes:       string(changes),
 	}).Error
 }
 

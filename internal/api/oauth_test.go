@@ -264,4 +264,14 @@ func TestDeviceGrantAndRemoteMCP(t *testing.T) {
 	if rec.Code != http.StatusUnauthorized || !strings.Contains(rec.Header().Get("WWW-Authenticate"), "oauth-protected-resource") {
 		t.Fatalf("expected 401 with WWW-Authenticate on /mcp, got %d (%s)", rec.Code, rec.Header().Get("WWW-Authenticate"))
 	}
+
+	// 6. Authenticated /mcp with bearer token does NOT return 401 or 403
+	rec = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(`{"jsonrpc":"2.0","method":"tools/list","id":1}`))
+	req.Header.Set("Authorization", "Bearer "+accessToken)
+	req.Header.Set("Content-Type", "application/json")
+	srv.ServeHTTP(rec, req)
+	if rec.Code == http.StatusUnauthorized || rec.Code == http.StatusForbidden {
+		t.Fatalf("expected authenticated MCP access, got %d: %s", rec.Code, rec.Body.String())
+	}
 }

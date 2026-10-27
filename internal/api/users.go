@@ -2,13 +2,13 @@ package api
 
 import (
 	"context"
-	"errors"
 	"net/http"
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
 
 	"github.com/havspect/tstamps/internal/auth"
+	"github.com/havspect/tstamps/internal/change"
 	"github.com/havspect/tstamps/internal/store"
 )
 
@@ -122,18 +122,12 @@ func (s *Server) createUser(ctx context.Context, in *createUserInput) (*createUs
 		Email: in.Body.Email, Name: in.Body.Name, Timezone: in.Body.Timezone,
 		PasswordHash: hash, IsAdmin: in.Body.IsAdmin, Active: true, MustChangePassword: true,
 	}
-	now := s.Clock.Now()
-	err = s.Store.InTx(func(tx *store.Store) error {
-		if err := tx.CreateUser(u); err != nil {
-			return err
-		}
-		return tx.RecordAudit(now, s.actorOf(ctx, admin), "user.create", "user", u.ID,
-			store.Change{After: u.AuditFields()})
-	})
+	actor := s.changeActorOf(ctx, admin)
+	created, err := s.change.Users.Create(ctx, actor, u)
 	if err != nil {
 		return nil, fail(err)
 	}
-	return &createUserOutput{Body: createdUser{userResponse: userOf(u), InitialPassword: password}}, nil
+	return &createUserOutput{Body: createdUser{userResponse: userOf(created), InitialPassword: password}}, nil
 }
 
 type updateUserInput struct {
@@ -159,56 +153,12 @@ func (s *Server) updateUser(ctx context.Context, in *updateUserInput) (*userOutp
 		}
 	}
 
-	now := s.Clock.Now()
-	var after *store.User
-	err = s.Store.InTx(func(tx *store.Store) error {
-		before, err := tx.UserByID(in.ID)
-		if err != nil {
-			return err
-		}
-		u := *before
-		if in.Body.Name != nil {
-			u.Name = *in.Body.Name
-		}
-		if in.Body.Timezone != nil {
-			u.Timezone = *in.Body.Timezone
-		}
-		if in.Body.IsAdmin != nil {
-			u.IsAdmin = *in.Body.IsAdmin
-		}
-		if in.Body.Active != nil {
-			u.Active = *in.Body.Active
-		}
-
-		// Read the entry SaveUser is about to stop, so the cascade event can show
-		// the stop from the target's own row.
-		var running *store.Entry
-		if before.Active && !u.Active {
-			running, err = tx.RunningEntry(in.ID)
-			if err != nil && !errors.Is(err, store.ErrNotFound) {
-				return err
-			}
-		}
-		if err := tx.SaveUser(&u, now); err != nil {
-			return err
-		}
-		if after, err = tx.UserByID(in.ID); err != nil {
-			return err
-		}
-		actor := s.actorOf(ctx, admin)
-		if err := tx.RecordAudit(now, actor, "user.update", "user", in.ID,
-			store.Change{Before: before.AuditFields(), After: after.AuditFields()}); err != nil {
-			return err
-		}
-		if running == nil {
-			return nil
-		}
-		stopped, err := tx.EntryByID(running.ID)
-		if err != nil {
-			return err
-		}
-		return tx.RecordAudit(now, actor, "entry.stop", "entry", running.ID,
-			store.Change{Before: running.AuditFields(), After: stopped.AuditFields()})
+	actor := s.changeActorOf(ctx, admin)
+	after, err := s.change.Users.Update(ctx, actor, in.ID, change.UserPatch{
+		Name:     in.Body.Name,
+		Timezone: in.Body.Timezone,
+		IsAdmin:  in.Body.IsAdmin,
+		Active:   in.Body.Active,
 	})
 	if err != nil {
 		return nil, fail(err)
@@ -239,23 +189,8 @@ func (s *Server) resetUserPassword(ctx context.Context, in *resetPasswordInput) 
 	if err != nil {
 		return nil, internal(err)
 	}
-	now := s.Clock.Now()
-	err = s.Store.InTx(func(tx *store.Store) error {
-		before, err := tx.UserByID(in.ID)
-		if err != nil {
-			return err
-		}
-		if err := tx.SetUserPassword(in.ID, hash, true, 0, now); err != nil {
-			return err
-		}
-		after, err := tx.UserByID(in.ID)
-		if err != nil {
-			return err
-		}
-		return tx.RecordAudit(now, s.actorOf(ctx, admin), "user.password.reset", "user", in.ID,
-			store.Change{Before: before.AuditFields(), After: after.AuditFields()})
-	})
-	if err != nil {
+	actor := s.changeActorOf(ctx, admin)
+	if _, err := s.change.Users.ResetPassword(ctx, actor, in.ID, hash); err != nil {
 		return nil, fail(err)
 	}
 	out := &resetPasswordOutput{}

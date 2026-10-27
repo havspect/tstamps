@@ -145,15 +145,8 @@ func (s *Server) createTeam(ctx context.Context, in *teamNameInput) (*teamOutput
 	if err != nil {
 		return nil, err
 	}
-	team := &store.Team{Name: in.Body.Name}
-	now := s.Clock.Now()
-	err = s.Store.InTx(func(tx *store.Store) error {
-		if err := tx.CreateTeam(team); err != nil {
-			return err
-		}
-		return tx.RecordAudit(now, s.actorOf(ctx, admin), "team.create", "team", team.ID,
-			store.Change{After: team.AuditFields()})
-	})
+	actor := s.changeActorOf(ctx, admin)
+	team, err := s.change.Teams.Create(ctx, actor, &store.Team{Name: in.Body.Name})
 	if err != nil {
 		return nil, internal(err)
 	}
@@ -165,23 +158,8 @@ func (s *Server) renameTeam(ctx context.Context, in *teamRenameInput) (*teamOutp
 	if err != nil {
 		return nil, err
 	}
-	now := s.Clock.Now()
-	var team *store.Team
-	var members []store.Member
-	err = s.Store.InTx(func(tx *store.Store) error {
-		before, err := tx.TeamByID(in.ID)
-		if err != nil {
-			return err
-		}
-		if team, err = tx.RenameTeam(in.ID, in.Body.Name, now); err != nil {
-			return err
-		}
-		if members, err = tx.MembersOf(in.ID); err != nil {
-			return err
-		}
-		return tx.RecordAudit(now, s.actorOf(ctx, admin), "team.rename", "team", in.ID,
-			store.Change{Before: before.AuditFields(), After: team.AuditFields()})
-	})
+	actor := s.changeActorOf(ctx, admin)
+	team, members, err := s.change.Teams.Rename(ctx, actor, in.ID, in.Body.Name)
 	if err != nil {
 		return nil, fail(err)
 	}
@@ -193,53 +171,8 @@ func (s *Server) archiveTeam(ctx context.Context, in *teamIDInput) (*struct{}, e
 	if err != nil {
 		return nil, err
 	}
-	now := s.Clock.Now()
-	err = s.Store.InTx(func(tx *store.Store) error {
-		before, err := tx.TeamByID(in.ID)
-		if err != nil {
-			return err
-		}
-		// This is exactly the set ArchiveTeam will archive below.
-		var projects []store.Project
-		if before.ArchivedAt == nil {
-			all, err := tx.Projects(true)
-			if err != nil {
-				return err
-			}
-			for _, p := range all {
-				if p.TeamID == in.ID && p.ArchivedAt == nil {
-					projects = append(projects, p)
-				}
-			}
-		}
-		if err := tx.ArchiveTeam(in.ID, now); err != nil {
-			return err
-		}
-		if before.ArchivedAt != nil {
-			return nil
-		}
-		actor := s.actorOf(ctx, admin)
-		after, err := tx.TeamByID(in.ID)
-		if err != nil {
-			return err
-		}
-		if err := tx.RecordAudit(now, actor, "team.archive", "team", in.ID,
-			store.Change{Before: before.AuditFields(), After: after.AuditFields()}); err != nil {
-			return err
-		}
-		for _, p := range projects {
-			afterProject, err := tx.ProjectByID(p.ID)
-			if err != nil {
-				return err
-			}
-			if err := tx.RecordAudit(now, actor, "project.archive", "project", p.ID,
-				store.Change{Before: p.AuditFields(), After: afterProject.AuditFields()}); err != nil {
-				return err
-			}
-		}
-		return nil
-	})
-	if err != nil {
+	actor := s.changeActorOf(ctx, admin)
+	if err := s.change.Teams.Archive(ctx, actor, in.ID); err != nil {
 		return nil, fail(err)
 	}
 	return nil, nil
@@ -259,30 +192,8 @@ func (s *Server) replaceMembers(ctx context.Context, in *teamMembersInput) (*tea
 		seen[m.UserID] = true
 		members = append(members, store.MemberRole{UserID: m.UserID, Role: m.Role})
 	}
-	// A membership list is not a row, so before and after are built from it.
-	membershipList := func(rows []store.Member) map[string]any {
-		list := make([]map[string]any, 0, len(rows))
-		for _, m := range rows {
-			list = append(list, map[string]any{"user_id": m.UserID, "email": m.Email, "role": m.Role})
-		}
-		return map[string]any{"members": list}
-	}
-	now := s.Clock.Now()
-	var after []store.Member
-	err = s.Store.InTx(func(tx *store.Store) error {
-		before, err := tx.MembersOf(in.ID)
-		if err != nil {
-			return err
-		}
-		if err := tx.ReplaceMemberships(in.ID, members, now); err != nil {
-			return err
-		}
-		if after, err = tx.MembersOf(in.ID); err != nil {
-			return err
-		}
-		return tx.RecordAudit(now, s.actorOf(ctx, admin), "team.members.replace", "team", in.ID,
-			store.Change{Before: membershipList(before), After: membershipList(after)})
-	})
+	actor := s.changeActorOf(ctx, admin)
+	after, err := s.change.Teams.ReplaceMembers(ctx, actor, in.ID, members)
 	if err != nil {
 		return nil, fail(err)
 	}

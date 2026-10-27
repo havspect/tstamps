@@ -55,6 +55,8 @@ type requestInfo struct {
 	User       *store.User     // nil when unauthenticated
 	Session    *store.Session  // nil unless credentials came from the cookie
 	Token      *store.APIToken // nil unless credentials came from the bearer header
+	ClientID   string          // OAuth client_id if authenticated via OAuth token
+	GrantID    string          // OAuth grant request_id if authenticated via OAuth token
 	Scopes     []string        // OAuth scopes if authenticated via OAuth token
 	Cookie     bool            // credentials came from the cookie
 	CookieName string          // which session cookie the request carried, for clearing it
@@ -149,7 +151,8 @@ func (s *Server) withRequest(next http.Handler) http.Handler {
 					hasWrite = true
 				}
 			}
-			if safeMethod(r.Method) {
+			isMCP := r.URL.Path == "/mcp" || r.URL.Path == apiPrefix+"/mcp"
+			if safeMethod(r.Method) || isMCP {
 				if !hasRead && !hasWrite {
 					writeProblem(w, problem(http.StatusForbidden, urnForbidden, "missing tstamps.read scope"))
 					return
@@ -244,9 +247,6 @@ func (s *Server) applyToken(ri *requestInfo, token string) error {
 		sig = token[idx+1:]
 	}
 	at, err := s.Store.OAuthAccessTokenBySignatureHash(sig)
-	if errors.Is(err, store.ErrNotFound) {
-		at, err = s.Store.OAuthAccessTokenBySignatureHash(auth.HashToken(sig))
-	}
 	if err != nil || at == nil {
 		return nil
 	}
@@ -270,6 +270,8 @@ func (s *Server) applyToken(ri *requestInfo, token string) error {
 		scopes = strings.Fields(at.Scopes)
 	}
 	ri.User = u
+	ri.ClientID = at.ClientID
+	ri.GrantID = at.RequestID
 	ri.Scopes = scopes
 	_ = s.Store.TouchOAuthAccessToken(at.ID, s.Clock.Now())
 	return nil

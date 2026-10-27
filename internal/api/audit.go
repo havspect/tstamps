@@ -8,18 +8,30 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
+	"github.com/havspect/tstamps/internal/change"
 	"github.com/havspect/tstamps/internal/store"
 )
 
 // actorOf is the audit actor: the principal, the token it used, and the role its
 // authority came from.
 func (s *Server) actorOf(ctx context.Context, u *store.User) store.AuditActor {
-	a := store.AuditActor{UserID: u.ID, Role: "lead"}
+	return s.changeActorOf(ctx, u).AuditActor()
+}
+
+// changeActorOf returns the change.Actor for a given user context.
+func (s *Server) changeActorOf(ctx context.Context, u *store.User) change.Actor {
+	a := change.Actor{UserID: u.ID, Role: "lead"}
 	if u.IsAdmin {
 		a.Role = "admin"
 	}
-	if ri := requestFrom(ctx); ri != nil && ri.Token != nil {
-		a.TokenID = &ri.Token.ID
+	if ri := requestFrom(ctx); ri != nil {
+		if ri.Token != nil {
+			a.TokenID = &ri.Token.ID
+		}
+		if ri.ClientID != "" {
+			a.ClientID = ri.ClientID
+			a.GrantID = ri.GrantID
+		}
 	}
 	return a
 }

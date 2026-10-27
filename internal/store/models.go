@@ -114,17 +114,19 @@ type Entry struct {
 
 // AuditEvent is one record in the workspace's tamper-evident audit log.
 type AuditEvent struct {
-	ID           uint      `gorm:"primarykey"`
-	WorkspaceID  uint      `gorm:"not null;index"`
-	At           time.Time `gorm:"not null;index"`
-	ActorUserID  uint      `gorm:"not null;index"`
-	ActorTokenID *uint     `gorm:"index"`
-	ActorRole    string    `gorm:"not null"`
-	Action       string    `gorm:"not null"`
-	TargetType   string    `gorm:"not null"`
-	TargetID     uint      `gorm:"not null"`
-	Changes      string    `gorm:"not null"` // JSON {before, after}
-	CreatedAt    time.Time
+	ID            uint      `gorm:"primarykey"`
+	WorkspaceID   uint      `gorm:"not null;index"`
+	At            time.Time `gorm:"not null;index"`
+	ActorUserID   uint      `gorm:"not null;index"`
+	ActorTokenID  *uint     `gorm:"index"`
+	ActorClientID string    `gorm:"index"`
+	ActorGrantID  string    `gorm:"index"`
+	ActorRole     string    `gorm:"not null"`
+	Action        string    `gorm:"not null"`
+	TargetType    string    `gorm:"not null"`
+	TargetID      uint      `gorm:"not null"`
+	Changes       string    `gorm:"not null"` // JSON {before, after}
+	CreatedAt     time.Time
 }
 
 // ServerSecret stores the server-wide Fosite HMAC secret (row ID=1).

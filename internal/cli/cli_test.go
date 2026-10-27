@@ -3,6 +3,7 @@ package cli
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"encoding/json"
 	"strings"
 	"testing"
@@ -38,6 +39,37 @@ type fakeClient struct {
 	entryPatch client.EntryPatch
 	auditQ     client.AuditQuery
 	auditErr   error
+
+	deviceAuth *client.DeviceAuthResponse
+	deviceErr  error
+	tokenSet   *client.TokenSet
+	pollErr    error
+	refreshSet *client.TokenSet
+	refreshErr error
+	loginEmail string
+	loginPass  string
+	loginErr   error
+}
+
+func (f *fakeClient) Login(email, password string) (*client.Me, error) {
+	f.loginEmail = email
+	f.loginPass = password
+	if f.loginErr != nil {
+		return nil, f.loginErr
+	}
+	return &f.me, nil
+}
+
+func (f *fakeClient) StartDeviceAuth() (*client.DeviceAuthResponse, error) {
+	return f.deviceAuth, f.deviceErr
+}
+
+func (f *fakeClient) PollDeviceToken(context.Context, string, time.Duration) (*client.TokenSet, error) {
+	return f.tokenSet, f.pollErr
+}
+
+func (f *fakeClient) RefreshOAuthToken() (*client.TokenSet, error) {
+	return f.refreshSet, f.refreshErr
 }
 
 func (f *fakeClient) Me() (*client.Me, error) { return &f.me, nil }

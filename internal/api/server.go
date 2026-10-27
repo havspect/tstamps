@@ -15,6 +15,7 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humago"
 
+	"github.com/havspect/tstamps/internal/change"
 	"github.com/havspect/tstamps/internal/clock"
 	"github.com/havspect/tstamps/internal/entry"
 	"github.com/havspect/tstamps/internal/store"
@@ -32,6 +33,7 @@ const (
 type Server struct {
 	Store   *store.Store
 	Clock   clock.Clock
+	change  *change.Module
 	entries *entry.Service
 	limit   *limiter
 }
@@ -62,7 +64,13 @@ func New(st *store.Store, clk clock.Clock) http.Handler {
 	}
 	doc.Security = []map[string][]string{{"bearerAuth": {}}, {"sessionCookie": {}}}
 
-	s := &Server{Store: st, Clock: clk, entries: entry.New(st, clk), limit: newLimiter(loginLimit, loginWindow)}
+	s := &Server{
+		Store:   st,
+		Clock:   clk,
+		change:  change.New(st, clk),
+		entries: entry.New(st, clk),
+		limit:   newLimiter(loginLimit, loginWindow),
+	}
 	s.auditRoutes(api)
 	s.authRoutes(api)
 	s.entryRoutes(api)
