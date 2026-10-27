@@ -8,42 +8,40 @@ import (
 	"testing"
 
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
-
-	"github.com/havspect/tstamps/internal/client"
 )
 
 // fake embeds the interface so a test implements only what it calls.
 type fake struct {
 	Client
-	me        client.Me
-	report    client.Report
-	lastQuery client.ReportQuery
-	lastEntry client.EntryQuery
+	me        Me
+	report    Report
+	lastQuery ReportInput
+	lastEntry ListEntriesInput
 	deletedID uint
 	startErr  error
 }
 
-func (f *fake) Me() (*client.Me, error) { return &f.me, nil }
+func (f *fake) Me(ctx context.Context) (*Me, error) { return &f.me, nil }
 
-func (f *fake) Report(q client.ReportQuery) (*client.Report, error) {
+func (f *fake) Report(ctx context.Context, q ReportInput) (*Report, error) {
 	f.lastQuery = q
 	return &f.report, nil
 }
 
-func (f *fake) ListEntries(q client.EntryQuery) ([]client.Entry, error) {
+func (f *fake) ListEntries(ctx context.Context, q ListEntriesInput) ([]Entry, error) {
 	f.lastEntry = q
-	return []client.Entry{}, nil
+	return []Entry{}, nil
 }
 
-func (f *fake) StartTimer(uint, string, string) (*client.Entry, error) {
+func (f *fake) StartTimer(ctx context.Context, in StartTimerInput) (*Entry, error) {
 	if f.startErr != nil {
 		return nil, f.startErr
 	}
-	return &client.Entry{ID: 1}, nil
+	return &Entry{ID: 1, Timezone: in.Timezone}, nil
 }
 
-func (f *fake) DeleteEntry(id uint) error {
-	f.deletedID = id
+func (f *fake) DeleteEntry(ctx context.Context, in DeleteEntryInput) error {
+	f.deletedID = in.ID
 	return nil
 }
 
@@ -104,9 +102,9 @@ func TestToolsAndAnnotations(t *testing.T) {
 
 func TestWhoamiAndReport(t *testing.T) {
 	cs := connect(t, &fake{
-		me: client.Me{ID: 7, Email: "ada@example.com", Name: "Ada Lovelace", Timezone: "UTC"},
-		report: client.Report{
-			Rows:         []client.ReportRow{{Bucket: "2026-W43", User: "Ada Lovelace", Seconds: 9000}},
+		me: Me{ID: 7, Email: "ada@example.com", Name: "Ada Lovelace", Timezone: "UTC"},
+		report: Report{
+			Rows:         []ReportRow{{Bucket: "2026-W43", User: "Ada Lovelace", Seconds: 9000}},
 			TotalSeconds: 9000,
 		},
 	})
@@ -164,6 +162,74 @@ func TestDeleteAndError(t *testing.T) {
 	}
 	if body := contentText(res); !strings.Contains(body, "already running") {
 		t.Fatalf("error body %q does not carry the server detail", body)
+	}
+}
+
+type testPolicy struct {
+	writeAllowed bool
+	resolvedTZ   string
+}
+
+func (p *testPolicy) AuthorizeWrite(ctx context.Context) error {
+	if !p.writeAllowed {
+		return errors.New("insufficient scope: tstamps.write required")
+	}
+	return nil
+}
+
+func (p *testPolicy) ResolveTimezone(ctx context.Context, requested string) (string, error) {
+	if requested != "" {
+		return requested, nil
+	}
+	return p.resolvedTZ, nil
+}
+
+func TestPolicyEnforcement(t *testing.T) {
+	ctx := context.Background()
+	fk := &fake{}
+	pol := &testPolicy{writeAllowed: false, resolvedTZ: "Asia/Tokyo"}
+	srv := NewServer(Config{Backend: fk, Policy: pol})
+
+	t1, t2 := sdk.NewInMemoryTransports()
+	ss, err := srv.Connect(ctx, t1, nil)
+	if err != nil {
+		t.Fatalf("connect server: %v", err)
+	}
+	defer ss.Close()
+
+	cs, err := sdk.NewClient(&sdk.Implementation{Name: "test", Version: "1"}, nil).Connect(ctx, t2, nil)
+	if err != nil {
+		t.Fatalf("connect client: %v", err)
+	}
+	defer cs.Close()
+
+	// 1. Write denied by policy
+	res, err := cs.CallTool(ctx, &sdk.CallToolParams{
+		Name: "start_timer", Arguments: map[string]any{"project_id": 1},
+	})
+	if err != nil {
+		t.Fatalf("start_timer: %v", err)
+	}
+	if !res.IsError {
+		t.Fatalf("expected tool error for forbidden write")
+	}
+	if !strings.Contains(contentText(res), "insufficient scope") {
+		t.Fatalf("expected insufficient scope error, got: %s", contentText(res))
+	}
+
+	// 2. Write allowed and timezone resolved
+	pol.writeAllowed = true
+	res, err = cs.CallTool(ctx, &sdk.CallToolParams{
+		Name: "start_timer", Arguments: map[string]any{"project_id": 1},
+	})
+	if err != nil {
+		t.Fatalf("start_timer: %v", err)
+	}
+	if res.IsError {
+		t.Fatalf("start_timer failed: %s", contentText(res))
+	}
+	if !strings.Contains(contentText(res), "Asia/Tokyo") {
+		t.Fatalf("expected resolved timezone in output, got: %s", contentText(res))
 	}
 }
 
