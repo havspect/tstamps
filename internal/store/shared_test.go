@@ -2,9 +2,14 @@ package store
 
 import (
 	"errors"
+	"fmt"
 	"path/filepath"
+	"reflect"
+	"strings"
 	"testing"
 	"time"
+
+	"gorm.io/gorm"
 )
 
 // TestRegistryScopesEveryWorkspace is the core promise of the shared file: two
@@ -184,4 +189,225 @@ func TestRegistryScopesEveryWorkspace(t *testing.T) {
 	if err != nil || len(all) != 2 {
 		t.Fatalf("workspaces = %v, %v; want two", all, err)
 	}
+}
+
+// TestDynamicTenancyScopingContract dynamically verifies that all models registered
+// in AutoMigrate are properly categorized as either tenant-scoped or server-global,
+// and that all tenant models enforce automatic tenancy session scoping on Create,
+// Query, Update, and Delete.
+func TestDynamicTenancyScopingContract(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "contract.db")
+	reg, err := OpenRegistry(path)
+	if err != nil {
+		t.Fatalf("open registry: %v", err)
+	}
+	t.Cleanup(func() { _ = reg.Close() })
+	if err := reg.Migrate(); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+
+	w1, w2 := &Workspace{Slug: "w1"}, &Workspace{Slug: "w2"}
+	if err := reg.CreateWorkspace(w1); err != nil {
+		t.Fatalf("create w1: %v", err)
+	}
+	if err := reg.CreateWorkspace(w2); err != nil {
+		t.Fatalf("create w2: %v", err)
+	}
+
+	s1 := reg.ForWorkspace(w1.ID)
+	s2 := reg.ForWorkspace(w2.ID)
+
+	var tenantCount, globalCount int
+	seq := 1
+
+	for _, modelPtr := range allModels {
+		modelType := reflect.TypeOf(modelPtr).Elem()
+		modelName := modelType.Name()
+
+		t.Run(modelName, func(t *testing.T) {
+			wsField, hasWorkspaceID := modelType.FieldByName("WorkspaceID")
+
+			if !hasWorkspaceID {
+				globalCount++
+				// Server-global models must not have WorkspaceID and must be queryable via reg.db
+				if wsField.Name == "WorkspaceID" {
+					t.Fatalf("%s unexpectedly has WorkspaceID", modelName)
+				}
+				sliceType := reflect.SliceOf(modelType)
+				slicePtr := reflect.New(sliceType).Interface()
+				if err := reg.db.Find(slicePtr).Error; err != nil {
+					t.Fatalf("global model %s query failed on reg.db: %v", modelName, err)
+				}
+				return
+			}
+
+			tenantCount++
+
+			// 1. Un-scoped query/create through reg.db (no workspace in context) must fail.
+			sliceType := reflect.SliceOf(modelType)
+			slicePtr := reflect.New(sliceType).Interface()
+			if err := reg.db.Find(slicePtr).Error; err == nil {
+				t.Fatalf("expected error querying tenant model %s without workspace, got nil", modelName)
+			} else if !strings.Contains(err.Error(), "workspace ID required") {
+				t.Fatalf("unexpected error message for un-scoped query on %s: %v", modelName, err)
+			}
+
+			// 2. Creation via s1 must automatically set WorkspaceID to w1.ID.
+			inst1 := newDummyTenantModel(modelPtr, seq)
+			seq++
+			if err := s1.db.Create(inst1).Error; err != nil {
+				t.Fatalf("create %s in s1: %v", modelName, err)
+			}
+
+			instVal := reflect.ValueOf(inst1).Elem()
+			gotWSID := uint(instVal.FieldByName("WorkspaceID").Uint())
+			if gotWSID != w1.ID {
+				t.Fatalf("expected %s.WorkspaceID = %d, got %d", modelName, w1.ID, gotWSID)
+			}
+
+			var rowID uint
+			if idField := instVal.FieldByName("ID"); idField.IsValid() {
+				rowID = uint(idField.Uint())
+			}
+
+			// 3. Creation with mismatched WorkspaceID in s1 must be rejected.
+			instMismatch := newDummyTenantModel(modelPtr, seq)
+			seq++
+			reflect.ValueOf(instMismatch).Elem().FieldByName("WorkspaceID").SetUint(uint64(w2.ID))
+			if err := s1.db.Create(instMismatch).Error; err == nil {
+				t.Fatalf("expected error creating %s with mismatched WorkspaceID in s1, got nil", modelName)
+			} else if !strings.Contains(err.Error(), "workspace ID mismatch") {
+				t.Fatalf("unexpected error for mismatched create on %s: %v", modelName, err)
+			}
+
+			if rowID == 0 {
+				return
+			}
+
+			// 4. Query isolation: s2 must NOT see the row created in s1.
+			var count int64
+			if err := s2.db.Model(modelPtr).Where("id = ?", rowID).Count(&count).Error; err != nil {
+				t.Fatalf("count %s in s2: %v", modelName, err)
+			}
+			if count != 0 {
+				t.Fatalf("s2 saw %d rows of %s created in s1, want 0", count, modelName)
+			}
+
+			queryInst := reflect.New(modelType).Interface()
+			if err := s2.db.First(queryInst, rowID).Error; !errors.Is(err, gorm.ErrRecordNotFound) {
+				t.Fatalf("s2 First(%s, %d) = %v; want ErrRecordNotFound", modelName, rowID, err)
+			}
+
+			// 5. Update isolation: s2 update must affect 0 rows.
+			res := s2.db.Model(modelPtr).Where("id = ?", rowID).Update("created_at", time.Now())
+			if res.Error != nil {
+				t.Fatalf("s2 update %s: %v", modelName, res.Error)
+			}
+			if res.RowsAffected != 0 {
+				t.Fatalf("s2 update affected %d rows of %s in s1, want 0", res.RowsAffected, modelName)
+			}
+
+			// 6. Delete isolation: s2 delete must affect 0 rows.
+			delRes := s2.db.Delete(reflect.New(modelType).Interface(), rowID)
+			if delRes.Error != nil {
+				t.Fatalf("s2 delete %s: %v", modelName, delRes.Error)
+			}
+			if delRes.RowsAffected != 0 {
+				t.Fatalf("s2 delete affected %d rows of %s in s1, want 0", delRes.RowsAffected, modelName)
+			}
+
+			// 7. Verify the row in s1 still exists and is untouched.
+			found := reflect.New(modelType).Interface()
+			if err := s1.db.First(found, rowID).Error; err != nil {
+				t.Fatalf("s1 First(%s, %d) failed after s2 attempts: %v", modelName, rowID, err)
+			}
+
+			// 8. Transaction scoping: transaction on s1 sees it, transaction on s2 does not.
+			err = s1.InTx(func(tx *Store) error {
+				var txFound int64
+				if err := tx.db.Model(modelPtr).Where("id = ?", rowID).Count(&txFound).Error; err != nil {
+					return err
+				}
+				if txFound != 1 {
+					return fmt.Errorf("s1 InTx count = %d, want 1", txFound)
+				}
+				return nil
+			})
+			if err != nil {
+				t.Fatalf("s1 InTx verification failed: %v", err)
+			}
+
+			err = s2.InTx(func(tx *Store) error {
+				var txFound int64
+				if err := tx.db.Model(modelPtr).Where("id = ?", rowID).Count(&txFound).Error; err != nil {
+					return err
+				}
+				if txFound != 0 {
+					return fmt.Errorf("s2 InTx count = %d, want 0", txFound)
+				}
+				return nil
+			})
+			if err != nil {
+				t.Fatalf("s2 InTx verification failed: %v", err)
+			}
+		})
+	}
+
+	if tenantCount != 13 {
+		t.Fatalf("expected 13 tenant models, checked %d", tenantCount)
+	}
+	if globalCount != 3 {
+		t.Fatalf("expected 3 server-global models, checked %d", globalCount)
+	}
+}
+
+func newDummyTenantModel(m any, seq int) any {
+	elemType := reflect.TypeOf(m).Elem()
+	val := reflect.New(elemType).Elem()
+
+	now := time.Now().UTC().Truncate(time.Second)
+
+	for i := 0; i < elemType.NumField(); i++ {
+		f := elemType.Field(i)
+		vf := val.Field(i)
+		if !vf.CanSet() {
+			continue
+		}
+		if f.Name == "ID" || f.Name == "WorkspaceID" {
+			continue
+		}
+		switch vf.Kind() {
+		case reflect.String:
+			switch f.Name {
+			case "Email":
+				vf.SetString(fmt.Sprintf("user-%d@example.com", seq))
+			case "Role":
+				vf.SetString(RoleMember)
+			case "RedirectURIs", "GrantTypes", "ResponseTypes", "Scopes", "Audience":
+				vf.SetString(`["test"]`)
+			case "Changes":
+				vf.SetString(`{}`)
+			default:
+				vf.SetString(fmt.Sprintf("%s-%d", strings.ToLower(f.Name), seq))
+			}
+		case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+			vf.SetUint(uint64(seq))
+		case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+			vf.SetInt(int64(seq))
+		case reflect.Struct:
+			if f.Type == reflect.TypeOf(time.Time{}) {
+				vf.Set(reflect.ValueOf(now))
+			}
+		case reflect.Slice:
+			if f.Type == reflect.TypeOf([]byte{}) {
+				vf.SetBytes([]byte(fmt.Sprintf("secret-%d", seq)))
+			}
+		case reflect.Ptr:
+			if f.Name == "EndAt" {
+				end := now.Add(time.Hour)
+				vf.Set(reflect.ValueOf(&end))
+			}
+		}
+	}
+	return val.Addr().Interface()
 }

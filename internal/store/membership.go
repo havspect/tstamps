@@ -13,7 +13,6 @@ func (s *Store) MembershipsOf(userID uint) ([]TeamMember, error) {
 	out := []TeamMember{}
 	err := s.db.Model(&TeamMembership{}).
 		Select("team_memberships.team_id, teams.name AS team, team_memberships.role").
-		Where("team_memberships.workspace_id = ?", s.workspaceID).
 		Joins("JOIN teams ON teams.id = team_memberships.team_id AND teams.workspace_id = team_memberships.workspace_id").
 		Where("team_memberships.user_id = ?", userID).
 		Order("teams.name").
@@ -26,7 +25,6 @@ func (s *Store) MembershipsOf(userID uint) ([]TeamMember, error) {
 func (s *Store) LeadsTeam(userID, teamID uint) (bool, error) {
 	var n int64
 	err := s.db.Model(&TeamMembership{}).
-		Where("team_memberships.workspace_id = ?", s.workspaceID).
 		Joins("JOIN teams ON teams.id = team_memberships.team_id AND teams.workspace_id = team_memberships.workspace_id").
 		Where("team_memberships.user_id = ? AND team_memberships.team_id = ? AND team_memberships.role = ? AND teams.archived_at IS NULL",
 			userID, teamID, RoleLead).
