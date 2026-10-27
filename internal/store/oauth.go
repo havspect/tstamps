@@ -193,7 +193,7 @@ func (s *Store) Fosite() *FositeStore {
 
 func (fs *FositeStore) dbFromContext(ctx context.Context) *gorm.DB {
 	if tx, ok := ctx.Value(txKey{}).(*gorm.DB); ok {
-		return tx.Session(&gorm.Session{}).Where("workspace_id = ?", fs.store.workspaceID)
+		return tx.Session(&gorm.Session{})
 	}
 	return fs.store.scoped()
 }
@@ -538,7 +538,6 @@ func (fs *FositeStore) RevokeAccessToken(ctx context.Context, requestID string) 
 // Direct store helper methods
 
 func (s *Store) CreateOAuthClient(c *OAuthClient) error {
-	c.WorkspaceID = s.workspaceID
 	return s.db.Create(c).Error
 }
 
@@ -563,7 +562,6 @@ func (s *Store) TouchOAuthAccessToken(id uint, at time.Time) error {
 }
 
 func (s *Store) CreateOAuthDeviceCode(dc *OAuthDeviceCode) error {
-	dc.WorkspaceID = s.workspaceID
 	return s.db.Create(dc).Error
 }
 
@@ -647,11 +645,11 @@ func (s *Store) OAuthGrantsOf(userID uint) ([]OAuthGrant, error) {
 
 func (s *Store) RevokeOAuthGrant(userID uint, requestID string, at time.Time) error {
 	return s.db.Transaction(func(tx *gorm.DB) error {
-		res1 := tx.Model(&OAuthAccessToken{}).Where("workspace_id = ? AND user_id = ? AND request_id = ? AND revoked_at IS NULL", s.workspaceID, userID, requestID).Update("revoked_at", &at)
+		res1 := tx.Model(&OAuthAccessToken{}).Where("user_id = ? AND request_id = ? AND revoked_at IS NULL", userID, requestID).Update("revoked_at", &at)
 		if res1.Error != nil {
 			return res1.Error
 		}
-		res2 := tx.Model(&OAuthRefreshToken{}).Where("workspace_id = ? AND user_id = ? AND request_id = ? AND revoked_at IS NULL", s.workspaceID, userID, requestID).Updates(map[string]any{
+		res2 := tx.Model(&OAuthRefreshToken{}).Where("user_id = ? AND request_id = ? AND revoked_at IS NULL", userID, requestID).Updates(map[string]any{
 			"active":     false,
 			"revoked_at": &at,
 		})

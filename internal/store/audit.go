@@ -32,7 +32,6 @@ func (s *Store) RecordAudit(at time.Time, actor AuditActor, action, targetType s
 		return err
 	}
 	return s.db.Create(&AuditEvent{
-		WorkspaceID:  s.workspaceID,
 		At:           at,
 		ActorUserID:  actor.UserID,
 		ActorTokenID: actor.TokenID,

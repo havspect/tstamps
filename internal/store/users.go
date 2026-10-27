@@ -24,15 +24,14 @@ func (s *Store) ListUsers() ([]User, error) {
 // nobody can reach.
 func (s *Store) SaveUser(u *User, at time.Time) error {
 	return s.db.Transaction(func(tx *gorm.DB) error {
-		ws := tx.Where("workspace_id = ?", s.workspaceID)
 		var current User
-		if err := ws.First(&current, u.ID).Error; err != nil {
+		if err := tx.First(&current, u.ID).Error; err != nil {
 			return translate(err)
 		}
 		if current.IsAdmin && current.Active && (!u.IsAdmin || !u.Active) {
 			// Count and write in one transaction so two concurrent demotions cannot both pass.
 			var admins int64
-			err := tx.Model(&User{}).Where("workspace_id = ? AND is_admin AND active", s.workspaceID).Count(&admins).Error
+			err := tx.Model(&User{}).Where("is_admin AND active").Count(&admins).Error
 			if err != nil {
 				return err
 			}
@@ -42,22 +41,22 @@ func (s *Store) SaveUser(u *User, at time.Time) error {
 		}
 		if current.Active && !u.Active {
 			if err := tx.Model(&Entry{}).
-				Where("workspace_id = ? AND user_id = ? AND end_at IS NULL AND deleted_at IS NULL", s.workspaceID, u.ID).
+				Where("user_id = ? AND end_at IS NULL AND deleted_at IS NULL", u.ID).
 				UpdateColumns(map[string]any{"end_at": at, "note": DeactivationNote, "updated_at": at}).Error; err != nil {
 				return err
 			}
 			if err := tx.Model(&OAuthAccessToken{}).
-				Where("workspace_id = ? AND user_id = ? AND revoked_at IS NULL", s.workspaceID, u.ID).
+				Where("user_id = ? AND revoked_at IS NULL", u.ID).
 				Update("revoked_at", at).Error; err != nil {
 				return err
 			}
 			if err := tx.Model(&OAuthRefreshToken{}).
-				Where("workspace_id = ? AND user_id = ? AND active = ? AND revoked_at IS NULL", s.workspaceID, u.ID, true).
+				Where("user_id = ? AND active = ? AND revoked_at IS NULL", u.ID, true).
 				Updates(map[string]any{"active": false, "revoked_at": at}).Error; err != nil {
 				return err
 			}
 		}
-		return tx.Model(&User{}).Where("workspace_id = ? AND id = ?", s.workspaceID, u.ID).Updates(map[string]any{
+		return tx.Model(&User{}).Where("id = ?", u.ID).Updates(map[string]any{
 			"name":     u.Name,
 			"timezone": u.Timezone,
 			"is_admin": u.IsAdmin,
@@ -71,7 +70,7 @@ func (s *Store) SaveUser(u *User, at time.Time) error {
 // and every token that is not revoked yet. An unknown id returns ErrNotFound.
 func (s *Store) SetUserPassword(id uint, hash string, mustChange bool, keepSessionID uint, at time.Time) error {
 	return s.db.Transaction(func(tx *gorm.DB) error {
-		res := tx.Model(&User{}).Where("workspace_id = ? AND id = ?", s.workspaceID, id).
+		res := tx.Model(&User{}).Where("id = ?", id).
 			Updates(map[string]any{"password_hash": hash, "must_change_password": mustChange})
 		if res.Error != nil {
 			return res.Error
@@ -79,32 +78,32 @@ func (s *Store) SetUserPassword(id uint, hash string, mustChange bool, keepSessi
 		if res.RowsAffected == 0 {
 			return ErrNotFound
 		}
-		if err := tx.Where("workspace_id = ? AND user_id = ? AND id <> ?", s.workspaceID, id, keepSessionID).
+		if err := tx.Where("user_id = ? AND id <> ?", id, keepSessionID).
 			Delete(&Session{}).Error; err != nil {
 			return err
 		}
 		if err := tx.Model(&APIToken{}).
-			Where("workspace_id = ? AND user_id = ? AND revoked_at IS NULL", s.workspaceID, id).
+			Where("user_id = ? AND revoked_at IS NULL", id).
 			Update("revoked_at", at).Error; err != nil {
 			return err
 		}
 		if err := tx.Model(&OAuthAccessToken{}).
-			Where("workspace_id = ? AND user_id = ? AND revoked_at IS NULL", s.workspaceID, id).
+			Where("user_id = ? AND revoked_at IS NULL", id).
 			Update("revoked_at", at).Error; err != nil {
 			return err
 		}
 		if err := tx.Model(&OAuthRefreshToken{}).
-			Where("workspace_id = ? AND user_id = ? AND active = ? AND revoked_at IS NULL", s.workspaceID, id, true).
+			Where("user_id = ? AND active = ? AND revoked_at IS NULL", id, true).
 			Updates(map[string]any{"active": false, "revoked_at": at}).Error; err != nil {
 			return err
 		}
 		if err := tx.Model(&OAuthCode{}).
-			Where("workspace_id = ? AND user_id = ? AND used = ?", s.workspaceID, id, false).
+			Where("user_id = ? AND used = ?", id, false).
 			Update("used", true).Error; err != nil {
 			return err
 		}
 		return tx.Model(&OAuthDeviceCode{}).
-			Where("workspace_id = ? AND user_id = ?", s.workspaceID, id).
+			Where("user_id = ?", id).
 			Update("status", 2).Error // 2 = denied/invalidated status for device codes
 	})
 }

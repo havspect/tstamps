@@ -7,7 +7,6 @@ import (
 
 // CreateProject inserts a project into this workspace.
 func (s *Store) CreateProject(p *Project) error {
-	p.WorkspaceID = s.workspaceID
 	return s.db.Create(p).Error
 }
 

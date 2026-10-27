@@ -5,7 +5,6 @@ import "time"
 // CreateAPIToken stores a personal token in this workspace; TokenHash must
 // already be auth.HashToken(raw).
 func (s *Store) CreateAPIToken(t *APIToken) error {
-	t.WorkspaceID = s.workspaceID
 	return s.db.Create(t).Error
 }
 

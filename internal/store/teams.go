@@ -29,7 +29,6 @@ type MemberRole struct {
 
 // CreateTeam inserts a team into this workspace.
 func (s *Store) CreateTeam(t *Team) error {
-	t.WorkspaceID = s.workspaceID
 	return s.db.Create(t).Error
 }
 
@@ -70,15 +69,15 @@ func (s *Store) RenameTeam(id uint, name string, at time.Time) (*Team, error) {
 // call succeeds; an unknown id returns ErrNotFound.
 func (s *Store) ArchiveTeam(id uint, at time.Time) error {
 	return s.db.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Where("workspace_id = ?", s.workspaceID).First(&Team{}, id).Error; err != nil {
+		if err := tx.First(&Team{}, id).Error; err != nil {
 			return translate(err)
 		}
 		// The IS NULL guard keeps the first archive time on a repeat call.
-		if err := tx.Model(&Team{}).Where("workspace_id = ? AND id = ? AND archived_at IS NULL", s.workspaceID, id).
+		if err := tx.Model(&Team{}).Where("id = ? AND archived_at IS NULL", id).
 			UpdateColumns(map[string]any{"archived_at": at, "updated_at": at}).Error; err != nil {
 			return err
 		}
-		return tx.Model(&Project{}).Where("workspace_id = ? AND team_id = ? AND archived_at IS NULL", s.workspaceID, id).
+		return tx.Model(&Project{}).Where("team_id = ? AND archived_at IS NULL", id).
 			UpdateColumns(map[string]any{"archived_at": at, "updated_at": at}).Error
 	})
 }
@@ -90,7 +89,6 @@ const memberColumns = "team_memberships.team_id, team_memberships.user_id, users
 func (s *Store) AllMembers() ([]Member, error) {
 	out := []Member{}
 	err := s.db.Model(&TeamMembership{}).Select(memberColumns).
-		Where("team_memberships.workspace_id = ?", s.workspaceID).
 		Joins("JOIN users ON users.id = team_memberships.user_id AND users.workspace_id = team_memberships.workspace_id").
 		Order("users.email").Scan(&out).Error
 	return out, err
@@ -100,7 +98,6 @@ func (s *Store) AllMembers() ([]Member, error) {
 func (s *Store) MembersOf(teamID uint) ([]Member, error) {
 	out := []Member{}
 	err := s.db.Model(&TeamMembership{}).Select(memberColumns).
-		Where("team_memberships.workspace_id = ?", s.workspaceID).
 		Where("team_memberships.team_id = ?", teamID).
 		Joins("JOIN users ON users.id = team_memberships.user_id AND users.workspace_id = team_memberships.workspace_id").
 		Order("users.email").Scan(&out).Error
@@ -112,13 +109,13 @@ func (s *Store) MembersOf(teamID uint) ([]Member, error) {
 // An unknown team returns ErrNotFound, an unknown user ErrUnknownUser.
 func (s *Store) ReplaceMemberships(teamID uint, members []MemberRole, at time.Time) error {
 	return s.db.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Where("workspace_id = ?", s.workspaceID).First(&Team{}, teamID).Error; err != nil {
+		if err := tx.First(&Team{}, teamID).Error; err != nil {
 			return translate(err)
 		}
 		keep := make([]uint, 0, len(members))
 		for _, m := range members {
 			var n int64
-			if err := tx.Model(&User{}).Where("workspace_id = ? AND id = ?", s.workspaceID, m.UserID).Count(&n).Error; err != nil {
+			if err := tx.Model(&User{}).Where("id = ?", m.UserID).Count(&n).Error; err != nil {
 				return err
 			}
 			if n == 0 {
@@ -128,7 +125,7 @@ func (s *Store) ReplaceMemberships(teamID uint, members []MemberRole, at time.Ti
 		}
 
 		// An empty NOT IN list matches nothing, so it needs its own branch.
-		del := tx.Where("workspace_id = ? AND team_id = ?", s.workspaceID, teamID)
+		del := tx.Where("team_id = ?", teamID)
 		if len(keep) > 0 {
 			del = del.Where("user_id NOT IN ?", keep)
 		}
@@ -137,7 +134,7 @@ func (s *Store) ReplaceMemberships(teamID uint, members []MemberRole, at time.Ti
 		}
 
 		for _, m := range members {
-			row := TeamMembership{WorkspaceID: s.workspaceID, TeamID: teamID, UserID: m.UserID, Role: m.Role, CreatedAt: at}
+			row := TeamMembership{TeamID: teamID, UserID: m.UserID, Role: m.Role, CreatedAt: at}
 			err := tx.Clauses(clause.OnConflict{
 				Columns:   []clause.Column{{Name: "team_id"}, {Name: "user_id"}},
 				DoUpdates: clause.AssignmentColumns([]string{"role"}),
@@ -152,6 +149,5 @@ func (s *Store) ReplaceMemberships(teamID uint, members []MemberRole, at time.Ti
 
 // CreateMembership links a user to a team with role lead or member.
 func (s *Store) CreateMembership(m *TeamMembership) error {
-	m.WorkspaceID = s.workspaceID
 	return s.db.Create(m).Error
 }

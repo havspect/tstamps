@@ -2,15 +2,19 @@
 package store
 
 import (
+	"context"
 	cryptoRand "crypto/rand"
 	"errors"
 	"fmt"
 	"os"
+	"reflect"
 	"strings"
 
 	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 	"gorm.io/gorm/logger"
+	"gorm.io/gorm/schema"
 )
 
 // SchemaVersion is the model set this binary understands. It is stored in the
@@ -52,7 +56,8 @@ func Open(path string) (*Store, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Store{db: st.db, workspaceID: DefaultWorkspaceID, owned: true}, nil
+	ctx := withWorkspaceID(st.db.Statement.Context, DefaultWorkspaceID)
+	return &Store{db: st.db.WithContext(ctx), workspaceID: DefaultWorkspaceID, owned: true}, nil
 }
 
 // OpenRegistry opens the database that holds several workspaces and their rows.
@@ -93,6 +98,7 @@ func open(path string) (*Store, error) {
 	if err != nil {
 		return nil, err
 	}
+	registerTenancyCallbacks(db)
 	return &Store{db: db}, nil
 }
 
@@ -105,7 +111,8 @@ type Registry struct {
 // ForWorkspace returns a Store scoped to workspace id. It shares the Registry's
 // connection pool, so opening one costs no file handle.
 func (r *Registry) ForWorkspace(id uint) *Store {
-	return &Store{db: r.db, workspaceID: id}
+	ctx := withWorkspaceID(r.db.Statement.Context, id)
+	return &Store{db: r.db.WithContext(ctx), workspaceID: id}
 }
 
 // InTx runs fn with a Registry bound to one transaction, so creating a
@@ -221,13 +228,33 @@ func (s *Store) InTx(fn func(tx *Store) error) error {
 
 // scoped narrows a query to this store's workspace.
 func (s *Store) scoped() *gorm.DB {
-	return s.db.Where("workspace_id = ?", s.workspaceID)
+	return s.db
 }
 
 // Migrate creates or updates the tables; running it on every boot is safe. A
 // database written by a newer binary is refused rather than silently mistreated.
 func (s *Store) Migrate() error {
 	return migrate(s.db)
+}
+
+// allModels lists every table model this package manages.
+var allModels = []any{
+	&Workspace{},
+	&PendingSignup{},
+	&User{},
+	&Session{},
+	&Team{},
+	&TeamMembership{},
+	&Project{},
+	&APIToken{},
+	&Entry{},
+	&AuditEvent{},
+	&ServerSecret{},
+	&OAuthClient{},
+	&OAuthCode{},
+	&OAuthAccessToken{},
+	&OAuthRefreshToken{},
+	&OAuthDeviceCode{},
 }
 
 func migrate(db *gorm.DB) error {
@@ -241,7 +268,7 @@ func migrate(db *gorm.DB) error {
 	if version == SchemaVersion {
 		return nil
 	}
-	if err := db.AutoMigrate(&Workspace{}, &PendingSignup{}, &User{}, &Session{}, &Team{}, &TeamMembership{}, &Project{}, &APIToken{}, &Entry{}, &AuditEvent{}, &ServerSecret{}, &OAuthClient{}, &OAuthCode{}, &OAuthAccessToken{}, &OAuthRefreshToken{}, &OAuthDeviceCode{}); err != nil {
+	if err := db.AutoMigrate(allModels...); err != nil {
 		return err
 	}
 	// Ensure server-wide HMAC secret exists (ID = 1)
@@ -319,7 +346,6 @@ func backupTo(db *gorm.DB, dest string) error {
 // u.Email in place. A taken email in the same workspace returns ErrDuplicateEmail.
 func (s *Store) CreateUser(u *User) error {
 	u.Email = normalizeEmail(u.Email)
-	u.WorkspaceID = s.workspaceID
 	err := s.db.Create(u).Error
 	if errors.Is(err, gorm.ErrDuplicatedKey) {
 		return ErrDuplicateEmail
@@ -349,7 +375,6 @@ func (s *Store) UserByEmail(email string) (*User, error) {
 // CreateSession stores a session in this workspace; TokenHash must already be
 // hashed by auth.HashToken.
 func (s *Store) CreateSession(sess *Session) error {
-	sess.WorkspaceID = s.workspaceID
 	return s.db.Create(sess).Error
 }
 
@@ -387,4 +412,147 @@ func translate(err error) error {
 		return ErrNotFound
 	}
 	return err
+}
+
+type workspaceContextKey struct{}
+
+// withWorkspaceID returns a child context with the workspace ID attached.
+func withWorkspaceID(ctx context.Context, id uint) context.Context {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return context.WithValue(ctx, workspaceContextKey{}, id)
+}
+
+// getWorkspaceID extracts the workspace ID from the db statement's context or settings.
+func getWorkspaceID(db *gorm.DB) (uint, bool) {
+	if db.Statement != nil && db.Statement.Context != nil {
+		if id, ok := db.Statement.Context.Value(workspaceContextKey{}).(uint); ok && id > 0 {
+			return id, true
+		}
+	}
+	if v, ok := db.Get("workspace_id"); ok {
+		if id, ok := v.(uint); ok && id > 0 {
+			return id, true
+		}
+	}
+	return 0, false
+}
+
+// getTenantWorkspaceField reports whether stmt operates on a model that has a WorkspaceID field,
+// and returns the Field if found. Server-global models without WorkspaceID return nil.
+func getTenantWorkspaceField(stmt *gorm.Statement) *schema.Field {
+	if stmt == nil {
+		return nil
+	}
+	if stmt.Schema == nil {
+		if stmt.Model != nil {
+			_ = stmt.Parse(stmt.Model)
+		} else if stmt.Dest != nil {
+			_ = stmt.Parse(stmt.Dest)
+		}
+	}
+	if stmt.Schema == nil {
+		return nil
+	}
+	return stmt.Schema.LookUpField("WorkspaceID")
+}
+
+func tenantCreateCallback(db *gorm.DB) {
+	if db.Error != nil || db.Statement == nil {
+		return
+	}
+	field := getTenantWorkspaceField(db.Statement)
+	if field == nil {
+		return
+	}
+
+	wsID, ok := getWorkspaceID(db)
+	if !ok {
+		db.AddError(fmt.Errorf("workspace ID required for tenant model %s", db.Statement.Schema.Name))
+		return
+	}
+
+	setOrVerify := func(val reflect.Value) error {
+		for val.Kind() == reflect.Ptr {
+			if val.IsNil() {
+				return nil
+			}
+			val = val.Elem()
+		}
+		if val.Kind() != reflect.Struct {
+			return nil
+		}
+		currentVal, isZero := field.ValueOf(db.Statement.Context, val)
+		if !isZero {
+			if curID, ok := currentVal.(uint); ok && curID != 0 && curID != wsID {
+				return fmt.Errorf("workspace ID mismatch: got %d, want %d", curID, wsID)
+			}
+		}
+		return field.Set(db.Statement.Context, val, wsID)
+	}
+
+	reflectVal := db.Statement.ReflectValue
+	switch reflectVal.Kind() {
+	case reflect.Slice, reflect.Array:
+		for i := 0; i < reflectVal.Len(); i++ {
+			if err := setOrVerify(reflectVal.Index(i)); err != nil {
+				db.AddError(err)
+				return
+			}
+		}
+	case reflect.Struct:
+		if err := setOrVerify(reflectVal); err != nil {
+			db.AddError(err)
+			return
+		}
+	default:
+		if db.Statement.Dest != nil {
+			if err := setOrVerify(reflect.ValueOf(db.Statement.Dest)); err != nil {
+				db.AddError(err)
+				return
+			}
+		}
+	}
+}
+
+func tenantScopeCallback(db *gorm.DB) {
+	if db.Error != nil || db.Statement == nil {
+		return
+	}
+	field := getTenantWorkspaceField(db.Statement)
+	if field == nil {
+		return
+	}
+
+	wsID, ok := getWorkspaceID(db)
+	if !ok {
+		db.AddError(fmt.Errorf("workspace ID required for tenant model %s", db.Statement.Schema.Name))
+		return
+	}
+
+	const appliedKey = "tenancy:applied"
+	if _, loaded := db.Statement.Settings.LoadOrStore(appliedKey, true); loaded {
+		return
+	}
+
+	tableName := db.Statement.Schema.Table
+	if db.Statement.Table != "" {
+		tableName = db.Statement.Table
+	}
+
+	col := clause.Column{Table: tableName, Name: field.DBName}
+	db.Statement.AddClause(clause.Where{
+		Exprs: []clause.Expression{
+			clause.Eq{Column: col, Value: wsID},
+		},
+	})
+}
+
+func registerTenancyCallbacks(db *gorm.DB) {
+	_ = db.Callback().Create().Before("gorm:before_create").Register("tenancy:create", tenantCreateCallback)
+	_ = db.Callback().Query().Before("gorm:query").Register("tenancy:query", tenantScopeCallback)
+	_ = db.Callback().Row().Before("gorm:row").Register("tenancy:row", tenantScopeCallback)
+	_ = db.Callback().Update().Before("gorm:before_update").Register("tenancy:update", tenantScopeCallback)
+	_ = db.Callback().Delete().Before("gorm:before_delete").Register("tenancy:delete", tenantScopeCallback)
 }

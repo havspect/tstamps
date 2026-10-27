@@ -30,7 +30,6 @@ type Scope struct {
 // CreateEntry inserts e into this workspace. A second running entry for the same
 // user returns ErrEntryRunning, whichever of the two writers loses the race.
 func (s *Store) CreateEntry(e *Entry) error {
-	e.WorkspaceID = s.workspaceID
 	err := s.db.Create(e).Error
 	if errors.Is(err, gorm.ErrDuplicatedKey) {
 		return ErrEntryRunning
@@ -156,7 +155,6 @@ func (sc Scope) apply(q *gorm.DB) *gorm.DB {
 func (s *Store) ProjectIDsLedBy(userID uint) ([]uint, error) {
 	out := []uint{}
 	err := s.db.Model(&Project{}).
-		Where("projects.workspace_id = ?", s.workspaceID).
 		Joins("JOIN team_memberships ON team_memberships.team_id = projects.team_id AND team_memberships.workspace_id = projects.workspace_id").
 		Joins("JOIN teams ON teams.id = projects.team_id AND teams.workspace_id = projects.workspace_id").
 		Where("team_memberships.user_id = ? AND team_memberships.role = ? AND teams.archived_at IS NULL",
