@@ -279,10 +279,36 @@ func (s *Server) health(w http.ResponseWriter, _ *http.Request) {
 
 func (s *Server) robots(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-	_, _ = fmt.Fprintf(w, "User-agent: *\nAllow: /\nDisallow: /login\nDisallow: /password\nDisallow: /signup\nDisallow: /timeline\nDisallow: /reports\nDisallow: /admin/\nDisallow: /api/\n\nSitemap: %s/sitemap.xml\n", origin(r))
+	_, _ = fmt.Fprintf(w, "User-agent: *\nAllow: /\nAllow: /docs/\nDisallow: /login\nDisallow: /password\nDisallow: /signup\nDisallow: /timeline\nDisallow: /reports\nDisallow: /admin/\nDisallow: /api/\n\nSitemap: %s/sitemap.xml\n", origin(r))
 }
 
 func (s *Server) sitemap(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/xml")
-	_, _ = fmt.Fprintf(w, xml.Header+`<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"><url><loc>%s/</loc></url></urlset>`+"\n", html.EscapeString(origin(r)))
+	base := html.EscapeString(origin(r))
+	docs := []string{
+		"/",
+		"/docs/",
+		"/docs/install-cli",
+		"/docs/timeline",
+		"/docs/reports",
+		"/docs/cli",
+		"/docs/mcp",
+		"/docs/agents/",
+		"/docs/agents/claude",
+		"/docs/agents/codex",
+		"/docs/agents/langdock",
+		"/docs/agents/opencode",
+		"/docs/admin",
+		"/docs/server",
+		"/docs/workspaces",
+		"/docs/backup-upgrade",
+	}
+	var b strings.Builder
+	b.WriteString(xml.Header)
+	b.WriteString(`<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">` + "\n")
+	for _, doc := range docs {
+		fmt.Fprintf(&b, "  <url><loc>%s%s</loc></url>\n", base, doc)
+	}
+	b.WriteString("</urlset>\n")
+	_, _ = w.Write([]byte(b.String()))
 }

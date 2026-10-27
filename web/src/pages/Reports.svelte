@@ -204,8 +204,8 @@
 {:else if grouped.length === 0}
   <p>No hours in this range.</p>
 {:else}
-  <div class="scroll">
-    <table class="report">
+  <wa-scroller class="report-scroller">
+    <table class="report wa-hover-rows wa-tabular-nums">
       <thead>
         <tr>
           <th scope="col">Project</th>
@@ -239,7 +239,7 @@
           {#if open.includes(project.project_id)}
             {#each project.people as person (person.user_id)}
               <tr class="person">
-                <td>{person.user}</td>
+                <th scope="row">{person.user}</th>
                 {#each buckets as bucket (bucket.key)}
                   <td class="num">{cell(person.cells[bucket.key])}</td>
                 {/each}
@@ -259,7 +259,7 @@
         </tr>
       </tfoot>
     </table>
-  </div>
+  </wa-scroller>
 {/if}
 
 <style>
@@ -362,9 +362,7 @@
     font-weight: 600;
   }
 
-  .scroll {
-    overflow: auto;
-    max-height: 70vh;
+  .report-scroller {
     background: var(--surface);
     border: 1px solid var(--border);
     border-radius: var(--radius);
@@ -462,11 +460,13 @@
     color: var(--accent);
   }
 
-  .person td {
+  .person td,
+  .person th {
     color: var(--muted);
   }
 
-  .person td:first-child {
+  .person td:first-child,
+  .person th:first-child {
     padding-left: var(--space-5);
   }
 </style>

@@ -8,7 +8,22 @@ import "net/http"
 const notBuilt = `<!doctype html>
 <html lang="en">
 <head><meta charset="utf-8"><title>Tstamps</title></head>
-<body><p>Tstamps UI is not built. Run <code>just build</code>.</p></body>
+<body style="font-family: system-ui, sans-serif; padding: 2rem; line-height: 1.5;">
+  <h2>Tstamps UI is not embedded in this server binary</h2>
+  <p>This process was started without <code>-tags web</code>.</p>
+  <ul>
+    <li>To serve the embedded UI and manual: build and run the server binary:
+      <pre>just build && ./tstamps-server serve</pre>
+      (or <code>just serve</code>)
+    </li>
+    <li>If you are running the development stack (<code>just dev</code>):
+      <ul>
+        <li>Timeline UI: <a href="http://localhost:5173">http://localhost:5173</a></li>
+        <li>Manual / Docs: <a href="http://localhost:5174/docs/">http://localhost:5174/docs/</a></li>
+      </ul>
+    </li>
+  </ul>
+</body>
 </html>
 `
 

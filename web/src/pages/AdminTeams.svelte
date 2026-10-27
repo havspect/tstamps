@@ -183,94 +183,96 @@
 {:else if teams.length === 0}
   <p>No teams yet.</p>
 {:else}
-  <table>
-    <thead>
-      <tr>
-        <th scope="col">Name</th>
-        <th scope="col">Members</th>
-        <th scope="col">Status</th>
-        <th scope="col">Actions</th>
-      </tr>
-    </thead>
-    <tbody>
-      {#each teams as team (team.id)}
+  <wa-scroller>
+    <table class="wa-hover-rows wa-tabular-nums">
+      <thead>
         <tr>
-          <td>{team.name}</td>
-          <td>{team.members?.length ?? 0}</td>
-          <td>
-            {#if team.archived_at}
-              <span class="badge alert">archived</span>
-            {/if}
-          </td>
-          <td>
-            <div class="row-actions">
-              <Button variant="secondary" onclick={() => startRename(team)}>
-                {renaming === team.id ? 'Close' : 'Rename'}
-              </Button>
-              <Button variant="secondary" onclick={() => toggleMembers(team)}>
-                {expanded === team.id ? 'Close members' : 'Members'}
-              </Button>
-              <Button
-                variant="secondary"
-                onclick={() => archive(team)}
-                disabled={archiving === team.id || team.archived_at !== null}
-              >
-                {archiving === team.id ? 'Archiving…' : 'Archive'}
-              </Button>
-            </div>
-          </td>
+          <th scope="col">Name</th>
+          <th scope="col">Members</th>
+          <th scope="col">Status</th>
+          <th scope="col">Actions</th>
         </tr>
-        {#if renaming === team.id}
+      </thead>
+      <tbody>
+        {#each teams as team (team.id)}
           <tr>
-            <td colspan="4">
-              <form class="toolbar" onsubmit={(event) => rename(event, team)}>
-                <Input id={`rename-${team.id}`} label="Name" bind:value={renameName} required />
-                <Button type="submit" disabled={renamePending}>
-                  {renamePending ? 'Saving…' : 'Save'}
+            <td>{team.name}</td>
+            <td>{team.members?.length ?? 0}</td>
+            <td>
+              {#if team.archived_at}
+                <span class="badge alert">archived</span>
+              {/if}
+            </td>
+            <td>
+              <div class="row-actions">
+                <Button variant="secondary" onclick={() => startRename(team)}>
+                  {renaming === team.id ? 'Close' : 'Rename'}
                 </Button>
-                <Button variant="secondary" onclick={() => (renaming = null)}>Cancel</Button>
-              </form>
+                <Button variant="secondary" onclick={() => toggleMembers(team)}>
+                  {expanded === team.id ? 'Close members' : 'Members'}
+                </Button>
+                <Button
+                  variant="secondary"
+                  onclick={() => archive(team)}
+                  disabled={archiving === team.id || team.archived_at !== null}
+                >
+                  {archiving === team.id ? 'Archiving…' : 'Archive'}
+                </Button>
+              </div>
             </td>
           </tr>
-        {/if}
-        {#if expanded === team.id}
-          <tr>
-            <td colspan="4" class="members-cell">
-              <form onsubmit={(event) => saveMembers(event, team)}>
-                <div class="member-list">
-                  {#each users as user (user.id)}
-                    <div class="member">
-                      <wa-checkbox
-                        checked={drafts[team.id]?.[user.id] !== undefined}
-                        onchange={(event) =>
-                          toggleMember(team.id, user.id, event.currentTarget.checked)}
-                      >
-                        {user.name} <span class="hint">{user.email}</span>
-                      </wa-checkbox>
-                      <select
-                        aria-label={`Role for ${user.name}`}
-                        value={drafts[team.id]?.[user.id] ?? 'member'}
-                        onchange={(event) => setRole(team.id, user.id, event.currentTarget.value)}
-                        disabled={drafts[team.id]?.[user.id] === undefined}
-                      >
-                        <option value="member">member</option>
-                        <option value="lead">lead</option>
-                      </select>
-                    </div>
-                  {/each}
-                </div>
-                <div class="row-actions">
-                  <Button type="submit" disabled={membersPending === team.id}>
-                    {membersPending === team.id ? 'Saving…' : 'Save members'}
+          {#if renaming === team.id}
+            <tr>
+              <td colspan="4">
+                <form class="toolbar" onsubmit={(event) => rename(event, team)}>
+                  <Input id={`rename-${team.id}`} label="Name" bind:value={renameName} required />
+                  <Button type="submit" disabled={renamePending}>
+                    {renamePending ? 'Saving…' : 'Save'}
                   </Button>
-                  <Button variant="secondary" onclick={() => (expanded = null)}>Cancel</Button>
-                  <p class="hint">Saving replaces the whole member list.</p>
-                </div>
-              </form>
-            </td>
-          </tr>
-        {/if}
-      {/each}
-    </tbody>
-  </table>
+                  <Button variant="secondary" onclick={() => (renaming = null)}>Cancel</Button>
+                </form>
+              </td>
+            </tr>
+          {/if}
+          {#if expanded === team.id}
+            <tr>
+              <td colspan="4" class="members-cell">
+                <form onsubmit={(event) => saveMembers(event, team)}>
+                  <div class="member-list">
+                    {#each users as user (user.id)}
+                      <div class="member">
+                        <wa-checkbox
+                          checked={drafts[team.id]?.[user.id] !== undefined}
+                          onchange={(event) =>
+                            toggleMember(team.id, user.id, event.currentTarget.checked)}
+                        >
+                          {user.name} <span class="hint">{user.email}</span>
+                        </wa-checkbox>
+                        <select
+                          aria-label={`Role for ${user.name}`}
+                          value={drafts[team.id]?.[user.id] ?? 'member'}
+                          onchange={(event) => setRole(team.id, user.id, event.currentTarget.value)}
+                          disabled={drafts[team.id]?.[user.id] === undefined}
+                        >
+                          <option value="member">member</option>
+                          <option value="lead">lead</option>
+                        </select>
+                      </div>
+                    {/each}
+                  </div>
+                  <div class="row-actions">
+                    <Button type="submit" disabled={membersPending === team.id}>
+                      {membersPending === team.id ? 'Saving…' : 'Save members'}
+                    </Button>
+                    <Button variant="secondary" onclick={() => (expanded = null)}>Cancel</Button>
+                    <p class="hint">Saving replaces the whole member list.</p>
+                  </div>
+                </form>
+              </td>
+            </tr>
+          {/if}
+        {/each}
+      </tbody>
+    </table>
+  </wa-scroller>
 {/if}

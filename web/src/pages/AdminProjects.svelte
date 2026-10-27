@@ -169,95 +169,97 @@
 {:else if projects.length === 0}
   <p>No projects yet.</p>
 {:else}
-  <table>
-    <thead>
-      <tr>
-        <th scope="col">Name</th>
-        <th scope="col">Team</th>
-        <th scope="col">Status</th>
-        <th scope="col">Actions</th>
-      </tr>
-    </thead>
-    <tbody>
-      {#each projects as project (project.id)}
+  <wa-scroller>
+    <table class="wa-hover-rows">
+      <thead>
         <tr>
-          <td>
-            <span class="swatch" style={`background: ${project.color || 'transparent'}`} aria-hidden="true"
-            ></span>
-            {project.name}
-          </td>
-          <td>{teamName(project.team_id)}</td>
-          <td>
-            {#if project.archived_at}
-              <span class="badge alert">archived</span>
-            {/if}
-          </td>
-          <td>
-            <div class="row-actions">
-              <Button variant="secondary" onclick={() => startEdit(project)}>
-                {editing === project.id ? 'Close' : 'Edit'}
-              </Button>
-              {#if project.archived_at}
-                <Button
-                  variant="secondary"
-                  onclick={() => restore(project)}
-                  disabled={restoring === project.id || teamArchived(project.team_id)}
-                >
-                  {restoring === project.id ? 'Restoring…' : 'Restore'}
-                </Button>
-                {#if teamArchived(project.team_id)}
-                  <span class="hint">Team archived</span>
-                {/if}
-              {:else}
-                <Button
-                  variant="secondary"
-                  onclick={() => archive(project)}
-                  disabled={archiving === project.id}
-                >
-                  {archiving === project.id ? 'Archiving…' : 'Archive'}
-                </Button>
-              {/if}
-            </div>
-          </td>
+          <th scope="col">Name</th>
+          <th scope="col">Team</th>
+          <th scope="col">Status</th>
+          <th scope="col">Actions</th>
         </tr>
-        {#if editing === project.id}
+      </thead>
+      <tbody>
+        {#each projects as project (project.id)}
           <tr>
-            <td colspan="4">
-              <form class="toolbar" onsubmit={(event) => save(event, project)}>
-                <Input
-                  id={`project-name-${project.id}`}
-                  label="Name"
-                  bind:value={editName}
-                  required
-                />
-                <Select
-                  id={`project-team-${project.id}`}
-                  label="Team"
-                  bind:value={editTeam}
-                  hint="A project can only change team while it has no entries."
-                >
-                  {#each teams as team (team.id)}
-                    <wa-option value={String(team.id)}>
-                      {team.name}{team.archived_at ? ' (archived)' : ''}
-                    </wa-option>
-                  {/each}
-                </Select>
-                <Input
-                  id={`project-color-${project.id}`}
-                  label="Color"
-                  class="color"
-                  type="color"
-                  bind:value={editColor}
-                />
-                <Button type="submit" disabled={savePending}>
-                  {savePending ? 'Saving…' : 'Save'}
+            <td>
+              <span class="swatch" style={`background: ${project.color || 'transparent'}`} aria-hidden="true"
+              ></span>
+              {project.name}
+            </td>
+            <td>{teamName(project.team_id)}</td>
+            <td>
+              {#if project.archived_at}
+                <span class="badge alert">archived</span>
+              {/if}
+            </td>
+            <td>
+              <div class="row-actions">
+                <Button variant="secondary" onclick={() => startEdit(project)}>
+                  {editing === project.id ? 'Close' : 'Edit'}
                 </Button>
-                <Button variant="secondary" onclick={() => (editing = null)}>Cancel</Button>
-              </form>
+                {#if project.archived_at}
+                  <Button
+                    variant="secondary"
+                    onclick={() => restore(project)}
+                    disabled={restoring === project.id || teamArchived(project.team_id)}
+                  >
+                    {restoring === project.id ? 'Restoring…' : 'Restore'}
+                  </Button>
+                  {#if teamArchived(project.team_id)}
+                    <span class="hint">Team archived</span>
+                  {/if}
+                {:else}
+                  <Button
+                    variant="secondary"
+                    onclick={() => archive(project)}
+                    disabled={archiving === project.id}
+                  >
+                    {archiving === project.id ? 'Archiving…' : 'Archive'}
+                  </Button>
+                {/if}
+              </div>
             </td>
           </tr>
-        {/if}
-      {/each}
-    </tbody>
-  </table>
+          {#if editing === project.id}
+            <tr>
+              <td colspan="4">
+                <form class="toolbar" onsubmit={(event) => save(event, project)}>
+                  <Input
+                    id={`project-name-${project.id}`}
+                    label="Name"
+                    bind:value={editName}
+                    required
+                  />
+                  <Select
+                    id={`project-team-${project.id}`}
+                    label="Team"
+                    bind:value={editTeam}
+                    hint="A project can only change team while it has no entries."
+                  >
+                    {#each teams as team (team.id)}
+                      <wa-option value={String(team.id)}>
+                        {team.name}{team.archived_at ? ' (archived)' : ''}
+                      </wa-option>
+                    {/each}
+                  </Select>
+                  <Input
+                    id={`project-color-${project.id}`}
+                    label="Color"
+                    class="color"
+                    type="color"
+                    bind:value={editColor}
+                  />
+                  <Button type="submit" disabled={savePending}>
+                    {savePending ? 'Saving…' : 'Save'}
+                  </Button>
+                  <Button variant="secondary" onclick={() => (editing = null)}>Cancel</Button>
+                </form>
+              </td>
+            </tr>
+          {/if}
+        {/each}
+      </tbody>
+    </table>
+  </wa-scroller>
 {/if}

@@ -670,11 +670,11 @@
   <div class="toolbar timeline-toolbar">
     <div class="timeline-nav">
       <Button variant="secondary" onclick={() => shiftDay(-1)}>
-        <span aria-hidden="true">◀</span><span class="sr-only">Previous day</span>
+        <wa-icon name="chevron-left" aria-hidden="true"></wa-icon><span class="sr-only">Previous day</span>
       </Button>
       <Button variant="secondary" onclick={goToday}>Today</Button>
       <Button variant="secondary" onclick={() => shiftDay(1)} disabled={day >= today}>
-        <span aria-hidden="true">▶</span><span class="sr-only">Next day</span>
+        <wa-icon name="chevron-right" aria-hidden="true"></wa-icon><span class="sr-only">Next day</span>
       </Button>
     </div>
     <span class="day-title">{dayTitle}</span>

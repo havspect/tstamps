@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { Snippet } from 'svelte'
+  import type { HTMLAnchorAttributes } from 'svelte/elements'
   import { router } from './router.svelte'
 
   let {
@@ -7,7 +8,8 @@
     class: className = '',
     current = false,
     children,
-  }: { href: string; class?: string; current?: boolean; children?: Snippet } = $props()
+    ...rest
+  }: HTMLAnchorAttributes & { href: string; current?: boolean; children?: Snippet } = $props()
 
   function follow(event: MouseEvent) {
     // Leave modified clicks to the browser so open-in-new-tab still works.
@@ -17,6 +19,6 @@
   }
 </script>
 
-<a href={router.href(href)} class={className} aria-current={current ? 'page' : undefined} onclick={follow}>
+<a href={router.href(href)} class={className} aria-current={current ? 'page' : undefined} onclick={follow} {...rest}>
   {@render children?.()}
 </a>

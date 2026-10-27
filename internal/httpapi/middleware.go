@@ -50,7 +50,7 @@ func SecurityHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		h := w.Header()
 		csp := "default-src 'self'; connect-src 'self' data:; style-src 'self' 'unsafe-inline'; img-src 'self' data:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'"
-		if r.URL.Path == "/docs" || strings.HasPrefix(r.URL.Path, "/docs/") {
+		if r.URL.Path == "/docs" || strings.HasPrefix(r.URL.Path, "/docs/") || strings.HasSuffix(r.URL.Path, "/api/v1/docs") {
 			csp = "default-src 'self'; script-src 'self' 'unsafe-inline'; connect-src 'self' data:; style-src 'self' 'unsafe-inline'; img-src 'self' data:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'"
 		}
 		h.Set("Content-Security-Policy", csp)

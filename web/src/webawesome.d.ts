@@ -49,6 +49,30 @@ declare module 'svelte/elements' {
       'onwa-after-show'?: (event: Event) => void
       'onwa-after-hide'?: (event: Event) => void
     }
+    'wa-page': HTMLAttributes<HTMLElement> & {
+      'mobile-breakpoint'?: number | string
+      view?: 'mobile' | 'desktop'
+    }
+    'wa-icon': HTMLAttributes<HTMLElement> & {
+      name?: string
+      label?: string
+      variant?: string
+      family?: string
+      src?: string
+      size?: string
+    }
+    'wa-scroller': HTMLAttributes<HTMLElement>
+    'wa-tag': HTMLAttributes<HTMLElement> & {
+      variant?: 'neutral' | 'brand' | 'success' | 'warning' | 'danger'
+      size?: 'small' | 'medium' | 'large'
+      pill?: boolean
+      removable?: boolean
+    }
+    'wa-badge': HTMLAttributes<HTMLElement> & {
+      variant?: 'neutral' | 'brand' | 'success' | 'warning' | 'danger'
+      pill?: boolean
+      pulse?: boolean
+    }
   }
 }
 

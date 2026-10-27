@@ -101,44 +101,46 @@
 {:else if shown.length === 0}
   <p>{tab === 'live' ? 'No live entries in this range.' : 'No deleted entries in this range.'}</p>
 {:else}
-  <table>
-    <thead>
-      <tr>
-        <th scope="col">ID</th>
-        <th scope="col">User</th>
-        <th scope="col">Project</th>
-        <th scope="col">Start</th>
-        <th scope="col">End</th>
-        <th scope="col">Note</th>
-        {#if tab === 'deleted'}
-          <th scope="col">Deleted</th>
-          <th scope="col">Actions</th>
-        {/if}
-      </tr>
-    </thead>
-    <tbody>
-      {#each shown as entry (entry.id)}
+  <wa-scroller>
+    <table class="wa-hover-rows wa-tabular-nums">
+      <thead>
         <tr>
-          <td>{entry.id}</td>
-          <td>{entry.user_id}</td>
-          <td>{projectName(entry.project_id)}</td>
-          <td>{at(entry.start_at, entry.timezone)}</td>
-          <td>{entry.end_at ? at(entry.end_at, entry.timezone) : 'running'}</td>
-          <td>{entry.note || '—'}</td>
+          <th scope="col">ID</th>
+          <th scope="col">User</th>
+          <th scope="col">Project</th>
+          <th scope="col">Start</th>
+          <th scope="col">End</th>
+          <th scope="col">Note</th>
           {#if tab === 'deleted'}
-            <td>{entry.deleted_at ? at(entry.deleted_at, entry.timezone) : ''}</td>
-            <td>
-              <Button
-                variant="secondary"
-                onclick={() => restore(entry)}
-                disabled={restoring === entry.id}
-              >
-                {restoring === entry.id ? 'Restoring…' : 'Restore'}
-              </Button>
-            </td>
+            <th scope="col">Deleted</th>
+            <th scope="col">Actions</th>
           {/if}
         </tr>
-      {/each}
-    </tbody>
-  </table>
+      </thead>
+      <tbody>
+        {#each shown as entry (entry.id)}
+          <tr>
+            <td>{entry.id}</td>
+            <td>{entry.user_id}</td>
+            <td>{projectName(entry.project_id)}</td>
+            <td>{at(entry.start_at, entry.timezone)}</td>
+            <td>{entry.end_at ? at(entry.end_at, entry.timezone) : 'running'}</td>
+            <td>{entry.note || '—'}</td>
+            {#if tab === 'deleted'}
+              <td>{entry.deleted_at ? at(entry.deleted_at, entry.timezone) : ''}</td>
+              <td>
+                <Button
+                  variant="secondary"
+                  onclick={() => restore(entry)}
+                  disabled={restoring === entry.id}
+                >
+                  {restoring === entry.id ? 'Restoring…' : 'Restore'}
+                </Button>
+              </td>
+            {/if}
+          </tr>
+        {/each}
+      </tbody>
+    </table>
+  </wa-scroller>
 {/if}

@@ -79,3 +79,38 @@ func TestHostedHandlerMarksOnlyTheShell(t *testing.T) {
 		t.Fatalf("hosted docs = %q, want the manual, not the marked shell", rec.Body.String())
 	}
 }
+
+func TestHandlerReplacesOriginInIndex(t *testing.T) {
+	sub := fstest.MapFS{
+		"index.html": {Data: []byte(`<head><link rel="canonical" href="/" /><meta property="og:url" content="/" /><meta property="og:image" content="/screenshots/timeline.webp" /><meta name="twitter:image" content="/screenshots/timeline.webp" /></head>`)},
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.Host = "time.example.com"
+	req.Header.Set("X-Forwarded-Proto", "https")
+
+	handler(sub, false).ServeHTTP(rec, req)
+	body := rec.Body.String()
+	if !strings.Contains(body, `<link rel="canonical" href="https://time.example.com/"`) {
+		t.Fatalf("canonical href not replaced: %s", body)
+	}
+	if !strings.Contains(body, `<meta property="og:url" content="https://time.example.com/"`) {
+		t.Fatalf("og:url content not replaced: %s", body)
+	}
+	if !strings.Contains(body, `content="https://time.example.com/screenshots/timeline.webp"`) {
+		t.Fatalf("og:image content not replaced: %s", body)
+	}
+}
+
+func TestHandlerCachesScreenshots(t *testing.T) {
+	sub := fstest.MapFS{
+		"screenshots/timeline.webp": {Data: []byte("img")},
+	}
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/screenshots/timeline.webp", nil)
+	handler(sub, false).ServeHTTP(rec, req)
+	if got := rec.Header().Get("Cache-Control"); got != "public, max-age=31536000, immutable" {
+		t.Fatalf("screenshot cache = %q, want immutable", got)
+	}
+}

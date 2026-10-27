@@ -46,9 +46,10 @@ dev: types
 serve-watch:
     air
 
-# Run the API only; the UI is embedded in the binary.
-serve:
-    go run ./cmd/tstamps-server serve
+# Run the server binary with the UI and the manual embedded.
+serve *args:
+    @if [ ! -f ./tstamps-server ]; then just build; fi
+    ./tstamps-server serve {{args}}
 
 # Create a workspace (slug, admin email, admin name) and print its initial password.
 workspace-create slug email name:

@@ -187,32 +187,34 @@
   {:else if tokens.length === 0}
     <p>No personal tokens yet.</p>
   {:else}
-    <table>
-      <thead>
-        <tr>
-          <th scope="col">Name</th>
-          <th scope="col">Created</th>
-          <th scope="col">Last Used</th>
-          <th scope="col">Actions</th>
-        </tr>
-      </thead>
-      <tbody>
-        {#each tokens as t (t.id)}
+    <wa-scroller>
+      <table class="wa-hover-rows wa-tabular-nums">
+        <thead>
           <tr>
-            <td>{t.name}</td>
-            <td>{new Date(t.created_at).toLocaleString()}</td>
-            <td>{t.last_used_at ? new Date(t.last_used_at).toLocaleString() : 'Never'}</td>
-            <td>
-              {#if !t.revoked_at}
-                <Button variant="secondary" onclick={() => revokeToken(t.id)}>Revoke</Button>
-              {:else}
-                <span class="badge">Revoked</span>
-              {/if}
-            </td>
+            <th scope="col">Name</th>
+            <th scope="col">Created</th>
+            <th scope="col">Last Used</th>
+            <th scope="col">Actions</th>
           </tr>
-        {/each}
-      </tbody>
-    </table>
+        </thead>
+        <tbody>
+          {#each tokens as t (t.id)}
+            <tr>
+              <td>{t.name}</td>
+              <td>{new Date(t.created_at).toLocaleString()}</td>
+              <td>{t.last_used_at ? new Date(t.last_used_at).toLocaleString() : 'Never'}</td>
+              <td>
+                {#if !t.revoked_at}
+                  <Button variant="secondary" onclick={() => revokeToken(t.id)}>Revoke</Button>
+                {:else}
+                  <span class="badge">Revoked</span>
+                {/if}
+              </td>
+            </tr>
+          {/each}
+        </tbody>
+      </table>
+    </wa-scroller>
   {/if}
 </section>
 
@@ -223,33 +225,35 @@
   {:else if grants.length === 0}
     <p>No connected OAuth applications.</p>
   {:else}
-    <table>
-      <thead>
-        <tr>
-          <th scope="col">Application</th>
-          <th scope="col">Scopes</th>
-          <th scope="col">Authorized</th>
-          <th scope="col">Last Used</th>
-          <th scope="col">Actions</th>
-        </tr>
-      </thead>
-      <tbody>
-        {#each grants as g (g.id)}
+    <wa-scroller>
+      <table class="wa-hover-rows wa-tabular-nums">
+        <thead>
           <tr>
-            <td>{g.client_name || g.client_id}</td>
-            <td>{g.scopes?.join(', ') || 'none'}</td>
-            <td>{new Date(g.created_at).toLocaleString()}</td>
-            <td>{g.last_used_at ? new Date(g.last_used_at).toLocaleString() : 'Never'}</td>
-            <td>
-              {#if !g.revoked_at}
-                <Button variant="secondary" onclick={() => revokeGrant(g.id)}>Revoke</Button>
-              {:else}
-                <span class="badge">Revoked</span>
-              {/if}
-            </td>
+            <th scope="col">Application</th>
+            <th scope="col">Scopes</th>
+            <th scope="col">Authorized</th>
+            <th scope="col">Last Used</th>
+            <th scope="col">Actions</th>
           </tr>
-        {/each}
-      </tbody>
-    </table>
+        </thead>
+        <tbody>
+          {#each grants as g (g.id)}
+            <tr>
+              <td>{g.client_name || g.client_id}</td>
+              <td>{g.scopes?.join(', ') || 'none'}</td>
+              <td>{new Date(g.created_at).toLocaleString()}</td>
+              <td>{g.last_used_at ? new Date(g.last_used_at).toLocaleString() : 'Never'}</td>
+              <td>
+                {#if !g.revoked_at}
+                  <Button variant="secondary" onclick={() => revokeGrant(g.id)}>Revoke</Button>
+                {:else}
+                  <span class="badge">Revoked</span>
+                {/if}
+              </td>
+            </tr>
+          {/each}
+        </tbody>
+      </table>
+    </wa-scroller>
   {/if}
 </section>

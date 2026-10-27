@@ -27,7 +27,7 @@ test('homepage introduces the product and links to sign in', async ({ page }) =>
   const description = page.locator('meta[name="description"]')
   await expect(description).toHaveCount(1)
   expect(await description.getAttribute('content')).toBeTruthy()
-  await expect(page.locator('link[rel="canonical"]')).toHaveAttribute('href', '/')
+  await expect(page.locator('link[rel="canonical"]')).toHaveAttribute('href', `${baseURL}/`)
   await expect(page.getByRole('link', { name: 'Docs' }).first()).toBeVisible()
 
   const robots = await page.request.get('/robots.txt')

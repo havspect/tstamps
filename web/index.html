@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" class="wa-theme-default wa-palette-default wa-light">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -18,25 +18,94 @@
       property="og:description"
       content="Team time tracking built around a timeline: drag to log, read the week's report, or log from the CLI or an agent. Run one Go binary for one company, or host several as separate workspaces. Hosted by us is coming."
     />
-    <meta name="twitter:card" content="summary" />
+    <meta property="og:url" content="/" />
+    <meta property="og:image" content="/screenshots/timeline.webp" />
+    <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content="Tstamps — self-hosted or hosted team time tracking" />
     <meta
       name="twitter:description"
       content="Team time tracking built around a timeline: drag to log, read the week's report, or log from the CLI or an agent. Run one Go binary for one company, or host several as separate workspaces. Hosted by us is coming."
     />
+    <meta name="twitter:image" content="/screenshots/timeline.webp" />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@graph": [
+          {
+            "@type": "SoftwareApplication",
+            "name": "Tstamps",
+            "applicationCategory": "BusinessApplication",
+            "operatingSystem": "Linux, macOS, Windows, Web",
+            "offers": {
+              "@type": "Offer",
+              "price": "0",
+              "priceCurrency": "USD"
+            },
+            "description": "Team time tracking built around a timeline: drag to log an entry, read the week's report, or log from the CLI or an agent. Run one Go binary for one company, or host several as separate workspaces, all in one SQLite database.",
+            "license": "https://www.gnu.org/licenses/agpl-3.0.en.html"
+          },
+          {
+            "@type": "FAQPage",
+            "mainEntity": [
+              {
+                "@type": "Question",
+                "name": "How does Tstamps store time tracking data?",
+                "acceptedAnswer": {
+                  "@type": "Answer",
+                  "text": "Tstamps runs as one AGPL-3.0 Go binary backed by a single SQLite database, supporting one company or multiple workspaces."
+                }
+              },
+              {
+                "@type": "Question",
+                "name": "Can CLI tools and AI agents log time into Tstamps?",
+                "acceptedAnswer": {
+                  "@type": "Answer",
+                  "text": "Yes. Tstamps includes a standalone CLI and an MCP (Model Context Protocol) server sharing the same REST API and token auth."
+                }
+              },
+              {
+                "@type": "Question",
+                "name": "Is Tstamps open source?",
+                "acceptedAnswer": {
+                  "@type": "Answer",
+                  "text": "Yes, Tstamps is open source and licensed under the AGPL-3.0 license with no per-seat pricing."
+                }
+              }
+            ]
+          }
+        ]
+      }
+    </script>
   </head>
   <body>
     <noscript>
-      <h1>Tstamps — self-hosted or hosted team time tracking</h1>
-      <p>
-        Tstamps is time tracking for small teams, built around a timeline: drag on a lane to log an
-        entry, drag its edges to retime it, and read every team's hours by person and by day, week or
-        month. The CLI and an MCP server share the same API, so a terminal or an agent can log time
-        too. Run it yourself as one AGPL-3.0 Go binary with one SQLite database — one company,
-        or several companies as separate workspaces — with no per-seat pricing. A hosted version is
-        coming; it is not available today.
-      </p>
+      <header>
+        <h1>Tstamps — self-hosted or hosted team time tracking</h1>
+        <p>
+          Tstamps is time tracking for small teams, built around a timeline: drag on a lane to log an
+          entry, drag its edges to retime it, and read every team's hours by person and by day, week or
+          month. The CLI and an MCP server share the same API, so a terminal or an agent can log time
+          too. Run it yourself as one AGPL-3.0 Go binary with one SQLite database — one company,
+          or several companies as separate workspaces — with no per-seat pricing. A hosted version is
+          coming; it is not available today.
+        </p>
+      </header>
+      <nav aria-label="Documentation navigation">
+        <a href="/docs/">Documentation</a> ·
+        <a href="/docs/install-cli">Install the CLI</a> ·
+        <a href="/docs/mcp">MCP &amp; AI Agents</a> ·
+        <a href="/docs/server">Self-host on Linux</a>
+      </nav>
+      <section>
+        <h2>Three moves, no timesheet</h2>
+        <ul>
+          <li><strong>Drag, don't fill in:</strong> Drag on a lane to log; drag an edge to retime; press space to start and stop.</li>
+          <li><strong>Read the week:</strong> Projects as rows, days as columns, biggest first. Drill down by person, export CSV.</li>
+          <li><strong>Log from the CLI or an agent:</strong> Same token, same REST API, Claude and Codex skills included.</li>
+          <li><strong>One binary, one SQLite database:</strong> Deploy on a single VM under systemd with zero per-seat fees.</li>
+        </ul>
+      </section>
     </noscript>
     <div id="app"></div>
     <script type="module" src="/src/main.ts"></script>

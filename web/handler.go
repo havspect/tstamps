@@ -12,18 +12,17 @@ import (
 // missing path with an extension or under /assets/ is a real 404, so a missing
 // hashed asset never answers with HTML. /docs is served from the VitePress
 // build in dist/docs and never falls back to the SPA.
+func requestOrigin(r *http.Request) string {
+	scheme := "http"
+	if r.TLS != nil || strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https") {
+		scheme = "https"
+	}
+	return scheme + "://" + r.Host
+}
+
 func handler(sub fs.FS, hosted bool) http.Handler {
 	files := http.FileServerFS(sub)
-	var index []byte
-	if hosted {
-		var err error
-		index, err = fs.ReadFile(sub, "index.html")
-		if err != nil {
-			panic(err)
-		}
-		index = bytes.Replace(index, []byte("</head>"),
-			[]byte(`<meta name="tstamps-hosted" content="1"></head>`), 1)
-	}
+	indexTemplate, _ := fs.ReadFile(sub, "index.html")
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		name := strings.TrimPrefix(path.Clean(r.URL.Path), "/")
 		if name == "" || name == "." {
@@ -61,14 +60,22 @@ func handler(sub fs.FS, hosted bool) http.Handler {
 			// FileServer redirects an explicit index.html path to its directory,
 			// which would loop with clean URLs. Serve the directory instead.
 			w.Header().Set("Cache-Control", "no-store")
-			if hosted && name == "index.html" {
+			if name == "index.html" && indexTemplate != nil {
+				orig := requestOrigin(r)
+				out := bytes.Replace(indexTemplate, []byte(`<link rel="canonical" href="/"`), []byte(`<link rel="canonical" href="`+orig+`/"`), 1)
+				out = bytes.Replace(out, []byte(`<meta property="og:url" content="/"`), []byte(`<meta property="og:url" content="`+orig+`/"`), 1)
+				out = bytes.Replace(out, []byte(`content="/screenshots/timeline.webp"`), []byte(`content="`+orig+`/screenshots/timeline.webp"`), -1)
+				if hosted && !bytes.Contains(out, []byte(`name="tstamps-hosted"`)) {
+					out = bytes.Replace(out, []byte("</head>"),
+						[]byte(`<meta name="tstamps-hosted" content="1"></head>`), 1)
+				}
 				w.Header().Set("Content-Type", "text/html; charset=utf-8")
-				_, _ = w.Write(index)
+				_, _ = w.Write(out)
 				return
 			}
 			r.URL.Path = "/" + strings.TrimSuffix(name, "index.html")
 		} else {
-			if strings.HasPrefix(name, "assets/") || strings.HasPrefix(name, "docs/assets/") {
+			if strings.HasPrefix(name, "assets/") || strings.HasPrefix(name, "docs/assets/") || strings.HasPrefix(name, "screenshots/") {
 				w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
 			}
 			r.URL.Path = "/" + name

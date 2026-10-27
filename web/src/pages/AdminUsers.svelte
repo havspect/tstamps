@@ -163,78 +163,80 @@
 {:else if users.length === 0}
   <p>No users yet.</p>
 {:else}
-  <table>
-    <thead>
-      <tr>
-        <th scope="col">Email</th>
-        <th scope="col">Name</th>
-        <th scope="col">Timezone</th>
-        <th scope="col">Admin</th>
-        <th scope="col">Active</th>
-        <th scope="col">Password</th>
-        <th scope="col">Actions</th>
-      </tr>
-    </thead>
-    <tbody>
-      {#each users as user (user.id)}
+  <wa-scroller>
+    <table class="wa-hover-rows">
+      <thead>
         <tr>
-          <td>{user.email}</td>
-          <td>{user.name}</td>
-          <td>{user.timezone}</td>
-          <td>{user.is_admin ? 'yes' : 'no'}</td>
-          <td>{user.active ? 'yes' : 'no'}</td>
-          <td>
-            {#if user.must_change_password}
-              <span class="badge alert">must change password</span>
-            {/if}
-          </td>
-          <td>
-            <div class="row-actions">
-              <Button variant="secondary" onclick={() => startEdit(user)}>
-                {editing === user.id ? 'Close' : 'Edit'}
-              </Button>
-              <Button
-                variant="secondary"
-                onclick={() => reset(user)}
-                disabled={resetting === user.id}
-              >
-                {resetting === user.id ? 'Resetting…' : 'Reset password'}
-              </Button>
-            </div>
-          </td>
+          <th scope="col">Email</th>
+          <th scope="col">Name</th>
+          <th scope="col">Timezone</th>
+          <th scope="col">Admin</th>
+          <th scope="col">Active</th>
+          <th scope="col">Password</th>
+          <th scope="col">Actions</th>
         </tr>
-        {#if editing === user.id}
+      </thead>
+      <tbody>
+        {#each users as user (user.id)}
           <tr>
-            <td colspan="7">
-              <form class="toolbar" onsubmit={(event) => save(event, user)}>
-                <Input id={`edit-name-${user.id}`} label="Name" bind:value={editName} required />
-                <Input
-                  id={`edit-timezone-${user.id}`}
-                  label="Timezone"
-                  bind:value={editTimezone}
-                  required
-                />
-                <Input
-                  id={`edit-admin-${user.id}`}
-                  label="Admin"
-                  type="checkbox"
-                  bind:checked={editAdmin}
-                />
-                <Input
-                  id={`edit-active-${user.id}`}
-                  label="Active"
-                  type="checkbox"
-                  bind:checked={editActive}
-                />
-                <Button type="submit" disabled={savePending}>
-                  {savePending ? 'Saving…' : 'Save'}
+            <td>{user.email}</td>
+            <td>{user.name}</td>
+            <td>{user.timezone}</td>
+            <td>{user.is_admin ? 'yes' : 'no'}</td>
+            <td>{user.active ? 'yes' : 'no'}</td>
+            <td>
+              {#if user.must_change_password}
+                <span class="badge alert">must change password</span>
+              {/if}
+            </td>
+            <td>
+              <div class="row-actions">
+                <Button variant="secondary" onclick={() => startEdit(user)}>
+                  {editing === user.id ? 'Close' : 'Edit'}
                 </Button>
-                <Button variant="secondary" onclick={() => (editing = null)}>Cancel</Button>
-              </form>
+                <Button
+                  variant="secondary"
+                  onclick={() => reset(user)}
+                  disabled={resetting === user.id}
+                >
+                  {resetting === user.id ? 'Resetting…' : 'Reset password'}
+                </Button>
+              </div>
             </td>
           </tr>
-        {/if}
-      {/each}
-    </tbody>
-  </table>
+          {#if editing === user.id}
+            <tr>
+              <td colspan="7">
+                <form class="toolbar" onsubmit={(event) => save(event, user)}>
+                  <Input id={`edit-name-${user.id}`} label="Name" bind:value={editName} required />
+                  <Input
+                    id={`edit-timezone-${user.id}`}
+                    label="Timezone"
+                    bind:value={editTimezone}
+                    required
+                  />
+                  <Input
+                    id={`edit-admin-${user.id}`}
+                    label="Admin"
+                    type="checkbox"
+                    bind:checked={editAdmin}
+                  />
+                  <Input
+                    id={`edit-active-${user.id}`}
+                    label="Active"
+                    type="checkbox"
+                    bind:checked={editActive}
+                  />
+                  <Button type="submit" disabled={savePending}>
+                    {savePending ? 'Saving…' : 'Save'}
+                  </Button>
+                  <Button variant="secondary" onclick={() => (editing = null)}>Cancel</Button>
+                </form>
+              </td>
+            </tr>
+          {/if}
+        {/each}
+      </tbody>
+    </table>
+  </wa-scroller>
 {/if}
