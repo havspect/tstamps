@@ -6,7 +6,7 @@ Tstamps is one `tstamps-server` process holding one SQLite database — every wo
 
 ## How the pieces fit
 
-- **Workspace** — one company's data: every user, team, project and entry, in its own rows. A server runs one workspace or several in the same database; every one is served under `/w/{slug}`.
+- **Workspace** — one company's data: every user, team, project and entry, in its own rows. A server runs one workspace or several in the same database; every one is served under `/w/{slug}`. Workspaces are created by the operator with `tstamps-server workspace create`, or via self-service email signup when `--email-api-key`, `--email-from` and `--public-url` are configured.
 - **Team** — a group of users that owns projects. A user can be in several teams.
 - **Lead** — a membership role: creates that team's projects and reads every hour booked on them.
 - **Member** — logs their own hours and reads their own totals.
@@ -27,7 +27,7 @@ Vocabulary is [GLOSSARY.md](https://github.com/havspect/tstamps/blob/main/GLOSSA
 
 ## Quick start
 
-If your workspace is already running, install the [CLI](./install-cli.md) and log in. The base URL always names your workspace, for example `https://time.example.com/w/example.com`; see [Hosted workspaces](./workspaces.md). The commands below are the same whether the server holds one workspace or many. They are also the same on all three platforms; the tabs exist because the manual shows every command for every platform.
+If your workspace is already running, install the [CLI](./install-cli.md) and log in. The base URL always names your workspace, for example `https://time.example.com/w/example.com`; see [Workspaces](./workspaces.md). The commands below are the same whether the server holds one workspace or many. They are also the same on all three platforms; the tabs exist because the manual shows every command for every platform.
 
 ::: code-group
 ```sh [Linux]
@@ -74,5 +74,5 @@ If you need any of those, choose something else. [The spec](https://github.com/h
 - [Install the CLI](./install-cli.md) on Linux, macOS or Windows.
 - [Give an agent the skill](./agents/index.md) for Amp, Claude, Codex, Langdock or OpenCode.
 - [Run the server](./server.md) on a Linux host.
-- [Host several companies](./workspaces.md) as separate workspaces.
+- [Workspaces](./workspaces.md) — creation, self-service email signup, slugs and isolation.
 - [Back up and upgrade](./backup-upgrade.md) without losing hours.

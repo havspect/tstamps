@@ -49,7 +49,7 @@ const usageText = `usage: tstamps <command> [flags]
 server commands are in tstamps-server (serve, admin, openapi).
 
 client (needs a token from "tstamps login"):
-  login --url URL            store a personal API token
+  login --url URL            sign in to a workspace (OAuth device flow)
   whoami                     show the current user
   start <project>            start the running entry (--note)
   stop                       stop the running entry (--note)

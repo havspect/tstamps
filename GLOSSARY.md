@@ -17,7 +17,7 @@ The person who runs the server and the workspaces on it. Not a User: an Operator
 _Avoid_: server admin, superuser, root, sysadmin
 
 **Signup**:
-The self-service way to create a workspace on a hosted server: an email owner verifies the address, then chooses the workspace slug, their name and a password. Contrasts with an operator's `workspace create`.
+The self-service way to create a workspace when the operator has enabled email verification: an email owner verifies the address, then chooses the workspace slug, their name and a password. Contrasts with an operator's `workspace create`.
 _Avoid_: registration, onboarding, tenant creation
 
 **Pending signup**:

@@ -2,7 +2,7 @@
 
 `tstamps` talks to the server's HTTP API. It never opens the database. Every client command accepts `--url` and `--token`; settings resolve as flags, then `TSTAMPS_URL` / `TSTAMPS_TOKEN`, then the config file written by `tstamps login`.
 
-The saved URL carries the workspace: `https://time.example.com/w/example.com`. Every command then reaches that workspace and no other. See [Hosted workspaces](./workspaces.md).
+The saved URL carries the workspace: `https://time.example.com/w/example.com`. Every command then reaches that workspace and no other. See [Workspaces](./workspaces.md).
 
 The commands are identical on Linux, macOS and Windows, so the three tabs below repeat the same line. Installation and config paths are the parts that differ; they are on [Install the CLI](./install-cli.md).
 
@@ -32,7 +32,7 @@ Authenticates with the workspace and saves credentials to `~/.config/tstamps/con
 
 By default, `tstamps login` uses the **OAuth 2.1 Device Grant** (`RFC 8628`): it prints a short verification code, opens `/w/<slug>/auth/device` in your browser (or prints the URL when `--no-browser` is passed), and stores both the access token and rotating refresh token once approved. The CLI and `tstamps mcp` automatically rotate expired access tokens using the saved refresh token.
 
-For non-interactive scripts, passing `--email` (and `--password`) logs in with a password and creates a personal token (`ts_...`) instead.
+For non-interactive scripts, passing `--email` (and `--password`) logs in with a password and creates a personal token (`ts_...`) instead. Password login survives for API tokens only where SSO is not enforced; a workspace with SSO has no CLI password path.
 
 ::: code-group
 ```sh [Linux]

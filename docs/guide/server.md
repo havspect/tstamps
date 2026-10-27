@@ -44,9 +44,9 @@ tstamps-server workspace create other.example --db ./tstamps.db \
   --email you@example.com --name "Your Name"
 ```
 
-With one workspace in the database, `/login` redirects straight to that workspace's sign-in page. With two or more, `/login` asks for the slug first. The full shape is on [Hosted workspaces](./workspaces.md).
+With one workspace in the database, `/login` redirects straight to that workspace's sign-in page. With two or more, `/login` asks for the slug first. The full shape is on [Workspaces](./workspaces.md).
 
-To let visitors create their own workspace, add `--email-api-key`, `--email-from` and `--public-url`. Without them, signup is off. Details and the email setup are on [Hosted workspaces](./workspaces.md#self-service-signup).
+To let visitors create their own workspace, add `--email-api-key`, `--email-from` and `--public-url`. Without them, signup is off. Details and the email setup are on [Workspaces](./workspaces.md#self-service-signup).
 
 ## Deploy on a VM
 
@@ -106,7 +106,7 @@ tstamps-server serve --addr 127.0.0.1:8080 --db /var/lib/tstamps/tstamps.db --lo
 curl -fsS http://127.0.0.1:8080/healthz
 ```
 
-Each workspace has its own `/w/{slug}/healthz`, which answers `200` and reports the schema version stored in the database, `404` for an unknown slug and `503` when the database cannot answer. Monitor the root once and each workspace you care about. See [Hosted workspaces](./workspaces.md#health).
+Each workspace has its own `/w/{slug}/healthz`, which answers `200` and reports the schema version stored in the database, `404` for an unknown slug and `503` when the database cannot answer. Monitor the root once and each workspace you care about. See [Workspaces](./workspaces.md#health).
 
 Every API request writes one structured log line to stderr: method, path without query, status, duration, bytes, remote IP and, when authenticated, user id. The SPA and its assets are not logged.
 
@@ -122,6 +122,6 @@ Every API request writes one structured log line to stderr: method, path without
 
 ## Next
 
-- [Host several companies](./workspaces.md) on this server.
+- [Workspaces](./workspaces.md) — creation, self-service email signup, slugs and isolation.
 - [Back up and upgrade](./backup-upgrade.md) the database.
 - [Install the CLI](./install-cli.md) and point it at a workspace.

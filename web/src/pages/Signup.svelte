@@ -5,12 +5,14 @@
 
   let email = $state('')
   let error = $state('')
+  let disabled = $state(false)
   let pending = $state(false)
   let sent = $state(false)
 
   async function submit(event: SubmitEvent) {
     event.preventDefault()
     error = ''
+    disabled = false
     pending = true
     try {
       const res = await fetch('/api/v1/signup', {
@@ -24,6 +26,7 @@
       }
       const problem = await res.json().catch(() => null)
       error = problem?.detail ?? `Signup failed (${res.status}).`
+      disabled = res.status === 503
     } catch {
       error = 'Could not reach the server. Try again.'
     } finally {
@@ -47,6 +50,12 @@
     <h1>Create a workspace</h1>
     {#if error}
       <p class="error" role="alert">{error}</p>
+    {/if}
+    {#if disabled}
+      <p class="hint">
+        Self-service signup is off until email is configured. Operators create workspaces with
+        <code>tstamps-server workspace create</code> — see <a href="/docs/workspaces">Workspaces</a>.
+      </p>
     {/if}
     <p class="hint">
       Enter your email and we will send a link. The next page asks for the workspace URL, your

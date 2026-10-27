@@ -69,8 +69,11 @@ tstamps-server serve --addr :8080 --db ./tstamps.db
 ```
 
 Open `http://localhost:8080/w/example.com/`, change the initial password, then
-create teams, users and memberships under **/admin**. Deployment with systemd
-and Caddy is in [Server on Linux](docs/guide/server.md).
+create teams, users and memberships under **/admin**. By default, workspaces are
+created with `tstamps-server workspace create`; self-service web signup at
+`/signup` requires email verification (`--email-api-key`, `--email-from`,
+`--public-url`) and is disabled until those are set. Deployment with systemd and
+Caddy is in [Server on Linux](docs/guide/server.md).
 
 ### Host several companies
 
@@ -87,7 +90,7 @@ workspaces is two accounts. With one workspace, `/login` redirects straight to
 its sign-in page; with two or more it asks for the slug. Operators create
 workspaces, or a server may offer self-service signup when it is given an email
 API key, a From address and a public URL; without those it stays operator-only.
-The full shape is in [Hosted workspaces](docs/guide/workspaces.md).
+The full shape is in [Workspaces](docs/guide/workspaces.md).
 
 ## The manual
 
@@ -101,7 +104,7 @@ The full shape is in [Hosted workspaces](docs/guide/workspaces.md).
 | [MCP](docs/guide/mcp.md) | Agent setup, tools and permissions |
 | [Admin console](docs/guide/admin.md) | Users, teams, projects, restore |
 | [Server on Linux](docs/guide/server.md) | Build, systemd, Caddy, settings |
-| [Hosted workspaces](docs/guide/workspaces.md) | Several companies, slugs, isolation, backup |
+| [Workspaces](docs/guide/workspaces.md) | Creation, email signup, slugs, isolation, backup |
 | [Backup and upgrade](docs/guide/backup-upgrade.md) | Snapshots, restore, schema versions |
 
 Vocabulary is [GLOSSARY.md](GLOSSARY.md); decisions worth not reversing are in
@@ -114,10 +117,14 @@ Vocabulary is [GLOSSARY.md](GLOSSARY.md); decisions worth not reversing are in
 pnpm install     # web and docs workspaces
 brew install hivemind go-air   # `just dev` needs both
 just check       # go vet, go test, svelte-check, vitest, docs build
+just workspace-create example.com you@example.com "Your Name"
 just dev         # API, Vite and the manual, all hot reloading
 just e2e         # build the server, then the one- and two-workspace Playwright walks
 ```
 
+`just workspace-create` creates a local workspace in `./tstamps.db` and prints
+its initial password (`just dev` runs without email settings, so `/signup` is
+disabled unless you pass `--email-*` flags).
 In `just dev`, Vite on `http://localhost:5173` is the front door for the UI, API
 and OAuth/MCP discovery (the Go process on `:8080` runs without `-tags web`), so
 point browsers, `tstamps login` and remote MCP clients at

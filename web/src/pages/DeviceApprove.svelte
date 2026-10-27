@@ -11,7 +11,8 @@
   let success = $state(false)
 
   onMount(() => {
-    const params = new URLSearchParams(router.search)
+    const search = router.search || location.search
+    const params = new URLSearchParams(search)
     const code = params.get('user_code') || params.get('code')
     if (code) {
       userCode = code

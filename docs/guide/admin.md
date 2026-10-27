@@ -2,7 +2,7 @@
 
 Admins manage one workspace under `/w/{slug}/admin`: **Users**, **Teams**, **Projects** and **Entries**. The screens are tables with inline create and edit. There is no separate settings page, and no screen reaches another workspace.
 
-The first admin of each workspace is created from the server host, not the web UI: `tstamps-server workspace create <slug> --email x --name y` on the same database. See [Server on Linux](./server.md) and [Hosted workspaces](./workspaces.md). After that, everything below happens in the browser.
+The first admin of each workspace is created from the server host (`tstamps-server workspace create <slug> --email x --name y`) or via self-service signup when email verification is configured. See [Server on Linux](./server.md) and [Workspaces](./workspaces.md). After that, everything below happens in the browser.
 
 ## Users
 

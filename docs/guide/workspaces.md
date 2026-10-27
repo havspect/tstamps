@@ -1,4 +1,4 @@
-# Hosted workspaces
+# Workspaces
 
 One `tstamps-server` process serves one SQLite database, and that database holds every workspace. A server can hold one company's workspace or several; each is addressed at `/w/{slug}/...`, and the slug is selected from the URL before authentication.
 
@@ -7,9 +7,10 @@ One `tstamps-server` process serves one SQLite database, and that database holds
 | Storage | one SQLite database, `--db` (`./tstamps.db` by default, `TSTAMPS_DB`) |
 | Workspace | a row in `workspaces`; every tenant row carries `workspace_id` |
 | URLs | `/w/{slug}/timeline`, `/w/{slug}/reports`, `/w/{slug}/admin` |
-| Bootstrap | `tstamps-server workspace create <slug> --email x --name y` |
+| Operator CLI | `tstamps-server workspace create <slug> --email x --name y` (always available) |
+| Self-service signup | `/signup` with email verification (off unless `--email-api-key`, `--email-from` and `--public-url` are set) |
 
-There is no separate storage mode. "Hosted" here means running the server for someone else; a self-hosted install for one company is the same binary, the same schema and the same URLs with one workspace in it.
+There is no separate storage mode: a self-hosted install for one company and a server running several companies use the same binary, the same schema and the same `/w/{slug}` URLs. By default, workspaces are created from the CLI with `tstamps-server workspace create`; self-service signup over the web is disabled until email verification is configured.
 
 ## Create a workspace
 
@@ -60,7 +61,7 @@ tstamps-server serve --addr :8080 --db /var/lib/tstamps/tstamps.db \
 - `--public-url` (`TSTAMPS_PUBLIC_URL`) is the origin in the emailed link. It must match the address people use, including the scheme; a wrong value sends them to the wrong host.
 - `--email-api-url` (`TSTAMPS_EMAIL_API_URL`) defaults to `https://api.resend.com/emails`. Change it only for a Resend-compatible relay or a test double.
 
-All three of key, from and public URL are required together; the server refuses a partial configuration. With none set, the homepage still shows **Create a workspace**, but the page answers that signup is not enabled and creates nothing. That is also the off switch: remove the key and restart.
+All three of key, from and public URL are required together; the server refuses a partial configuration. With none set, the homepage still shows **Create a workspace**, but submitting `/signup` (or opening `/signup/verify`) answers `503` that signup is not enabled and creates nothing. That is also the off switch: remove the key and restart.
 
 The flow is two pages:
 

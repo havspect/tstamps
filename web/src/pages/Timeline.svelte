@@ -695,6 +695,13 @@
 
   {#if loading}
     <p class="hint">Loading timeline…</p>
+  {:else if lanes.length === 0}
+    <wa-callout variant="neutral" class="timeline-empty">
+      <div class="timeline-empty-message">
+        <span>Hit <strong>+</strong> to add a project and start logging.</span>
+        <Button variant="secondary" onclick={openPicker}>Add project</Button>
+      </div>
+    </wa-callout>
   {/if}
 
   <div class="timeline-layout" class:with-panel={panelMode !== null}>
@@ -805,10 +812,6 @@
           {/if}
 
           <div class="add-lane" style:left={`${addX}px`} style:width={`${ADD_W}px`} aria-hidden="true"></div>
-
-          {#if lanes.length === 0 && !loading}
-            <p class="lanes-empty">Hit + to add a project and start logging.</p>
-          {/if}
 
           {#if nowY !== null}
             <div class="now-line" style:top={`${nowY}px`}>

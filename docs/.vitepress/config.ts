@@ -50,7 +50,7 @@ export default defineConfig({
         items: [
           { text: 'Admin console', link: '/admin' },
           { text: 'Server on Linux', link: '/server' },
-          { text: 'Hosted workspaces', link: '/workspaces' },
+          { text: 'Workspaces', link: '/workspaces' },
           { text: 'Backup and upgrade', link: '/backup-upgrade' },
         ],
       },

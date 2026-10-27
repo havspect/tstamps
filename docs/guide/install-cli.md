@@ -64,23 +64,28 @@ Get-FileHash .\tstamps_windows_amd64.zip -Algorithm SHA256
 
 ## Log in
 
-The CLI stores a personal API token after a password login. It does not keep your password.
+By default, `tstamps login` authenticates via the **OAuth 2.1 Device Grant** (`RFC 8628`): it prints a short verification code, opens `/w/<slug>/auth/device` in your browser (or prints the URL when `--no-browser` is passed), and stores both the access token and rotating refresh token once approved.
 
 ::: code-group
 ```sh [Linux]
 tstamps login --url https://time.example.com/w/example.com
+tstamps login --url https://time.example.com/w/example.com --no-browser
 ```
 
 ```sh [macOS]
 tstamps login --url https://time.example.com/w/example.com
+tstamps login --url https://time.example.com/w/example.com --no-browser
 ```
 
 ```powershell [Windows]
 tstamps login --url https://time.example.com/w/example.com
+tstamps login --url https://time.example.com/w/example.com --no-browser
 ```
 :::
 
-It prompts for your email and password, then prints `logged in as Name <email>`. `tstamps whoami` shows the account and every team you belong to.
+It prompts you to confirm the code in your browser, then prints `logged in as Name <email>`. `tstamps whoami` shows the account and every team you belong to.
+
+For non-interactive scripts, passing `--email` (and `--password`) logs in with a password and creates a personal token (`ts_...`) instead. Password login survives for API tokens only where SSO is not enforced; a workspace with SSO has no CLI password path.
 
 The URL names the workspace:
 
@@ -88,11 +93,7 @@ The URL names the workspace:
 tstamps login --url https://time.example.com/w/example.com
 ```
 
-The config file stores that URL, so every later command stays in the workspace. Log in again with another URL to switch. See [Hosted workspaces](./workspaces.md).
-
-::: warning Initial password
-A user created or reset by an admin must sign in to the web UI and change the initial password first. Until then the API refuses everything except the password-change endpoints, so `tstamps login` cannot mint a token.
-:::
+The config file stores that URL, so every later command stays in the workspace. Log in again with another URL to switch. See [Workspaces](./workspaces.md).
 
 ## Where the token is kept
 
