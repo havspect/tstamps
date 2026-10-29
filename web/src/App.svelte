@@ -3,6 +3,7 @@
   import type { Component } from 'svelte'
   import { router } from './lib/router.svelte'
   import { session } from './lib/session.svelte'
+  import { demo } from './lib/demo'
   import Link from './lib/Link.svelte'
   import Button from './lib/ui/Button.svelte'
   import Home from './pages/Home.svelte'
@@ -127,6 +128,11 @@
   <!-- Public homepage, also the hosted root: never wait on the session. -->
   <Page />
 {:else}
+  {#if demo.accounts.length}
+    <div class="demo-banner" role="status">
+      Live demo — fictional data. Everything resets at the top of the hour, so you may be signed out.
+    </div>
+  {/if}
   <header>
     <Link href={user ? '/timeline' : '/'} class="brand">Tstamps</Link>
     {#if user && !session.mustChangePassword}
@@ -161,3 +167,14 @@
     {/if}
   </main>
 {/if}
+
+<style>
+  .demo-banner {
+    padding: var(--space-2) var(--space-4);
+    border-bottom: 1px solid var(--border);
+    background: var(--success-bg);
+    color: var(--accent-strong);
+    font-size: 0.875rem;
+    text-align: center;
+  }
+</style>

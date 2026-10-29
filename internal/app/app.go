@@ -18,6 +18,7 @@ import (
 	"github.com/havspect/tstamps/internal/authz"
 	"github.com/havspect/tstamps/internal/clock"
 	"github.com/havspect/tstamps/internal/config"
+	"github.com/havspect/tstamps/internal/demo"
 	"github.com/havspect/tstamps/internal/entry"
 	"github.com/havspect/tstamps/internal/httpapi"
 	"github.com/havspect/tstamps/internal/mcpserver"
@@ -38,6 +39,7 @@ type Config struct {
 	DB          string
 	LogLevel    slog.Level
 	DevMode     bool
+	Demo        bool
 	EmailAPIKey string
 	EmailAPIURL string
 	EmailFrom   string
@@ -50,6 +52,7 @@ func FromConfig(c config.Config) Config {
 		Addr:        c.Addr,
 		DB:          c.DB,
 		LogLevel:    c.LogLevel,
+		Demo:        c.Demo,
 		EmailAPIKey: c.EmailAPIKey,
 		EmailAPIURL: c.EmailAPIURL,
 		EmailFrom:   c.EmailFrom,
@@ -74,6 +77,15 @@ func BuildServer(cfg Config) (http.Handler, *gorm.DB, error) {
 	}
 
 	clk := clock.System{}
+	if cfg.Demo {
+		if err := demo.Seed(context.Background(), db, clk.Now()); err != nil {
+			sqlDB, _ := db.DB()
+			if sqlDB != nil {
+				_ = sqlDB.Close()
+			}
+			return nil, nil, fmt.Errorf("seed demo workspace: %w", err)
+		}
+	}
 	uow := gormrepo.NewTxRunner(db)
 
 	// Repositories
@@ -143,6 +155,7 @@ func BuildServer(cfg Config) (http.Handler, *gorm.DB, error) {
 		OAuthProvider:     oauthProvider,
 		MCPHandler:        mcpHandler,
 		DevMode:           cfg.DevMode,
+		Demo:              cfg.Demo,
 	})
 
 	return httpHandler, db, nil
@@ -185,6 +198,10 @@ func Run(ctx context.Context, cfg Config) error {
 
 	sigCtx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 	defer stop()
+
+	if cfg.Demo {
+		go demo.RunHourly(sigCtx, db)
+	}
 
 	serveErr := make(chan error, 1)
 	go func() {

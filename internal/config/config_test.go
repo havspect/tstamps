@@ -74,6 +74,26 @@ func TestLoad(t *testing.T) {
 			wantErr: true,
 		},
 		{
+			name: "demo from flag",
+			args: []string{"--demo"},
+			want: Config{Addr: ":8080", DB: "./tstamps.db", Demo: true},
+		},
+		{
+			name: "demo from env",
+			env:  map[string]string{"TSTAMPS_DEMO": "true"},
+			want: Config{Addr: ":8080", DB: "./tstamps.db", Demo: true},
+		},
+		{
+			name:    "invalid demo env",
+			env:     map[string]string{"TSTAMPS_DEMO": "yes please"},
+			wantErr: true,
+		},
+		{
+			name:    "demo cannot sign up",
+			args:    []string{"--demo", "--email-api-key", "re_key"},
+			wantErr: true,
+		},
+		{
 			name:    "invalid log level",
 			env:     map[string]string{"TSTAMPS_LOG_LEVEL": "loud"},
 			wantErr: true,

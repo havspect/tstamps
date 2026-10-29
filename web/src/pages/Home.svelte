@@ -1,6 +1,7 @@
 <script lang="ts">
   import Link from '../lib/Link.svelte'
   import { router } from '../lib/router.svelte'
+  import { demo } from '../lib/demo'
 </script>
 
 <svelte:head>
@@ -53,7 +54,10 @@
           coming.
         </p>
         <div class="actions wa-cluster wa-gap-s">
-          {#if router.hosted}
+          {#if demo.accounts.length}
+            <Link href="/login" class="btn primary">Try the live demo <wa-icon name="arrow-right"></wa-icon></Link>
+            <a class="btn ghost" href="#loop">See the timeline <wa-icon name="arrow-down"></wa-icon></a>
+          {:else if router.hosted}
             <Link href="/signup" class="btn primary">Create a workspace <wa-icon name="arrow-right"></wa-icon></Link>
             <Link href="/login" class="btn ghost">Sign in</Link>
           {:else}
@@ -301,7 +305,13 @@ tstamps login --url https://time.example.com/w/example.com</code></pre>
           <p>If your server is already running, the timeline is one sign-in away.</p>
         </div>
         <div class="actions wa-cluster wa-gap-s">
-          {#if router.hosted}
+          {#if demo.accounts.length}
+            <Link href="/login" class="btn primary">Try the live demo <wa-icon name="arrow-right"></wa-icon></Link>
+            <a
+              class="btn ghost"
+              href="https://github.com/havspect/tstamps/blob/main/docs/SPEC.md">Read the specification</a
+            >
+          {:else if router.hosted}
             <Link href="/signup" class="btn primary">Create a workspace <wa-icon name="arrow-right"></wa-icon></Link>
             <Link href="/login" class="btn ghost">Sign in</Link>
           {:else}

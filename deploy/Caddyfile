@@ -8,3 +8,12 @@ tstamps.example.com {
 	header Strict-Transport-Security "max-age=31536000; includeSubDomains"
 	reverse_proxy 127.0.0.1:8080
 }
+
+# The public demo is a second instance with its own database. Its accounts are
+# public, so keep it out of search results. Replace the hostname, then reload.
+demo.tstamps.example.com {
+	encode zstd gzip
+	header Strict-Transport-Security "max-age=31536000; includeSubDomains"
+	header X-Robots-Tag "noindex"
+	reverse_proxy 127.0.0.1:8081
+}

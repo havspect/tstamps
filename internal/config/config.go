@@ -4,9 +4,11 @@ package config
 import (
 	"errors"
 	"flag"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/url"
+	"strconv"
 	"strings"
 )
 
@@ -15,6 +17,7 @@ type Config struct {
 	Addr     string     // listen address
 	DB       string     // sqlite database file holding every workspace
 	LogLevel slog.Level // minimum level written to stderr
+	Demo     bool       // serve the seeded, hourly-reset demo workspace
 
 	// Self-service signup email. Enabled only when all three of EmailAPIKey,
 	// EmailFrom and PublicURL are set.
@@ -48,6 +51,13 @@ func Load(args []string, getenv func(string) string) (Config, error) {
 		EmailFrom:   getenv("TSTAMPS_EMAIL_FROM"),
 		PublicURL:   getenv("TSTAMPS_PUBLIC_URL"),
 	}
+	if v := getenv("TSTAMPS_DEMO"); v != "" {
+		demo, err := strconv.ParseBool(v)
+		if err != nil {
+			return Config{}, fmt.Errorf("TSTAMPS_DEMO: %w", err)
+		}
+		cfg.Demo = demo
+	}
 	if v := getenv("TSTAMPS_LOG_LEVEL"); v != "" {
 		if err := cfg.LogLevel.UnmarshalText([]byte(v)); err != nil {
 			return Config{}, err
@@ -62,11 +72,15 @@ func Load(args []string, getenv func(string) string) (Config, error) {
 	fs.StringVar(&cfg.EmailAPIURL, "email-api-url", cfg.EmailAPIURL, "email API endpoint (default https://api.resend.com/emails)")
 	fs.StringVar(&cfg.EmailFrom, "email-from", cfg.EmailFrom, "From address for signup email")
 	fs.StringVar(&cfg.PublicURL, "public-url", cfg.PublicURL, "public origin used in signup links")
+	fs.BoolVar(&cfg.Demo, "demo", cfg.Demo, "serve the seeded demo workspace, reset every hour")
 	level := fs.String("log-level", cfg.LogLevel.String(), "debug, info, warn or error")
 	if err := fs.Parse(args); err != nil {
 		return Config{}, err
 	}
 	if err := cfg.LogLevel.UnmarshalText([]byte(*level)); err != nil {
+		return Config{}, err
+	}
+	if err := cfg.validateDemo(); err != nil {
 		return Config{}, err
 	}
 	if err := cfg.validateSignup(); err != nil {
@@ -79,6 +93,18 @@ func Load(args []string, getenv func(string) string) (Config, error) {
 // three email settings it needs are present.
 func (c Config) SignupEnabled() bool {
 	return c.EmailAPIKey != "" && c.EmailFrom != "" && c.PublicURL != ""
+}
+
+// validateDemo refuses a demo server with email configured: self-service signup
+// would create workspaces that the hourly reset then refuses to touch.
+func (c *Config) validateDemo() error {
+	if !c.Demo {
+		return nil
+	}
+	if c.EmailAPIKey != "" || c.EmailFrom != "" || c.PublicURL != "" {
+		return errors.New("--demo cannot be combined with self-service signup settings")
+	}
+	return nil
 }
 
 // validateSignup refuses a half-configured email path, which would otherwise

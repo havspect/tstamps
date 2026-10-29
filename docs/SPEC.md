@@ -247,6 +247,7 @@ Production is one VM: `tstamps-server` under systemd, Caddy terminating TLS on t
 - **Schema version** — the applied version is stored in `PRAGMA user_version`; a workspace's `/w/{slug}/healthz` reports it, and the root `/healthz` only checks reachability. A binary refuses a database written by a newer schema; there is no downgrade path, restore the backup instead.
 - **Retention** — logged hours are the company's timekeeping record. A leaver is deactivated, not deleted; their entries stay visible. Erasing a person means erasing the workspace. There is no per-user erasure in v1. Deleting a workspace is a transaction across its rows, not removing a file, and stays out of scope until a command exists.
 - **Self-service signup** — off unless the server has `--email-api-key`, `--email-from` and `--public-url` (and optionally `--email-api-url`), which makes it an email dependency on Resend's API. Pending signups are rows in the same database, keyed by the token hash and holding only the address; they never expire, belong to no workspace, and are claimed by deleting the row when the form is submitted. Until then nothing is created, so an unverified address cannot make a workspace. An operator still cannot suspend or delete a workspace from the app.
+- **Demo mode** — `--demo` seeds one fictional `demo` workspace and rebuilds it in a single transaction at the top of every hour; visitors share its published accounts and may change anything. It refuses a database holding any other workspace and refuses the signup flags, and its `robots.txt` disallows crawling. A demo is not a Trial: there is no billing, suspension or per-visitor isolation.
 - **Upgrade** — stop, back up, replace the binary, start. Schema changes are additive via `AutoMigrate`; a newer database is refused rather than guessed at.
 
 ## Layout and stack
@@ -257,6 +258,7 @@ cmd/tstamps-server/   server: main, serve, workspace, backup, openapi
 deploy/             systemd units, backup timer and Caddyfile
 e2e/                the acceptance walk over both binaries
 internal/config/    flags, env, config file
+internal/demo/      demo workspace seed and hourly reset
 internal/store/     GORM models, AutoMigrate, queries
 internal/workspace/ workspace slugs, creation, signup, shared registry and /w routing
 internal/auth/      argon2id passwords, sessions, tokens, rate limit

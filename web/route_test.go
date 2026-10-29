@@ -55,6 +55,29 @@ func TestHandlerServesDocsWithoutSPAFallback(t *testing.T) {
 	}
 }
 
+func TestDemoAccountsAreStampedIntoTheShell(t *testing.T) {
+	sub := fstest.MapFS{
+		"index.html": {Data: []byte("<head></head>")},
+	}
+
+	rec := httptest.NewRecorder()
+	handler(sub, true, Options{DemoAccounts: `[{"email":"ada@example.com","password":"demo"}]`}).
+		ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
+	body := rec.Body.String()
+	if !strings.Contains(body, `name="tstamps-demo"`) || !strings.Contains(body, "ada@example.com") {
+		t.Fatalf("demo shell = %q, want the demo marker with its accounts", body)
+	}
+	if !strings.Contains(body, `name="tstamps-hosted"`) {
+		t.Fatalf("demo shell lost the hosted marker: %q", body)
+	}
+
+	rec = httptest.NewRecorder()
+	handler(sub, true).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
+	if strings.Contains(rec.Body.String(), "tstamps-demo") {
+		t.Fatalf("plain shell carries the demo marker: %q", rec.Body.String())
+	}
+}
+
 func TestHostedHandlerMarksOnlyTheShell(t *testing.T) {
 	sub := fstest.MapFS{
 		"index.html":      {Data: []byte("<head></head>")},

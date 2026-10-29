@@ -78,6 +78,45 @@ There is no server-wide admin: each workspace's first admin comes from its own `
 
 Caddy sets `X-Forwarded-Proto`, which is how the server knows to mark the session cookie `Secure`. It also sets `X-Forwarded-For`, the hop used for client IPs in logs and for login rate limiting. The server trusts both only from a loopback peer, so a direct client cannot forge them. Keep port 8080 off the network anyway.
 
+## Run a public demo
+
+A demo server seeds one fictional workspace and rebuilds it at the top of every
+hour, so visitors may change anything without keeping it:
+
+```sh
+sudo install -d -o tstamps -g tstamps -m 0700 /var/lib/tstamps-demo
+sudo install -m 0644 deploy/tstamps-demo.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now tstamps-demo
+```
+
+Its unit runs `tstamps-server serve --demo --addr 127.0.0.1:8081 --db
+/var/lib/tstamps-demo/demo.db`; add the `demo.` host from the Caddyfile and
+point it at port 8081. Nothing in that database is worth backing up.
+
+At boot the server creates a workspace with the slug `demo` and seeds three
+accounts, all with the password `demo`:
+
+| Email | Role |
+| --- | --- |
+| `ada@example.com` | admin |
+| `leo@example.com` | lead of Product |
+| `mia@example.com` | member of Product |
+
+The homepage offers **Try the live demo**, the login page lists the accounts as
+click-to-fill buttons, and a banner says the data resets. The seed holds six
+weeks of entries through now, a running entry for the admin and the member,
+overlaps, a midnight-crossing entry, an archived project, a deleted entry and
+plans for four weeks back to three weeks ahead; the audit log starts empty.
+
+`--demo` only ever touches the `demo` workspace and refuses to start if the
+database holds any other workspace, so never point it at a production database.
+It also refuses the self-service signup flags, and its `robots.txt` disallows
+crawling. Visitors share one workspace and its accounts: this is a demo, not a
+Trial
+([ADR-0015](https://github.com/havspect/tstamps/blob/main/docs/adr/0015-flat-subscription-read-only-suspension.md)),
+and the reset is the only cleanup there is.
+
 ## Settings
 
 Flags win over environment, which wins over the default.
@@ -90,6 +129,7 @@ Flags win over environment, which wins over the default.
 | `--email-from` | `TSTAMPS_EMAIL_FROM` | none | Verified From address for signup mail |
 | `--public-url` | `TSTAMPS_PUBLIC_URL` | none | Public origin used in emailed links |
 | `--email-api-url` | `TSTAMPS_EMAIL_API_URL` | `https://api.resend.com/emails` | Email endpoint |
+| `--demo` | `TSTAMPS_DEMO` | off | Seed the fictional demo workspace and reset it hourly |
 | `--log-level` | `TSTAMPS_LOG_LEVEL` | `info` | `debug`, `info`, `warn` or `error` |
 
 ```sh

@@ -19,6 +19,7 @@ import (
 
 	"github.com/havspect/tstamps/internal/audit"
 	"github.com/havspect/tstamps/internal/clock"
+	"github.com/havspect/tstamps/internal/demo"
 	"github.com/havspect/tstamps/internal/entry"
 	"github.com/havspect/tstamps/internal/oauth"
 	"github.com/havspect/tstamps/internal/onboarding"
@@ -52,6 +53,7 @@ type Dependencies struct {
 	OAuthProvider     *oauth.Provider
 	MCPHandler        http.Handler
 	DevMode           bool
+	Demo              bool
 }
 
 // Server holds state shared across HTTP handlers.
@@ -137,6 +139,9 @@ func New(deps Dependencies) http.Handler {
 	if deps.DevMode {
 		devURL, _ := url.Parse("http://localhost:5173")
 		topMux.Handle("/", httputil.NewSingleHostReverseProxy(devURL))
+	} else if deps.Demo {
+		accounts, _ := json.Marshal(demo.Accounts())
+		topMux.Handle("/", web.HostedHandler(web.Options{DemoAccounts: string(accounts)}))
 	} else {
 		topMux.Handle("/", web.HostedHandler())
 	}
@@ -282,6 +287,10 @@ func (s *Server) health(w http.ResponseWriter, _ *http.Request) {
 
 func (s *Server) robots(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	if s.deps.Demo {
+		_, _ = fmt.Fprint(w, "User-agent: *\nDisallow: /\n")
+		return
+	}
 	_, _ = fmt.Fprintf(w, "User-agent: *\nAllow: /\nAllow: /docs/\nDisallow: /login\nDisallow: /password\nDisallow: /signup\nDisallow: /timeline\nDisallow: /reports\nDisallow: /plan\nDisallow: /admin/\nDisallow: /api/\n\nSitemap: %s/sitemap.xml\n", origin(r))
 }
 
