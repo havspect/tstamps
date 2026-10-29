@@ -7,6 +7,7 @@
     id,
     value = $bindable(''),
     hint = '',
+    size = 's',
     children,
     ...rest
   }: Omit<HTMLSelectAttributes, 'value' | 'size'> & {
@@ -14,6 +15,7 @@
     id: string
     value?: string
     hint?: string
+    size?: 's' | 'm' | 'l'
     children: Snippet
   } = $props()
 </script>
@@ -21,9 +23,9 @@
 <wa-select
   {id}
   {label}
+  {size}
   hint={hint || undefined}
   {value}
-  size="s"
   oninput={(event) => (value = event.currentTarget.value)}
   {...rest}
 >

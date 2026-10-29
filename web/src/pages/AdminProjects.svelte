@@ -6,11 +6,12 @@
   import Button from '../lib/ui/Button.svelte'
   import Input from '../lib/ui/Input.svelte'
   import Select from '../lib/ui/Select.svelte'
+  import { PROJECT_COLORS } from '../lib/colors'
 
   type Project = components['schemas']['ProjectResponse']
   type Team = components['schemas']['TeamResponse']
 
-  const defaultColor = '#4f46e5'
+  const defaultColor = PROJECT_COLORS[0]
 
   let projects = $state<Project[]>([])
   let teams = $state<Team[]>([])
@@ -140,6 +141,24 @@
   }
 </script>
 
+{#snippet palette(value: string, pick: (color: string) => void)}
+  <div class="field">
+    <span class="field-label">Color</span>
+    <div class="swatches" role="group" aria-label="Project color">
+      {#each PROJECT_COLORS as swatch (swatch)}
+        <button
+          type="button"
+          class="swatch-button"
+          style:background={swatch}
+          aria-label={swatch}
+          aria-pressed={value === swatch}
+          onclick={() => pick(swatch)}
+        ></button>
+      {/each}
+    </div>
+  </div>
+{/snippet}
+
 <AdminNav />
 <h1>Projects</h1>
 
@@ -155,7 +174,7 @@
       <wa-option value={String(team.id)}>{team.name}</wa-option>
     {/each}
   </Select>
-  <Input id="new-project-color" label="Color" class="color" type="color" bind:value={color} />
+  {@render palette(color, (c) => (color = c))}
   <Button type="submit" disabled={createPending || activeTeams.length === 0}>
     {createPending ? 'Creating…' : 'Create project'}
   </Button>
@@ -243,13 +262,7 @@
                       </wa-option>
                     {/each}
                   </Select>
-                  <Input
-                    id={`project-color-${project.id}`}
-                    label="Color"
-                    class="color"
-                    type="color"
-                    bind:value={editColor}
-                  />
+                  {@render palette(editColor, (c) => (editColor = c))}
                   <Button type="submit" disabled={savePending}>
                     {savePending ? 'Saving…' : 'Save'}
                   </Button>

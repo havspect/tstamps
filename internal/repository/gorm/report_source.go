@@ -51,6 +51,22 @@ func (s *ReportSource) LoadReportData(ctx context.Context, filter report.Filter)
 		}
 		q = q.Where("project_id IN ?", pIDs)
 	}
+	if len(filter.TeamIDs) > 0 || filter.SelfUserID > 0 {
+		var pIDs []uint
+		if len(filter.TeamIDs) > 0 {
+			if err := db.Model(&Project{}).Where("team_id IN ?", filter.TeamIDs).Pluck("id", &pIDs).Error; err != nil {
+				return report.Input{}, err
+			}
+		}
+		cond := db.Where("1 = 0")
+		if len(pIDs) > 0 {
+			cond = db.Where("project_id IN ?", pIDs)
+		}
+		if filter.SelfUserID > 0 {
+			cond = cond.Or("user_id = ?", filter.SelfUserID)
+		}
+		q = q.Where(cond)
+	}
 
 	var entryRows []Entry
 	if err := q.Find(&entryRows).Error; err != nil {

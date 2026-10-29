@@ -30,6 +30,7 @@ export default defineConfig({
         text: 'Using Tstamps',
         items: [
           { text: 'Timeline', link: '/timeline' },
+          { text: 'My hours', link: '/my-hours' },
           { text: 'Reports', link: '/reports' },
           { text: 'Plan', link: '/plan' },
           { text: 'CLI reference', link: '/cli' },

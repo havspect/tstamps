@@ -462,3 +462,102 @@ func TestFullDomainOperations(t *testing.T) {
 func jsonNum(n uint) string {
 	return strconv.FormatUint(uint64(n), 10)
 }
+
+// seedToken creates a user with an API token and returns the bearer header.
+func seedToken(t *testing.T, deps *Dependencies, wsID uint, email string, admin bool) (*gormrepo.User, string) {
+	t.Helper()
+	ctxWs := gormrepo.WithWorkspaceID(context.Background(), wsID)
+	hash, _ := auth.HashPassword("secret123")
+	u := &gormrepo.User{
+		WorkspaceID:  wsID,
+		Email:        email,
+		Name:         email,
+		PasswordHash: hash,
+		IsAdmin:      admin,
+		Active:       true,
+	}
+	if err := deps.DB.WithContext(ctxWs).Create(u).Error; err != nil {
+		t.Fatalf("create user %s: %v", email, err)
+	}
+	raw, tokHash, _ := auth.NewAPIToken()
+	tok := &gormrepo.APIToken{
+		WorkspaceID: wsID,
+		UserID:      u.ID,
+		Name:        "token",
+		TokenHash:   tokHash,
+		ExpiresAt:   time.Now().AddDate(1, 0, 0),
+	}
+	if err := deps.DB.WithContext(ctxWs).Create(tok).Error; err != nil {
+		t.Fatalf("create token for %s: %v", email, err)
+	}
+	return u, "Bearer " + raw
+}
+
+// TestMemberReportScope proves the trust boundary: a member asking for another
+// user's or another team's report still gets only their own hours.
+func TestMemberReportScope(t *testing.T) {
+	handler, deps := setupTestServer(t)
+
+	ws := &gormrepo.Workspace{Slug: "acme"}
+	if err := deps.DB.Create(ws).Error; err != nil {
+		t.Fatalf("create workspace: %v", err)
+	}
+	admin, adminAuth := seedToken(t, deps, ws.ID, "admin@acme.com", true)
+	member, memberAuth := seedToken(t, deps, ws.ID, "member@acme.com", false)
+
+	call := func(method, path, authHeader, body string) *httptest.ResponseRecorder {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(method, path, strings.NewReader(body))
+		if body != "" {
+			req.Header.Set("Content-Type", "application/json")
+		}
+		req.Header.Set("Authorization", authHeader)
+		handler.ServeHTTP(rec, req)
+		return rec
+	}
+
+	team := teamResponse{}
+	if rec := call(http.MethodPost, "/api/v1/teams", adminAuth, `{"name":"Platform"}`); rec.Code != http.StatusCreated {
+		t.Fatalf("create team status=%d: %s", rec.Code, rec.Body.String())
+	} else {
+		_ = json.NewDecoder(rec.Body).Decode(&team)
+	}
+	proj := projectResponse{}
+	body := `{"team_id":` + jsonNum(team.ID) + `,"name":"API","color":"#00ff00"}`
+	if rec := call(http.MethodPost, "/api/v1/projects", adminAuth, body); rec.Code != http.StatusCreated {
+		t.Fatalf("create project status=%d: %s", rec.Code, rec.Body.String())
+	} else {
+		_ = json.NewDecoder(rec.Body).Decode(&proj)
+	}
+
+	entry := func(authHeader, note string) {
+		body := `{"project_id":` + jsonNum(proj.ID) + `,"start_at":"2026-10-19T09:00:00Z","end_at":"2026-10-19T11:00:00Z","timezone":"UTC","note":"` + note + `"}`
+		if rec := call(http.MethodPost, "/api/v1/entries", authHeader, body); rec.Code != http.StatusCreated {
+			t.Fatalf("create entry status=%d: %s", rec.Code, rec.Body.String())
+		}
+	}
+	entry(adminAuth, "admin work")
+	entry(memberAuth, "member work")
+
+	path := "/api/v1/reports?from=2026-10-19&to=2026-10-20&by=day&team_id=" + jsonNum(team.ID) +
+		"&user_id=" + jsonNum(admin.ID)
+	rec := call(http.MethodGet, path, memberAuth, "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("member report status=%d: %s", rec.Code, rec.Body.String())
+	}
+	var out struct {
+		Rows         []reportRow `json:"rows"`
+		TotalSeconds int64       `json:"total_seconds"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&out); err != nil {
+		t.Fatalf("decode report: %v", err)
+	}
+	if out.TotalSeconds != 7200 {
+		t.Errorf("member report total = %d, want their own 2 hours", out.TotalSeconds)
+	}
+	for _, row := range out.Rows {
+		if row.UserID != member.ID {
+			t.Errorf("member report exposed user %d", row.UserID)
+		}
+	}
+}

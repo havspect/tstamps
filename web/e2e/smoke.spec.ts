@@ -126,6 +126,27 @@ test('login, log an entry, read the report and export CSV', async ({ page }) => 
   const csv = readFileSync(await (await download).path(), 'utf8')
   expect(csv).toContain('Smoke Project')
   expect(csv).toContain('smoke note')
+
+  // The personal view draws the same hours: chart over table.
+  await page.goto(`${workspace}/my-hours`)
+  await expect(page.getByRole('heading', { name: 'My hours' })).toBeVisible()
+  await expect(page.getByRole('rowheader', { name: /Smoke Project/ })).toBeVisible()
+  await expect(page.locator('.chart canvas')).toBeVisible()
+
+  // Switching the bucket must repaint the chart, not leave the day bars on
+  // screen next to a weekly table.
+  const chartHash = () =>
+    page.locator('.chart canvas').evaluate((el) => {
+      const canvas = el as HTMLCanvasElement
+      const { data } = canvas.getContext('2d')!.getImageData(0, 0, canvas.width, canvas.height)
+      let hash = 0
+      for (let i = 0; i < data.length; i += 4) hash = (hash * 31 + data[i] + data[i + 1] + data[i + 2]) | 0
+      return hash
+    })
+  const daily = await chartHash()
+  await page.getByRole('button', { name: 'Week' }).click()
+  await expect(page.getByRole('columnheader', { name: /^W\d+$/ })).toBeVisible()
+  expect(await chartHash()).not.toBe(daily)
 })
 
 test('admin controls bind the custom elements to the forms', async ({ page }) => {
@@ -148,7 +169,7 @@ test('admin controls bind the custom elements to the forms', async ({ page }) =>
 
   const row = page.locator('tr', { hasText: email })
   await expect(row).toBeVisible()
-  await expect(row.locator('td').nth(3)).toHaveText('yes')
+  await expect(row.locator('td').nth(4)).toHaveText('yes')
 
   const teamName = `Admin Check ${stamp}`
   const created = await page.request.post(`${workspace}/api/v1/teams`, {

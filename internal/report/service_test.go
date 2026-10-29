@@ -20,11 +20,13 @@ type fixedClock struct{ now time.Time }
 func (c fixedClock) Now() time.Time { return c.now }
 
 type mockSource struct {
-	input Input
-	err   error
+	input  Input
+	err    error
+	filter Filter
 }
 
 func (m *mockSource) LoadReportData(ctx context.Context, filter Filter) (Input, error) {
+	m.filter = filter
 	if m.err != nil {
 		return Input{}, m.err
 	}
@@ -70,10 +72,13 @@ func TestGenerateReport(t *testing.T) {
 	from := time.Date(2026, 10, 19, 0, 0, 0, 0, time.UTC)
 	to := time.Date(2026, 10, 21, 0, 0, 0, 0, time.UTC)
 
-	// 1. Regular member cannot view team report
+	// 1. A member's own report ignores the team filter and narrows to self
 	_, err := svc.GenerateReport(testContext(member), Filter{From: from, To: to, TeamID: 1})
-	if !errors.Is(err, authz.ErrForbidden) {
-		t.Fatalf("member GenerateReport: got %v, want ErrForbidden", err)
+	if err != nil {
+		t.Fatalf("member GenerateReport: %v", err)
+	}
+	if source.filter.UserID != member.UserID || source.filter.TeamID != 0 {
+		t.Errorf("member scope = user %d team %d, want user %d, no team", source.filter.UserID, source.filter.TeamID, member.UserID)
 	}
 
 	// 2. Lead can view their team's report
@@ -86,6 +91,9 @@ func TestGenerateReport(t *testing.T) {
 	}
 	if len(rep.Rows) != 2 {
 		t.Errorf("expected 2 day rows, got %d", len(rep.Rows))
+	}
+	if len(source.filter.TeamIDs) != 1 || source.filter.TeamIDs[0] != 1 || source.filter.SelfUserID != lead.UserID {
+		t.Errorf("lead scope = teams %v self %d, want team 1 and self %d", source.filter.TeamIDs, source.filter.SelfUserID, lead.UserID)
 	}
 
 	// 3. Admin can view report with default week aggregation
@@ -115,11 +123,14 @@ func TestExportCSV(t *testing.T) {
 	from := time.Date(2026, 10, 19, 0, 0, 0, 0, time.UTC)
 	to := time.Date(2026, 10, 21, 0, 0, 0, 0, time.UTC)
 
-	// 1. Regular member cannot export
+	// 1. A member exports their own hours
 	var buf bytes.Buffer
 	err := svc.ExportCSV(testContext(member), Filter{From: from, To: to}, &buf)
-	if !errors.Is(err, authz.ErrForbidden) {
-		t.Fatalf("member ExportCSV: got %v, want ErrForbidden", err)
+	if err != nil {
+		t.Fatalf("member ExportCSV: %v", err)
+	}
+	if source.filter.UserID != member.UserID {
+		t.Errorf("member CSV scope = user %d, want user %d", source.filter.UserID, member.UserID)
 	}
 
 	// 2. Admin exports CSV

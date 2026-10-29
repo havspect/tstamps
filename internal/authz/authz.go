@@ -260,7 +260,9 @@ func (e *PolicyEngine) Check(ctx context.Context, p *auth.Principal, action Acti
 			}
 			return nil
 		}
-		return ErrForbidden
+		// Everyone may read a report; report.Service narrows the rows to the
+		// caller's own entries unless they lead a team or are an admin.
+		return nil
 
 	case ActionViewPlan, "plan:view":
 		// Every signed-in member may read a plan board; the domain service

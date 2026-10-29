@@ -7,6 +7,7 @@
   import Button from './lib/ui/Button.svelte'
   import Home from './pages/Home.svelte'
   import Login from './pages/Login.svelte'
+  import MyHours from './pages/MyHours.svelte'
   import NotFound from './pages/NotFound.svelte'
   import Password from './pages/Password.svelte'
   import Reports from './pages/Reports.svelte'
@@ -30,6 +31,7 @@
     '/signup': Signup,
     '/signup/verify': SignupVerify,
     '/timeline': Timeline,
+    '/my-hours': MyHours,
     '/reports': Reports,
     '/plan': Plan,
     '/admin/users': AdminUsers,
@@ -130,6 +132,7 @@
     {#if user && !session.mustChangePassword}
       <nav>
         <Link href="/timeline">Timeline</Link>
+        <Link href="/my-hours">My hours</Link>
         <Link href="/plan">Plan</Link>
         {#if user.is_admin || leads}
           <Link href="/reports">Reports</Link>
@@ -147,7 +150,12 @@
     {/if}
   </header>
 
-  <main class:wide={router.path === '/timeline' || router.path === '/reports' || router.path === '/plan'}>
+  <main
+    class:wide={router.path === '/timeline' ||
+      router.path === '/reports' ||
+      router.path === '/my-hours' ||
+      router.path === '/plan'}
+  >
     {#if ready && allowed}
       <Page />
     {/if}

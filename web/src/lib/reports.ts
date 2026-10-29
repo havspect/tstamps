@@ -284,6 +284,30 @@ export function summarize(projects: ReportProject[]): ReportSummary {
   }
 }
 
+export type ChartSeries = {
+  labels: string[]
+  datasets: { label: string; data: number[]; backgroundColor: string; borderRadius: number }[]
+}
+
+// chartSeries turns the pivoted projects into stacked bars: one bar per bucket,
+// one dataset per project, in hours. The order is the table's, so the legend
+// and the table rows read the same way.
+export function chartSeries(
+  projects: ReportProject[],
+  buckets: Bucket[],
+  color: (projectID: number) => string,
+): ChartSeries {
+  return {
+    labels: buckets.map((bucket) => bucket.label),
+    datasets: projects.map((project) => ({
+      label: project.project,
+      backgroundColor: color(project.project_id),
+      borderRadius: 5,
+      data: buckets.map((bucket) => (project.cells[bucket.key] ?? 0) / 3600),
+    })),
+  }
+}
+
 export type RangePreset = 'this-week' | 'last-week' | 'this-month' | 'last-month' | 'this-year' | 'custom'
 
 // presetRange gives the dates and the granularity a preset implies: a week
@@ -311,12 +335,13 @@ export function presetRange(
   return { from: iso(new Date(Date.UTC(year, 0, 1))), to: iso(new Date(Date.UTC(year + 1, 0, 1))), by: 'month' }
 }
 
-export type CsvFilters = { from: string; to: string; teamID: string }
+export type CsvFilters = { from: string; to: string; teamID: string; userID?: number }
 
 // csvHref is the download URL for the filters the table was loaded with; an
 // empty id means "all", and the API ignores the bucket because CSV is per day.
-export function csvHref({ from, to, teamID }: CsvFilters, base = ''): string {
+export function csvHref({ from, to, teamID, userID }: CsvFilters, base = ''): string {
   const query = new URLSearchParams({ from, to })
   if (teamID) query.set('team_id', teamID)
+  if (userID) query.set('user_id', String(userID))
   return `${base}/api/v1/reports.csv?${query}`
 }

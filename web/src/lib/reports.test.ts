@@ -1,5 +1,15 @@
 import { describe, expect, it } from 'vitest'
-import { bucketRange, csvHref, driftOf, pivot, planByProject, presetRange, summarize, weekStartOf } from './reports'
+import {
+  bucketRange,
+  chartSeries,
+  csvHref,
+  driftOf,
+  pivot,
+  planByProject,
+  presetRange,
+  summarize,
+  weekStartOf,
+} from './reports'
 import type { PlanCell, ReportRow } from './reports'
 
 // row builds a report row; user 1 is Ada, user 2 is Grace.
@@ -209,6 +219,25 @@ describe('summarize', () => {
   })
 })
 
+describe('chartSeries', () => {
+  it('stacks hours per project over every bucket, in the table order', () => {
+    const projects = pivot([row('2026-10-19', 1, 1, 3600), row('2026-10-20', 1, 2, 5400)])
+    const buckets = bucketRange('2026-10-19', '2026-10-22', 'day')
+
+    const series = chartSeries(projects, buckets, (id) => (id === 1 ? '#111' : '#222'))
+
+    expect(series.labels).toEqual(['Mon 19', 'Tue 20', 'Wed 21'])
+    expect(series.datasets).toEqual([
+      { label: 'App', data: [0, 1.5, 0], backgroundColor: '#222', borderRadius: 5 },
+      { label: 'Site', data: [1, 0, 0], backgroundColor: '#111', borderRadius: 5 },
+    ])
+  })
+
+  it('draws no datasets when there are no projects', () => {
+    expect(chartSeries([], bucketRange('2026-10-19', '2026-10-20', 'day'), () => '#000').datasets).toEqual([])
+  })
+})
+
 describe('presetRange', () => {
   // Friday 23 October 2026, midday UTC.
   const now = new Date('2026-10-23T12:00:00Z')
@@ -242,6 +271,9 @@ describe('csvHref', () => {
 
     const query = new URLSearchParams(csvHref({ from: '2026-10-19', to: '2026-10-26', teamID: '2' }).split('?')[1])
     expect(query.get('team_id')).toBe('2')
+    expect(csvHref({ from: '2026-10-19', to: '2026-10-26', teamID: '', userID: 7 })).toBe(
+      '/api/v1/reports.csv?from=2026-10-19&to=2026-10-26&user_id=7',
+    )
     expect(csvHref({ from: '2026-10-19', to: '2026-10-26', teamID: '' }, '/w/example.com')).toBe(
       '/w/example.com/api/v1/reports.csv?from=2026-10-19&to=2026-10-26',
     )

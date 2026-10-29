@@ -1,10 +1,10 @@
 # Reports
 
-Open `/w/{slug}/reports` after signing in. Reports are read-only. To look forward instead of back, use [Plan](./plan.md).
+Open `/w/{slug}/reports` after signing in. Reports are read-only, and read the whole team. For your own hours, every role has [My hours](./my-hours.md). To look forward instead of back, use [Plan](./plan.md).
 
 - A **lead** reads every hour booked on projects owned by a team they lead, whoever logged it, plus their own entries.
 - An **admin** reads everything.
-- A **member** has no report page; `tstamps report` returns their own hours.
+- A **member** has no team report; their own hours are on [My hours](./my-hours.md), and `tstamps report` returns the same.
 
 ![The reports table: projects as rows, days as columns, total on the right](/screenshots/reports.webp)
 

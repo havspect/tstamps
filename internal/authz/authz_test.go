@@ -405,9 +405,9 @@ func TestPolicyEngine_ReportView(t *testing.T) {
 		t.Errorf("lead view report for other team err = %v, want ErrForbidden", err)
 	}
 
-	// Member forbidden
-	if err := engine.Check(ctx, member, authz.ActionViewReport, nil); !errors.Is(err, authz.ErrForbidden) {
-		t.Errorf("member view report err = %v, want ErrForbidden", err)
+	// Member allowed: the report service narrows the rows to their own entries
+	if err := engine.Check(ctx, member, authz.ActionViewReport, nil); err != nil {
+		t.Errorf("member view report failed: %v", err)
 	}
 }
 
