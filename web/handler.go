@@ -20,7 +20,7 @@ func requestOrigin(r *http.Request) string {
 	return scheme + "://" + r.Host
 }
 
-func handler(sub fs.FS, hosted bool) http.Handler {
+func handler(sub fs.FS, hosted, legal bool) http.Handler {
 	files := http.FileServerFS(sub)
 	indexTemplate, _ := fs.ReadFile(sub, "index.html")
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -68,6 +68,10 @@ func handler(sub fs.FS, hosted bool) http.Handler {
 				if hosted && !bytes.Contains(out, []byte(`name="tstamps-hosted"`)) {
 					out = bytes.Replace(out, []byte("</head>"),
 						[]byte(`<meta name="tstamps-hosted" content="1"></head>`), 1)
+				}
+				if legal && !bytes.Contains(out, []byte(`name="tstamps-legal"`)) {
+					out = bytes.Replace(out, []byte("</head>"),
+						[]byte(`<meta name="tstamps-legal" content="1"></head>`), 1)
 				}
 				w.Header().Set("Content-Type", "text/html; charset=utf-8")
 				_, _ = w.Write(out)

@@ -1,6 +1,7 @@
 <script lang="ts">
   import Link from '../lib/Link.svelte'
   import { router } from '../lib/router.svelte'
+  import LegalLinks from '../lib/LegalLinks.svelte'
 </script>
 
 <svelte:head>
@@ -326,6 +327,7 @@ tstamps login --url https://time.example.com/w/example.com</code></pre>
         <a href="https://github.com/havspect/tstamps/blob/main/GLOSSARY.md">Glossary</a>
         <a href="https://github.com/havspect/tstamps/tree/main/docs/adr">Decisions</a>
         <a href="https://github.com/havspect/tstamps/blob/main/LICENSE">AGPL-3.0</a>
+        <LegalLinks />
       </nav>
       <span class="foot-note">Built with Go and Svelte.</span>
     </div>

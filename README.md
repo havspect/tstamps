@@ -106,6 +106,7 @@ The full shape is in [Workspaces](docs/guide/workspaces.md).
 | [Server on Linux](docs/guide/server.md) | Build, systemd, Caddy, settings |
 | [Workspaces](docs/guide/workspaces.md) | Creation, email signup, slugs, isolation, backup |
 | [Backup and upgrade](docs/guide/backup-upgrade.md) | Snapshots, restore, schema versions |
+| [Legal pages (Germany)](docs/guide/legal.md) | Impressum, privacy notice, operator duties |
 
 Vocabulary is [GLOSSARY.md](GLOSSARY.md); decisions worth not reversing are in
 [docs/adr](docs/adr), including

@@ -76,3 +76,4 @@ If you need any of those, choose something else. [The spec](https://github.com/h
 - [Run the server](./server.md) on a Linux host.
 - [Workspaces](./workspaces.md) — creation, self-service email signup, slugs and isolation.
 - [Back up and upgrade](./backup-upgrade.md) without losing hours.
+- [Legal pages](./legal.md) — Impressum, privacy notice and what a German operator needs.

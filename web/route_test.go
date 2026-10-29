@@ -38,7 +38,7 @@ func TestHandlerServesDocsWithoutSPAFallback(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.path, func(t *testing.T) {
 			rec := httptest.NewRecorder()
-			handler(sub, false).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, tt.path, nil))
+			handler(sub, false, false).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, tt.path, nil))
 			if rec.Code != tt.status {
 				t.Fatalf("status = %d, want %d", rec.Code, tt.status)
 			}
@@ -62,19 +62,19 @@ func TestHostedHandlerMarksOnlyTheShell(t *testing.T) {
 	}
 
 	rec := httptest.NewRecorder()
-	handler(sub, true).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
+	handler(sub, true, false).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
 	if !strings.Contains(rec.Body.String(), `<meta name="tstamps-hosted" content="1">`) {
 		t.Fatalf("hosted shell = %q, want the hosted marker", rec.Body.String())
 	}
 
 	rec = httptest.NewRecorder()
-	handler(sub, false).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
+	handler(sub, false, false).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
 	if strings.Contains(rec.Body.String(), "tstamps-hosted") {
 		t.Fatalf("one-workspace shell carries the hosted marker: %q", rec.Body.String())
 	}
 
 	rec = httptest.NewRecorder()
-	handler(sub, true).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/docs/", nil))
+	handler(sub, true, false).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/docs/", nil))
 	if rec.Body.String() != "docs home" {
 		t.Fatalf("hosted docs = %q, want the manual, not the marked shell", rec.Body.String())
 	}
@@ -90,7 +90,7 @@ func TestHandlerReplacesOriginInIndex(t *testing.T) {
 	req.Host = "time.example.com"
 	req.Header.Set("X-Forwarded-Proto", "https")
 
-	handler(sub, false).ServeHTTP(rec, req)
+	handler(sub, false, false).ServeHTTP(rec, req)
 	body := rec.Body.String()
 	if !strings.Contains(body, `<link rel="canonical" href="https://time.example.com/"`) {
 		t.Fatalf("canonical href not replaced: %s", body)
@@ -109,8 +109,26 @@ func TestHandlerCachesScreenshots(t *testing.T) {
 	}
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/screenshots/timeline.webp", nil)
-	handler(sub, false).ServeHTTP(rec, req)
+	handler(sub, false, false).ServeHTTP(rec, req)
 	if got := rec.Header().Get("Cache-Control"); got != "public, max-age=31536000, immutable" {
 		t.Fatalf("screenshot cache = %q, want immutable", got)
+	}
+}
+
+func TestHostedHandlerMarksConfiguredLegalPages(t *testing.T) {
+	sub := fstest.MapFS{
+		"index.html": {Data: []byte("<head></head>")},
+	}
+
+	rec := httptest.NewRecorder()
+	handler(sub, true, true).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
+	if !strings.Contains(rec.Body.String(), `<meta name="tstamps-legal" content="1">`) {
+		t.Fatalf("shell without the legal marker: %q", rec.Body.String())
+	}
+
+	rec = httptest.NewRecorder()
+	handler(sub, true, false).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
+	if strings.Contains(rec.Body.String(), "tstamps-legal") {
+		t.Fatalf("unconfigured instance carries the legal marker: %q", rec.Body.String())
 	}
 }

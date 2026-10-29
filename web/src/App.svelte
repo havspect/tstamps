@@ -4,6 +4,7 @@
   import { router } from './lib/router.svelte'
   import { session } from './lib/session.svelte'
   import Link from './lib/Link.svelte'
+  import LegalLinks from './lib/LegalLinks.svelte'
   import Button from './lib/ui/Button.svelte'
   import Home from './pages/Home.svelte'
   import Login from './pages/Login.svelte'
@@ -123,6 +124,9 @@
 
 {#if selectingWorkspace}
   <WorkspaceSelect />
+  <footer class="legal">
+    <LegalLinks />
+  </footer>
 {:else if router.path === '/' && !router.base}
   <!-- Public homepage, also the hosted root: never wait on the session. -->
   <Page />
@@ -160,4 +164,8 @@
       <Page />
     {/if}
   </main>
+
+  <footer class="legal">
+    <LegalLinks />
+  </footer>
 {/if}

@@ -32,7 +32,7 @@ const notBuilt = `<!doctype html>
 func Handler() http.Handler { return notBuiltHandler() }
 
 // HostedHandler has no embedded shell to mark; the host still routes normally.
-func HostedHandler() http.Handler { return notBuiltHandler() }
+func HostedHandler(bool) http.Handler { return notBuiltHandler() }
 
 func notBuiltHandler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {

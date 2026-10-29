@@ -11,6 +11,8 @@ Group=tstamps
 StateDirectory=tstamps
 StateDirectoryMode=0750
 # Every workspace lives in this one database.
+# For the German Impressum and privacy notice, create /var/lib/tstamps/legal,
+# add --legal-dir /var/lib/tstamps/legal, and see docs/guide/legal.md.
 ExecStart=/usr/local/bin/tstamps-server serve --addr 127.0.0.1:8080 --db /var/lib/tstamps/tstamps.db
 Restart=on-failure
 RestartSec=2
