@@ -11,7 +11,7 @@ test.use({ baseURL })
 
 test('choose a workspace, log in and keep the workspace in every URL', async ({ page }) => {
   await page.goto('/')
-  await expect(page.getByRole('heading', { name: /Your week/ })).toBeVisible()
+  await expect(page.getByRole('heading', { name: /Plan it/ })).toBeVisible()
   await page.getByRole('link', { name: 'Sign in' }).first().click()
 
   await expect(page).toHaveURL('/login')

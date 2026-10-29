@@ -20,7 +20,7 @@ async function signIn(page: Page) {
 
 test('homepage introduces the product and links to sign in', async ({ page }) => {
   await page.goto('/')
-  await expect(page.getByRole('heading', { level: 1 })).toContainText('Your week')
+  await expect(page.getByRole('heading', { level: 1 })).toContainText('Plan it')
   await expect(page).toHaveTitle(/Tstamps/)
 
   // The static tags ship in index.html: crawlers that never run JS still get them.
@@ -44,7 +44,7 @@ test('homepage introduces the product and links to sign in', async ({ page }) =>
   const home = await page.request.get('/')
   const html = await home.text()
   expect(html).toContain('<noscript>')
-  expect(html).toContain('self-hosted or hosted team time tracking')
+  expect(html).toContain('self-hosted team time tracking')
   expect(home.headers()['x-robots-tag']).toBeUndefined()
 
   const login = await page.request.get('/login')
@@ -67,7 +67,7 @@ test('login, log an entry, read the report and export CSV', async ({ page }) => 
 
   // '/' is public for signed-in users too: it renders instead of redirecting.
   await page.goto('/')
-  await expect(page.getByRole('heading', { level: 1 })).toContainText('Your week')
+  await expect(page.getByRole('heading', { level: 1 })).toContainText('Plan it')
   await expect(page).toHaveURL('/')
 
   // The App guard still sends a signed-in user from /login to /timeline.

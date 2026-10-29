@@ -2,6 +2,8 @@
 
 Open `/w/{slug}/my-hours` after signing in. It is yours alone: whatever your role, it shows only the entries you logged. For the team-wide picture, [Reports](./reports.md) is the page.
 
+![My hours: one bar per ISO week, stacked by project, with a legend](/screenshots/my-hours.webp)
+
 The chart is one bar per bucket, stacked by project in the project's own color, so the shape of a week is one glance:
 
 - **Day** — one bar per day of the range.

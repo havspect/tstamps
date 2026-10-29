@@ -4,27 +4,27 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="theme-color" content="#f6f6f3" />
-    <title>Tstamps — self-hosted or hosted team time tracking</title>
+    <title>Tstamps — plan it, drag it, read it</title>
     <meta
       name="description"
-      content="Tstamps is team time tracking built around a timeline: drag to log an entry, read the week's report, or log from the CLI or an agent. Run one Go binary for one company, or host several as separate workspaces, all in one SQLite database. Hosted by us is coming."
+      content="Tstamps is team time tracking where the plan and the log live in one place: plan the week, log it by dragging, and read the hours logged against the plan. Or let an agent log it. One Go binary, one SQLite database, yours to run."
     />
     <!-- vite-ignore: href="/" is a route, not a file to bundle; it stays as written. -->
     <link rel="canonical" href="/" vite-ignore />
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="Tstamps" />
-    <meta property="og:title" content="Tstamps — self-hosted or hosted team time tracking" />
+    <meta property="og:title" content="Tstamps — plan it, drag it, read it" />
     <meta
       property="og:description"
-      content="Team time tracking built around a timeline: drag to log, read the week's report, or log from the CLI or an agent. Run one Go binary for one company, or host several as separate workspaces. Hosted by us is coming."
+      content="Plan the week, log it by dragging, read the hours logged against the plan — or let an agent log it. One Go binary, one SQLite database, yours to run."
     />
     <meta property="og:url" content="/" />
     <meta property="og:image" content="/screenshots/timeline.webp" />
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:title" content="Tstamps — self-hosted or hosted team time tracking" />
+    <meta name="twitter:title" content="Tstamps — plan it, drag it, read it" />
     <meta
       name="twitter:description"
-      content="Team time tracking built around a timeline: drag to log, read the week's report, or log from the CLI or an agent. Run one Go binary for one company, or host several as separate workspaces. Hosted by us is coming."
+      content="Plan the week, log it by dragging, read the hours logged against the plan — or let an agent log it. One Go binary, one SQLite database, yours to run."
     />
     <meta name="twitter:image" content="/screenshots/timeline.webp" />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
@@ -42,7 +42,7 @@
               "price": "0",
               "priceCurrency": "USD"
             },
-            "description": "Team time tracking built around a timeline: drag to log an entry, read the week's report, or log from the CLI or an agent. Run one Go binary for one company, or host several as separate workspaces, all in one SQLite database.",
+            "description": "Team time tracking where the plan and the log live in one place: plan the week by person and project, log it by dragging on a timeline, and read the hours logged against the plan. One Go binary, one SQLite database, one or several workspaces.",
             "license": "https://www.gnu.org/licenses/agpl-3.0.en.html"
           },
           {
@@ -61,7 +61,7 @@
                 "name": "Can CLI tools and AI agents log time into Tstamps?",
                 "acceptedAnswer": {
                   "@type": "Answer",
-                  "text": "Yes. Tstamps includes a standalone CLI and an MCP (Model Context Protocol) server sharing the same REST API and token auth."
+                  "text": "Yes. Tstamps includes a standalone CLI and an MCP server over the same REST API, locally over stdio or remotely with OAuth 2.1. The shipped agent skill proposes entries and writes only after you confirm."
                 }
               },
               {
@@ -81,14 +81,15 @@
   <body>
     <noscript>
       <header>
-        <h1>Tstamps — self-hosted or hosted team time tracking</h1>
+        <h1>Tstamps — self-hosted team time tracking</h1>
         <p>
-          Tstamps is time tracking for small teams, built around a timeline: drag on a lane to log an
-          entry, drag its edges to retime it, and read every team's hours by person and by day, week or
-          month. The CLI and an MCP server share the same API, so a terminal or an agent can log time
-          too. Run it yourself as one AGPL-3.0 Go binary with one SQLite database — one company,
-          or several companies as separate workspaces — with no per-seat pricing. A hosted version is
-          coming; it is not available today.
+          Tstamps is time tracking for small teams where the plan and the log live in one place. Leads
+          plan how many hours each person will spend on each project, week by week, against their
+          capacity. People drag entries on a timeline. Reports show the hours logged against the plan,
+          every role gets their own My hours chart, and an agent can propose entries through MCP. Run it
+          yourself as one AGPL-3.0 Go binary with one SQLite database — one company, or several
+          companies as separate workspaces — with no per-seat pricing. A hosted version is coming; it is
+          not available today.
         </p>
       </header>
       <nav aria-label="Documentation navigation">
@@ -98,11 +99,12 @@
         <a href="/docs/server">Self-host on Linux</a>
       </nav>
       <section>
-        <h2>Three moves, no timesheet</h2>
+        <h2>Plan it. Drag it. Read it.</h2>
         <ul>
-          <li><strong>Drag, don't fill in:</strong> Drag on a lane to log; drag an edge to retime; press space to start and stop.</li>
-          <li><strong>Read the week:</strong> Projects as rows, days as columns, biggest first. Drill down by person, export CSV.</li>
-          <li><strong>Log from the CLI or an agent:</strong> Same token, same REST API, Claude and Codex skills included.</li>
+          <li><strong>Plan it:</strong> Set hours per person and project, week by week, against capacity. Seed from last month or repeat a week. Over capacity is marked, not blocked.</li>
+          <li><strong>Drag it:</strong> Drag on a lane to log; drag an edge to retime; press space to start and stop.</li>
+          <li><strong>Read it:</strong> Projects as rows, days, weeks or months as columns, with the hours logged against the plan. Drill down by person, export CSV. My hours gives everyone their own chart.</li>
+          <li><strong>Or let your agent log it:</strong> MCP over stdio or remote with OAuth 2.1. The shipped skill proposes entries and writes only after you confirm.</li>
           <li><strong>One binary, one SQLite database:</strong> Deploy on a single VM under systemd with zero per-seat fees.</li>
         </ul>
       </section>

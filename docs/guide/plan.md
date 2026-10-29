@@ -2,6 +2,8 @@
 
 Open `/w/{slug}/plan` after signing in. It is the forward-looking twin of Reports: how many hours each person will spend on which project, week by week, against how many hours they can work. Reports say what happened; Plan says what is intended.
 
+![The plan board: one row per person, one column per ISO week, stacked project bars against capacity](/screenshots/plan.webp)
+
 - A **lead** sees their own teams' people and reads and writes plans on their teams' projects. Load a person carries on another team's project appears as grey "other" hours, so the row does not lie, without naming the project.
 - An **admin** sees and plans everything.
 - A **member** sees their own row read-only.
