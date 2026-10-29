@@ -144,6 +144,10 @@ _Avoid_: availability, FTE, utilization, headcount
 The hours a lead or admin intends a person to spend on a project in one week, chosen in advance and distinct from hours logged.
 _Avoid_: forecast, projection, budget, allocation, estimate
 
+**Plan drift**:
+The hours logged minus the hours planned for one person, project and week: positive when more was logged than planned.
+_Avoid_: variance, deviation, fulfilment, utilization
+
 **Timezone**:
 A user's own IANA zone. A default for undated queries and display; it does not decide which day an entry falls into.
 _Avoid_: locale, region

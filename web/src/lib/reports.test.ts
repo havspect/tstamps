@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { bucketRange, csvHref, pivot, presetRange, summarize } from './reports'
-import type { ReportRow } from './reports'
+import { bucketRange, csvHref, driftOf, pivot, planByProject, presetRange, summarize, weekStartOf } from './reports'
+import type { PlanCell, ReportRow } from './reports'
 
 // row builds a report row; user 1 is Ada, user 2 is Grace.
 function row(bucket: string, userID: number, projectID: number, seconds: number, archived = false): ReportRow {
@@ -100,6 +100,84 @@ describe('pivot', () => {
 
   it('returns nothing for no rows', () => {
     expect(pivot([])).toEqual([])
+  })
+})
+
+describe('plan drift', () => {
+  // planCell builds one planned person, project and ISO week.
+  function planCell(weekStart: string, userID: number, projectID: number, hours: number): PlanCell {
+    return {
+      user_id: userID,
+      project_id: projectID,
+      project: projectID === 1 ? 'Site' : 'App',
+      archived: false,
+      week_start: weekStart,
+      hours,
+    }
+  }
+
+  it('spreads a week evenly over its days and clamps it to a partial column', () => {
+    const [october] = bucketRange('2026-10-01', '2026-11-01', 'month')
+    const plan = planByProject([planCell('2026-09-28', 1, 1, 14)], [october])
+
+    // September 28 to October 4 is four October days out of seven.
+    expect(plan.get(1)?.seconds['2026-10']).toBeCloseTo((14 * 3600 * 4) / 7)
+    expect(plan.get(1)?.total).toBeCloseTo((14 * 3600 * 4) / 7)
+  })
+
+  it('keeps the first and last week column inside the range', () => {
+    const weeks = bucketRange('2026-10-01', '2026-11-01', 'week')
+
+    expect(weeks[0]).toEqual({ key: '2026-W40', label: 'W40', start: '2026-10-01', end: '2026-10-05' })
+    expect(weeks[4].start).toBe('2026-10-26')
+    expect(weeks[4].end).toBe('2026-11-01')
+  })
+
+  it('starts the plan range at the Monday of the report range', () => {
+    expect(weekStartOf('2026-10-01')).toBe('2026-09-28')
+    expect(weekStartOf('2026-10-19')).toBe('2026-10-19')
+  })
+
+  it('sums people into the project they are planned on', () => {
+    const buckets = bucketRange('2026-10-19', '2026-10-26', 'week')
+    const plan = planByProject(
+      [planCell('2026-10-19', 1, 1, 10), planCell('2026-10-19', 2, 1, 6)],
+      buckets,
+    )
+
+    expect(plan.get(1)?.total).toBe(16 * 3600)
+    expect(plan.get(1)?.people.get(1)?.total).toBe(10 * 3600)
+    expect(plan.get(1)?.people.get(2)?.total).toBe(6 * 3600)
+  })
+
+  it('keeps a planned project with no logged hours, after the logged ones', () => {
+    const buckets = bucketRange('2026-10-19', '2026-10-26', 'week')
+    const plan = planByProject([planCell('2026-10-19', 1, 2, 10)], buckets)
+
+    const projects = pivot([row('2026-W43', 1, 1, 3600)], plan)
+
+    expect(projects.map((project) => project.project_id)).toEqual([1, 2])
+    expect(projects[1].total).toBe(0)
+    expect(projects[1].planned['2026-W43']).toBe(10 * 3600)
+    expect(projects[1].plannedTotal).toBe(10 * 3600)
+  })
+
+  it('attaches a person plan to an existing person row', () => {
+    const buckets = bucketRange('2026-10-19', '2026-10-26', 'week')
+    const plan = planByProject([planCell('2026-10-19', 1, 1, 10)], buckets)
+
+    const [site] = pivot([row('2026-W43', 1, 1, 7200)], plan)
+
+    expect(site.people[0].planned['2026-W43']).toBe(10 * 3600)
+    expect(site.people[0].plannedTotal).toBe(10 * 3600)
+  })
+
+  it('renders logged hours with the signed difference to plan', () => {
+    expect(driftOf(7200, undefined)).toEqual({ value: '2h 0m', drift: null })
+    expect(driftOf(7200, 3600)).toEqual({ value: '2h 0m', drift: '+1h 0m' })
+    expect(driftOf(3600, 7200)).toEqual({ value: '1h 0m', drift: '-1h 0m' })
+    expect(driftOf(3600, 3600)).toEqual({ value: '1h 0m', drift: 'on plan' })
+    expect(driftOf(undefined, 3600)).toEqual({ value: '0m', drift: '-1h 0m' })
   })
 })
 

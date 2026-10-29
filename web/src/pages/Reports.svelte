@@ -7,10 +7,14 @@
   import {
     bucketRange,
     csvHref,
+    driftOf,
     pivot,
+    planByProject,
     presetRange,
     summarize,
+    weekStartOf,
     type BucketBy,
+    type PlannedProject,
     type RangePreset,
     type ReportRow,
   } from '../lib/reports'
@@ -35,6 +39,7 @@
   let open = $state<number[]>([])
 
   let rows = $state<ReportRow[]>([])
+  let planned = $state<Map<number, PlannedProject>>(new Map())
   let projects = $state<Project[]>([])
   let adminTeams = $state<Team[]>([])
   let loading = $state(true)
@@ -48,7 +53,7 @@
           .map((member) => ({ id: member.team_id, name: member.team, archived: false })),
   )
   const buckets = $derived(bucketRange(from, to, by))
-  const grouped = $derived(pivot(rows))
+  const grouped = $derived(pivot(rows, planned))
   const summary = $derived(summarize(grouped))
   const today = todayIn(zone)
   const columns = $derived(
@@ -80,11 +85,16 @@
     if (error) return
     loading = true
     const query: { from: string; to: string; by: BucketBy; team_id?: number } = { from, to, by }
+    // The plan API starts a range at the first Monday on or before it, and a
+    // plan cell is one ISO week.
+    const planQuery: { from: string; to: string; team_id?: number } = { from: weekStartOf(from), to }
     if (teamID) query.team_id = Number(teamID)
+    if (query.team_id) planQuery.team_id = query.team_id
 
-    const [reportRes, projectRes] = await Promise.all([
+    const [reportRes, projectRes, planRes] = await Promise.all([
       api.GET('/api/v1/reports', { params: { query } }),
       api.GET('/api/v1/projects', { params: { query: isAdmin ? { all: true } : {} } }),
+      by === 'day' ? Promise.resolve(null) : api.GET('/api/v1/plan', { params: { query: planQuery } }),
     ])
     if (reportRes.error) {
       error = problemMessage(reportRes.error, reportRes.response)
@@ -93,6 +103,8 @@
       rows = reportRes.data?.rows ?? []
     }
     projects = projectRes.data ?? []
+    // A failed plan read leaves the report readable, just without drift lines.
+    planned = planRes && !planRes.error ? planByProject(planRes.data?.cells ?? [], buckets) : new Map()
     // A person row under a project that left the range would keep it open for nothing.
     open = []
     loading = false
@@ -121,6 +133,11 @@
 </script>
 
 <h1>Reports</h1>
+
+{#snippet hours(logged: number | undefined, planned: number | undefined)}
+  {@const shown = driftOf(logged, planned)}
+  {shown.value}{#if shown.drift}<span class="drift" class:on-plan={shown.drift === 'on plan'}>{shown.drift}</span>{/if}
+{/snippet}
 
 {#if error}
   <p class="error" role="alert">{error}</p>
@@ -232,18 +249,18 @@
               </button>
             </th>
             {#each buckets as bucket (bucket.key)}
-              <td class="num">{cell(project.cells[bucket.key])}</td>
+              <td class="num">{@render hours(project.cells[bucket.key], project.planned[bucket.key])}</td>
             {/each}
-            <td class="num total">{formatDuration(project.total)}</td>
+            <td class="num total">{@render hours(project.total, project.plannedTotal || undefined)}</td>
           </tr>
           {#if open.includes(project.project_id)}
             {#each project.people as person (person.user_id)}
               <tr class="person">
                 <th scope="row">{person.user}</th>
                 {#each buckets as bucket (bucket.key)}
-                  <td class="num">{cell(person.cells[bucket.key])}</td>
+                  <td class="num">{@render hours(person.cells[bucket.key], person.planned[bucket.key])}</td>
                 {/each}
-                <td class="num total">{formatDuration(person.total)}</td>
+                <td class="num total">{@render hours(person.total, person.plannedTotal || undefined)}</td>
               </tr>
             {/each}
           {/if}
@@ -380,6 +397,19 @@
 
   .report .total {
     font-weight: 600;
+  }
+
+  /* Small signed difference to plan under the logged hours. */
+  .drift {
+    display: block;
+    font-size: 0.75rem;
+    font-weight: 400;
+    color: var(--muted);
+    line-height: 1.2;
+  }
+
+  .drift.on-plan {
+    font-style: italic;
   }
 
   /* A long range scrolls sideways; keep the header and project names in view. */

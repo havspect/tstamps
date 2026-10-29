@@ -1,4 +1,4 @@
-import { currentWeek, todayIn } from './format'
+import { currentWeek, formatDuration, todayIn } from './format'
 
 // Report rows as the API returns them, narrowed to the fields the page reads.
 export type ReportRow = {
@@ -14,7 +14,27 @@ export type ReportRow = {
 export type BucketBy = 'day' | 'week' | 'month'
 
 // Bucket is one time column: a person-local day, ISO week or calendar month.
-export type Bucket = { key: string; label: string }
+// start and end are the days it covers inside the range, end exclusive.
+export type Bucket = { key: string; label: string; start: string; end: string }
+
+// PlanCell is one planned person, project and ISO week, as the plan API returns it.
+export type PlanCell = {
+  user_id: number
+  project_id: number
+  project: string
+  archived: boolean
+  week_start: string
+  hours: number
+}
+
+// PlannedProject is a project's plan for the report's columns, in seconds.
+export type PlannedProject = {
+  project: string
+  archived: boolean
+  seconds: Record<string, number>
+  total: number
+  people: Map<number, { seconds: Record<string, number>; total: number }>
+}
 
 const DAY_NAMES = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
@@ -37,12 +57,20 @@ export function bucketRange(from: string, to: string, by: BucketBy): Bucket[] {
   if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end <= start) return []
 
   const buckets: Bucket[] = []
+  const iso = (ms: number) => new Date(ms).toISOString().slice(0, 10)
+  // Clamp each column to the range: hours and plans only exist inside it.
+  const add = (key: string, label: string, fromMs: number, toMs: number) => {
+    const s = Math.max(fromMs, start.getTime())
+    const e = Math.min(toMs, end.getTime())
+    if (e > s) buckets.push({ key, label, start: iso(s), end: iso(e) })
+  }
+  const last = new Date(end.getTime() - DAY_MS)
+
   if (by === 'month') {
-    const last = new Date(end.getTime() - DAY_MS)
     let y = start.getUTCFullYear()
     let m = start.getUTCMonth()
     while (y < last.getUTCFullYear() || (y === last.getUTCFullYear() && m <= last.getUTCMonth())) {
-      buckets.push({ key: `${y}-${String(m + 1).padStart(2, '0')}`, label: MONTH_NAMES[m] })
+      add(`${y}-${String(m + 1).padStart(2, '0')}`, MONTH_NAMES[m], Date.UTC(y, m, 1), Date.UTC(y, m + 1, 1))
       if (++m === 12) {
         m = 0
         y++
@@ -55,25 +83,88 @@ export function bucketRange(from: string, to: string, by: BucketBy): Bucket[] {
   const cursor = new Date(start)
   // A day label needs its month only when the range crosses one; otherwise
   // "Mon 19" is enough and the header stays short.
-  const last = new Date(end.getTime() - DAY_MS)
   const monthSpans = start.getUTCMonth() !== last.getUTCMonth() || start.getUTCFullYear() !== last.getUTCFullYear()
   if (by === 'week') cursor.setUTCDate(cursor.getUTCDate() - ((cursor.getUTCDay() + 6) % 7))
   for (; cursor < end; cursor.setUTCDate(cursor.getUTCDate() + step)) {
     if (by === 'day') {
       const day = `${DAY_NAMES[(cursor.getUTCDay() + 6) % 7]} ${cursor.getUTCDate()}`
-      buckets.push({
-        key: cursor.toISOString().slice(0, 10),
-        label: monthSpans ? `${day} ${MONTH_NAMES[cursor.getUTCMonth()]}` : day,
-      })
+      add(
+        cursor.toISOString().slice(0, 10),
+        monthSpans ? `${day} ${MONTH_NAMES[cursor.getUTCMonth()]}` : day,
+        cursor.getTime(),
+        cursor.getTime() + DAY_MS,
+      )
     } else {
       const week = isoWeekKey(cursor)
-      buckets.push({ key: week, label: week.slice(5) })
+      add(week, week.slice(5), cursor.getTime(), cursor.getTime() + 7 * DAY_MS)
     }
   }
   return buckets
 }
 
-export type ReportPerson = { user_id: number; user: string; cells: Record<string, number>; total: number }
+// weekStartOf is the Monday on or before a date, the week the plan API must
+// start at to cover the range's first column.
+export function weekStartOf(date: string): string {
+  const d = new Date(`${date}T00:00:00Z`)
+  d.setUTCDate(d.getUTCDate() - ((d.getUTCDay() + 6) % 7))
+  return d.toISOString().slice(0, 10)
+}
+
+// planByProject spreads each plan cell evenly over its ISO week's days and
+// keeps only the days inside each column, so week and month columns agree.
+export function planByProject(cells: PlanCell[], buckets: Bucket[]): Map<number, PlannedProject> {
+  const out = new Map<number, PlannedProject>()
+  for (const cell of cells) {
+    const weekStart = Date.parse(`${cell.week_start}T00:00:00Z`)
+    if (Number.isNaN(weekStart) || cell.hours <= 0) continue
+
+    let project = out.get(cell.project_id)
+    if (!project) {
+      project = { project: cell.project, archived: cell.archived, seconds: {}, total: 0, people: new Map() }
+      out.set(cell.project_id, project)
+    }
+    let person = project.people.get(cell.user_id)
+    if (!person) {
+      person = { seconds: {}, total: 0 }
+      project.people.set(cell.user_id, person)
+    }
+
+    for (const bucket of buckets) {
+      const start = Math.max(weekStart, Date.parse(`${bucket.start}T00:00:00Z`))
+      const end = Math.min(weekStart + 7 * DAY_MS, Date.parse(`${bucket.end}T00:00:00Z`))
+      if (end <= start) continue
+      const seconds = (cell.hours * 3600 * (end - start)) / (7 * DAY_MS)
+      project.seconds[bucket.key] = (project.seconds[bucket.key] ?? 0) + seconds
+      project.total += seconds
+      person.seconds[bucket.key] = (person.seconds[bucket.key] ?? 0) + seconds
+      person.total += seconds
+    }
+  }
+  return out
+}
+
+// driftOf renders one cell: the logged hours and, when the cell is planned, the
+// signed logged-minus-plan difference. "+" is more than planned.
+export function driftOf(
+  logged: number | undefined,
+  planned: number | undefined,
+): { value: string; drift: string | null } {
+  if (planned === undefined) return { value: logged ? formatDuration(logged) : '', drift: null }
+  const minutes = Math.round(((logged ?? 0) - planned) / 60)
+  return {
+    value: formatDuration(logged ?? 0),
+    drift: minutes === 0 ? 'on plan' : `${minutes > 0 ? '+' : '-'}${formatDuration(Math.abs(minutes) * 60)}`,
+  }
+}
+
+export type ReportPerson = {
+  user_id: number
+  user: string
+  cells: Record<string, number>
+  total: number
+  planned: Record<string, number>
+  plannedTotal: number
+}
 
 export type ReportProject = {
   project_id: number
@@ -81,13 +172,16 @@ export type ReportProject = {
   archived: boolean
   cells: Record<string, number>
   total: number
+  planned: Record<string, number>
+  plannedTotal: number
   people: ReportPerson[]
 }
 
 // pivot turns flat (bucket, user, project) rows into one row per project, with
 // its people inside it. Projects and people are ordered by hours, biggest
-// first; archived projects always sit last.
-export function pivot(rows: ReportRow[]): ReportProject[] {
+// first; archived projects always sit last. A project that was planned but had
+// no hours logged keeps a row, so its shortfall is visible.
+export function pivot(rows: ReportRow[], planned: Map<number, PlannedProject> = new Map()): ReportProject[] {
   const projects = new Map<number, ReportProject>()
   const people = new Map<number, Map<number, ReportPerson>>()
   const add = (cells: Record<string, number>, bucket: string, seconds: number) => {
@@ -103,6 +197,8 @@ export function pivot(rows: ReportRow[]): ReportProject[] {
         archived: row.archived,
         cells: {},
         total: 0,
+        planned: {},
+        plannedTotal: 0,
         people: [],
       }
       projects.set(row.project_id, project)
@@ -114,7 +210,7 @@ export function pivot(rows: ReportRow[]): ReportProject[] {
     const inProject = people.get(row.project_id)!
     let person = inProject.get(row.user_id)
     if (!person) {
-      person = { user_id: row.user_id, user: row.user, cells: {}, total: 0 }
+      person = { user_id: row.user_id, user: row.user, cells: {}, total: 0, planned: {}, plannedTotal: 0 }
       inProject.set(row.user_id, person)
       project.people.push(person)
     }
@@ -122,9 +218,41 @@ export function pivot(rows: ReportRow[]): ReportProject[] {
     person.total += row.seconds
   }
 
+  for (const [projectID, plan] of planned) {
+    const project = projects.get(projectID)
+    if (!project) {
+      projects.set(projectID, {
+        project_id: projectID,
+        project: plan.project,
+        archived: plan.archived,
+        cells: {},
+        total: 0,
+        planned: plan.seconds,
+        plannedTotal: plan.total,
+        people: [],
+      })
+      continue
+    }
+    project.planned = plan.seconds
+    project.plannedTotal = plan.total
+    for (const person of project.people) {
+      const personPlan = plan.people.get(person.user_id)
+      if (personPlan) {
+        person.planned = personPlan.seconds
+        person.plannedTotal = personPlan.total
+      }
+    }
+  }
+
   const out = [...projects.values()]
   for (const project of out) project.people.sort((a, b) => b.total - a.total || a.user.localeCompare(b.user))
-  out.sort((a, b) => Number(a.archived) - Number(b.archived) || b.total - a.total || a.project.localeCompare(b.project))
+  out.sort(
+    (a, b) =>
+      Number(a.archived) - Number(b.archived) ||
+      b.total - a.total ||
+      b.plannedTotal - a.plannedTotal ||
+      a.project.localeCompare(b.project),
+  )
   return out
 }
 
