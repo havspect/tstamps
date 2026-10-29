@@ -2,6 +2,8 @@ package config
 
 import (
 	"log/slog"
+	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -74,6 +76,26 @@ func TestLoad(t *testing.T) {
 			wantErr: true,
 		},
 		{
+			name: "demo from flag",
+			args: []string{"--demo"},
+			want: Config{Addr: ":8080", DB: "./tstamps.db", Demo: true},
+		},
+		{
+			name: "demo from env",
+			env:  map[string]string{"TSTAMPS_DEMO": "true"},
+			want: Config{Addr: ":8080", DB: "./tstamps.db", Demo: true},
+		},
+		{
+			name:    "invalid demo env",
+			env:     map[string]string{"TSTAMPS_DEMO": "yes please"},
+			wantErr: true,
+		},
+		{
+			name:    "demo cannot sign up",
+			args:    []string{"--demo", "--email-api-key", "re_key"},
+			wantErr: true,
+		},
+		{
 			name:    "invalid log level",
 			env:     map[string]string{"TSTAMPS_LOG_LEVEL": "loud"},
 			wantErr: true,
@@ -96,6 +118,26 @@ func TestLoad(t *testing.T) {
 				t.Errorf("Load(%q) = %+v, want %+v", tt.args, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestLoadLegalDir(t *testing.T) {
+	dir := t.TempDir()
+	for _, name := range []string{"imprint.html", "privacy.html"} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("page"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got, err := Load([]string{"--legal-dir", dir}, func(string) string { return "" })
+	if err != nil {
+		t.Fatalf("Load legal dir: %v", err)
+	}
+	if got.LegalDir != dir {
+		t.Fatalf("LegalDir = %q, want %q", got.LegalDir, dir)
+	}
+
+	if _, err := Load([]string{"--legal-dir", t.TempDir()}, func(string) string { return "" }); err == nil {
+		t.Fatal("a legal dir without both pages must be refused")
 	}
 }
 

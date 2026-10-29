@@ -32,6 +32,10 @@ _Avoid_: free plan, beta, free tier
 A workspace whose trial ended or whose payment failed. Everyone may sign in, read and export; logging and admin changes are refused. Its data stays until the Operator deletes the workspace.
 _Avoid_: locked, disabled, dormant, frozen
 
+**Demo workspace**:
+The one fictional workspace on a demo server, holding sample teams, projects, entries and plans. Visitors share it and may change anything; it is rebuilt from its seed at the top of every hour. It is not a Trial and not a real workspace.
+_Avoid_: sandbox, playground, test workspace
+
 **Billing contact**:
 The address that receives a workspace's invoices. Not necessarily a User, and not an authority: any admin may change it.
 _Avoid_: payer, owner, account holder

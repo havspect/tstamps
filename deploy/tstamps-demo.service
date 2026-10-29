@@ -1,0 +1,31 @@
+[Unit]
+Description=Tstamps public demo
+Documentation=https://github.com/havspect/tstamps
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=tstamps
+Group=tstamps
+# Own state directory: this database holds the demo workspace only and is
+# rebuilt from the seed every hour, so it is never backed up.
+StateDirectory=tstamps-demo
+StateDirectoryMode=0750
+ExecStart=/usr/local/bin/tstamps-server serve --demo --addr 127.0.0.1:8081 --db /var/lib/tstamps-demo/demo.db
+Restart=on-failure
+RestartSec=2
+UMask=0077
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+LockPersonality=yes
+
+[Install]
+WantedBy=multi-user.target

@@ -11,6 +11,8 @@ import (
 	"net/http/httptest"
 	"net/http/httputil"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -19,6 +21,7 @@ import (
 
 	"github.com/havspect/tstamps/internal/audit"
 	"github.com/havspect/tstamps/internal/clock"
+	"github.com/havspect/tstamps/internal/demo"
 	"github.com/havspect/tstamps/internal/entry"
 	"github.com/havspect/tstamps/internal/oauth"
 	"github.com/havspect/tstamps/internal/onboarding"
@@ -52,6 +55,8 @@ type Dependencies struct {
 	OAuthProvider     *oauth.Provider
 	MCPHandler        http.Handler
 	DevMode           bool
+	Demo              bool
+	LegalDir          string
 }
 
 // Server holds state shared across HTTP handlers.
@@ -120,6 +125,12 @@ func New(deps Dependencies) http.Handler {
 	topMux.HandleFunc("GET /robots.txt", s.robots)
 	topMux.HandleFunc("GET /sitemap.xml", s.sitemap)
 
+	// Operator-provided legal pages, outside the SPA and its workspace base.
+	if deps.LegalDir != "" {
+		topMux.HandleFunc("GET /imprint", s.legalFile("imprint.html"))
+		topMux.HandleFunc("GET /privacy", s.legalFile("privacy.html"))
+	}
+
 	// OAuth discovery & routes
 	s.registerOAuthRoutes(topMux)
 
@@ -138,7 +149,12 @@ func New(deps Dependencies) http.Handler {
 		devURL, _ := url.Parse("http://localhost:5173")
 		topMux.Handle("/", httputil.NewSingleHostReverseProxy(devURL))
 	} else {
-		topMux.Handle("/", web.HostedHandler())
+		options := web.Options{Legal: deps.LegalDir != ""}
+		if deps.Demo {
+			accounts, _ := json.Marshal(demo.Accounts())
+			options.DemoAccounts = string(accounts)
+		}
+		topMux.Handle("/", web.HostedHandler(options))
 	}
 
 	rootHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -282,7 +298,28 @@ func (s *Server) health(w http.ResponseWriter, _ *http.Request) {
 
 func (s *Server) robots(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	if s.deps.Demo {
+		_, _ = fmt.Fprint(w, "User-agent: *\nDisallow: /\n")
+		return
+	}
 	_, _ = fmt.Fprintf(w, "User-agent: *\nAllow: /\nAllow: /docs/\nDisallow: /login\nDisallow: /password\nDisallow: /signup\nDisallow: /timeline\nDisallow: /reports\nDisallow: /plan\nDisallow: /admin/\nDisallow: /api/\n\nSitemap: %s/sitemap.xml\n", origin(r))
+}
+
+// legalFile serves one operator-written page. It reads on every request so the
+// operator can correct a notice without restarting the server.
+func (s *Server) legalFile(name string) http.HandlerFunc {
+	path := filepath.Join(s.deps.LegalDir, name)
+	return func(w http.ResponseWriter, r *http.Request) {
+		body, err := os.ReadFile(path)
+		if err != nil {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.Header().Set("Cache-Control", "no-store")
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		_, _ = w.Write(body)
+	}
 }
 
 func (s *Server) sitemap(w http.ResponseWriter, r *http.Request) {
@@ -306,6 +343,10 @@ func (s *Server) sitemap(w http.ResponseWriter, r *http.Request) {
 		"/docs/server",
 		"/docs/workspaces",
 		"/docs/backup-upgrade",
+		"/docs/legal",
+	}
+	if s.deps.LegalDir != "" {
+		docs = append(docs, "/imprint", "/privacy")
 	}
 	var b strings.Builder
 	b.WriteString(xml.Header)

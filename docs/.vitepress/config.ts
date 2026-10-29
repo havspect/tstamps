@@ -54,6 +54,7 @@ export default defineConfig({
           { text: 'Server on Linux', link: '/server' },
           { text: 'Workspaces', link: '/workspaces' },
           { text: 'Backup and upgrade', link: '/backup-upgrade' },
+          { text: 'Legal pages (Germany)', link: '/legal' },
         ],
       },
     ],

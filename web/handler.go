@@ -2,11 +2,22 @@ package web
 
 import (
 	"bytes"
+	"html"
 	"io/fs"
 	"net/http"
 	"path"
 	"strings"
 )
+
+// Options modifies the served shell. Zero value is the production shell.
+type Options struct {
+	// DemoAccounts is a JSON array stamped into the shell so the login page can
+	// show the public demo sign-ins. Empty on any other server.
+	DemoAccounts string
+
+	// Legal stamps the marker that makes the SPA link to /imprint and /privacy.
+	Legal bool
+}
 
 // handler serves the SPA and falls back to index.html for client-side routes. A
 // missing path with an extension or under /assets/ is a real 404, so a missing
@@ -20,7 +31,11 @@ func requestOrigin(r *http.Request) string {
 	return scheme + "://" + r.Host
 }
 
-func handler(sub fs.FS, hosted bool) http.Handler {
+func handler(sub fs.FS, hosted bool, opts ...Options) http.Handler {
+	var options Options
+	if len(opts) > 0 {
+		options = opts[0]
+	}
 	files := http.FileServerFS(sub)
 	indexTemplate, _ := fs.ReadFile(sub, "index.html")
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -68,6 +83,14 @@ func handler(sub fs.FS, hosted bool) http.Handler {
 				if hosted && !bytes.Contains(out, []byte(`name="tstamps-hosted"`)) {
 					out = bytes.Replace(out, []byte("</head>"),
 						[]byte(`<meta name="tstamps-hosted" content="1"></head>`), 1)
+				}
+				if options.DemoAccounts != "" {
+					out = bytes.Replace(out, []byte("</head>"),
+						[]byte(`<meta name="tstamps-demo" content="`+html.EscapeString(options.DemoAccounts)+`"></head>`), 1)
+				}
+				if options.Legal && !bytes.Contains(out, []byte(`name="tstamps-legal"`)) {
+					out = bytes.Replace(out, []byte("</head>"),
+						[]byte(`<meta name="tstamps-legal" content="1"></head>`), 1)
 				}
 				w.Header().Set("Content-Type", "text/html; charset=utf-8")
 				_, _ = w.Write(out)

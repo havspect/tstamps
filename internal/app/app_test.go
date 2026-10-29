@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -44,6 +46,37 @@ func TestBuildServer(t *testing.T) {
 	}
 	if health.Status != "ok" || health.SchemaVersion != 8 {
 		t.Errorf("health = %+v, want status ok and schema_version 8", health)
+	}
+}
+
+func TestDemoServerSeedsAndLogsIn(t *testing.T) {
+	handler, db, err := BuildServer(Config{DB: filepath.Join(t.TempDir(), "demo.db"), Demo: true})
+	if err != nil {
+		t.Fatalf("BuildServer: %v", err)
+	}
+	if db != nil {
+		if sqlDB, err := db.DB(); err == nil {
+			defer sqlDB.Close()
+		}
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/w/demo/api/v1/auth/login",
+		strings.NewReader(`{"email":"ada@example.com","password":"demo"}`))
+	req.Header.Set("Content-Type", "application/json")
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("demo login status = %d, want 200: %s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), `"is_admin":true`) {
+		t.Errorf("demo admin login did not return an admin: %s", rec.Body.String())
+	}
+
+	rec = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodGet, "/robots.txt", nil)
+	handler.ServeHTTP(rec, req)
+	if !strings.Contains(rec.Body.String(), "Disallow: /\n") {
+		t.Errorf("demo robots.txt does not keep crawlers out: %s", rec.Body.String())
 	}
 }
 

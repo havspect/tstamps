@@ -2,7 +2,7 @@
 
 Tstamps server runs on Linux. The CLI runs on Linux, macOS and Windows; the server does not.
 
-One `tstamps-server` process serves the web UI, the REST API and its SQLite storage: one database file holding every workspace at `/w/{slug}/...`. The UI is embedded in the binary, so the server is built on the machine that runs it. There is no server release archive.
+One `tstamps-server` process serves the web UI, the REST API and its SQLite storage: one database file holding every workspace at `/w/{slug}/...`. The UI is embedded in the binary, so there is no server release archive: build it from this checkout, on the host or on your machine for the host's architecture.
 
 ## Requirements
 
@@ -20,6 +20,8 @@ just build-prod
 ```
 
 `just build-prod` regenerates the OpenAPI types, builds the SPA with Vite, embeds it with `-tags web`, and writes a static, stripped `./tstamps-server` with `CGO_ENABLED=0`. The SQLite driver is pure Go, so no C compiler is needed.
+
+It builds for the machine it runs on. `just build-prod linux arm64` cross-compiles for the host, which is what `just deploy` uses.
 
 For API work, `just build` leaves symbols in and is faster. A plain `go build ./cmd/tstamps-server` also works but serves a "UI is not built" page instead of the app.
 
@@ -78,6 +80,67 @@ There is no server-wide admin: each workspace's first admin comes from its own `
 
 Caddy sets `X-Forwarded-Proto`, which is how the server knows to mark the session cookie `Secure`. It also sets `X-Forwarded-For`, the hop used for client IPs in logs and for login rate limiting. The server trusts both only from a loopback peer, so a direct client cannot forge them. Keep port 8080 off the network anyway.
 
+## Run a public demo
+
+A demo server seeds one fictional workspace and rebuilds it at the top of every
+hour, so visitors may change anything without keeping it:
+
+```sh
+sudo install -d -o tstamps -g tstamps -m 0700 /var/lib/tstamps-demo
+sudo install -m 0644 deploy/tstamps-demo.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now tstamps-demo
+```
+
+Its unit runs `tstamps-server serve --demo --addr 127.0.0.1:8081 --db
+/var/lib/tstamps-demo/demo.db`; add the `demo.` host from the Caddyfile and
+point it at port 8081. Nothing in that database is worth backing up.
+
+At boot the server creates a workspace with the slug `demo` and seeds three
+accounts, all with the password `demo`:
+
+| Email | Role |
+| --- | --- |
+| `ada@example.com` | admin |
+| `leo@example.com` | lead of Product |
+| `mia@example.com` | member of Product |
+
+The homepage offers **Try the live demo**, the login page lists the accounts as
+click-to-fill buttons, and a banner says the data resets. The seed holds six
+weeks of entries through now, a running entry for the admin and the member,
+overlaps, a midnight-crossing entry, an archived project, a deleted entry and
+plans for four weeks back to three weeks ahead; the audit log starts empty.
+
+`--demo` only ever touches the `demo` workspace and refuses to start if the
+database holds any other workspace, so never point it at a production database.
+It also refuses the self-service signup flags, and its `robots.txt` disallows
+crawling. Visitors share one workspace and its accounts: this is a demo, not a
+Trial
+([ADR-0015](https://github.com/havspect/tstamps/blob/main/docs/adr/0015-flat-subscription-read-only-suspension.md)),
+and the reset is the only cleanup there is.
+
+## Deploy a new build
+
+After the first install, one command builds locally and ships an update with Ansible:
+
+```sh
+just deploy time.example.com
+```
+
+The first argument is the SSH host. The optional second and third arguments are the SSH user (default `root`) and the target architecture (default `amd64`):
+
+```sh
+just deploy time.example.com deploy arm64
+```
+
+`just deploy` runs `just build-prod linux <arch>`, then `ansible-playbook` against that host. It takes a database snapshot into `/var/backups/tstamps`, copies the binary, installs it with a rename while the old process runs, restarts the unit, and polls `/healthz` for up to 30 seconds. On failure it restores the previous binary and exits non-zero. The playbook uses only built-in modules, so there is no Galaxy download.
+
+Install Ansible on the machine you deploy from. With mise: `mise use -g 'pypi:ansible-core[python=3.12]@latest'`. The `python=3.12` option matters because current ansible-core does not run on Python 3.15. Without mise, use `sudo pacman -S ansible` on Arch or `uv tool install --python 3.12 ansible-core`. The target must be set up with the steps above, and its SSH user needs passwordless `sudo`. Put keys, ports and usernames in `~/.ssh/config` and pass the alias as the host. Paths, the unit name and the `tstamps` service user are the defaults in `deploy/ansible/deploy.yml`; override them with `-e` when calling `ansible-playbook` directly.
+
+The snapshot is taken before the restart, so a failed deploy keeps the data. If the new binary already migrated the schema, the previous binary refuses to start: restore the snapshot as described in [Backup and upgrade](./backup-upgrade.md#restore).
+
+Legal pages are operator files under `/var/lib/tstamps/legal`, not part of the binary, so a deploy leaves them alone. See [Legal pages](./legal.md).
+
 ## Settings
 
 Flags win over environment, which wins over the default.
@@ -86,10 +149,12 @@ Flags win over environment, which wins over the default.
 | --- | --- | --- | --- |
 | `--addr` | `TSTAMPS_ADDR` | `:8080` | Listen address |
 | `--db` | `TSTAMPS_DB` | `./tstamps.db` | SQLite database file holding every workspace |
+| `--legal-dir` | `TSTAMPS_LEGAL_DIR` | none | Directory holding `imprint.html` and `privacy.html`; see [Legal pages](./legal.md) |
 | `--email-api-key` | `TSTAMPS_EMAIL_API_KEY` | none | Email API key; required for self-service signup |
 | `--email-from` | `TSTAMPS_EMAIL_FROM` | none | Verified From address for signup mail |
 | `--public-url` | `TSTAMPS_PUBLIC_URL` | none | Public origin used in emailed links |
 | `--email-api-url` | `TSTAMPS_EMAIL_API_URL` | `https://api.resend.com/emails` | Email endpoint |
+| `--demo` | `TSTAMPS_DEMO` | off | Seed the fictional demo workspace and reset it hourly |
 | `--log-level` | `TSTAMPS_LOG_LEVEL` | `info` | `debug`, `info`, `warn` or `error` |
 
 ```sh
