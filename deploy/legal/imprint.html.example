@@ -1,0 +1,93 @@
+<!doctype html>
+<!--
+  Impressum template for a Tstamps instance.
+  Copy to imprint.html, fill every [PLACEHOLDER], delete what does not apply,
+  and put it in the directory passed to the legal-dir option. This is a template, not
+  legal advice.
+-->
+<html lang="de">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Impressum</title>
+    <style>
+      body {
+        max-width: 42rem;
+        margin: 3rem auto;
+        padding: 0 1.25rem;
+        color: #1d1d1a;
+        background: #f6f6f3;
+        font: 16px/1.6 system-ui, -apple-system, 'Segoe UI', sans-serif;
+      }
+      a { color: #2f5d50; }
+      h1 { font-size: 1.75rem; }
+      h2 { margin-top: 2rem; font-size: 1.15rem; }
+      .muted { color: #6b6b63; font-size: 0.9rem; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <p><a href="/">← Zurück zu Tstamps</a></p>
+      <h1>Impressum</h1>
+      <p>Angaben gemäß § 5 DDG</p>
+
+      <p>
+        <strong>[Firma oder Vor- und Nachname]</strong><br />
+        [Straße und Hausnummer]<br />
+        [Postleitzahl und Ort]<br />
+        [Land]
+      </p>
+
+      <p>Vertreten durch: [Geschäftsführerin/Geschäftsführer oder Inhaberin/Inhaber]</p>
+
+      <p>
+        Telefon: [Telefonnummer]<br />
+        E-Mail: <a href="mailto:[E-Mail-Adresse]">[E-Mail-Adresse]</a>
+      </p>
+
+      <p>
+        Registereintrag: [Amtsgericht], [HRB/HRA/VR] [Nummer]<br />
+        Umsatzsteuer-Identifikationsnummer gemäß § 27a UStG: [USt-IdNr.]
+      </p>
+
+      <!-- Nur nötig, wenn die Seite journalistisch-redaktionelle Inhalte hat. -->
+      <p>
+        Verantwortlich für den Inhalt nach § 18 Abs. 2 MStV:<br />
+        [Name], [Anschrift]
+      </p>
+
+      <h2>Haftung für Inhalte</h2>
+      <p>
+        Als Diensteanbieter sind wir für eigene Inhalte auf diesen Seiten nach den allgemeinen Gesetzen
+        verantwortlich. Wir sind jedoch nicht verpflichtet, übermittelte oder gespeicherte fremde
+        Informationen zu überwachen oder nach Umständen zu forschen, die auf eine rechtswidrige Tätigkeit
+        hinweisen. Verpflichtungen zur Entfernung oder Sperrung der Nutzung von Informationen nach den
+        allgemeinen Gesetzen bleiben hiervon unberührt.
+      </p>
+
+      <h2>Haftung für Links</h2>
+      <p>
+        Unser Angebot enthält Links zu externen Websites Dritter, auf deren Inhalte wir keinen Einfluss
+        haben. Deshalb können wir für diese fremden Inhalte auch keine Gewähr übernehmen. Für die Inhalte
+        der verlinkten Seiten ist stets der jeweilige Anbieter oder Betreiber der Seiten verantwortlich.
+      </p>
+
+      <h2>Urheberrecht</h2>
+      <p>
+        Die durch die Seitenbetreiber erstellten Inhalte und Werke auf diesen Seiten unterliegen dem
+        deutschen Urheberrecht. Die Vervielfältigung, Bearbeitung, Verbreitung und jede Art der Verwertung
+        außerhalb der Grenzen des Urheberrechtes bedürfen der schriftlichen Zustimmung des jeweiligen Autors
+        bzw. Erstellers. Downloads und Kopien dieser Seite sind nur für den privaten, nicht kommerziellen
+        Gebrauch gestattet.
+      </p>
+
+      <h2>Verbraucherstreitbeilegung</h2>
+      <p>
+        Wir sind nicht bereit und nicht verpflichtet, an Streitbeilegungsverfahren vor einer
+        Verbraucherschlichtungsstelle teilzunehmen.
+      </p>
+
+      <p class="muted">Stand: [Datum]</p>
+    </main>
+  </body>
+</html>

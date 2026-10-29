@@ -137,3 +137,21 @@ func TestHandlerCachesScreenshots(t *testing.T) {
 		t.Fatalf("screenshot cache = %q, want immutable", got)
 	}
 }
+
+func TestHostedHandlerMarksConfiguredLegalPages(t *testing.T) {
+	sub := fstest.MapFS{
+		"index.html": {Data: []byte("<head></head>")},
+	}
+
+	rec := httptest.NewRecorder()
+	handler(sub, true, Options{Legal: true}).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
+	if !strings.Contains(rec.Body.String(), `<meta name="tstamps-legal" content="1">`) {
+		t.Fatalf("shell without the legal marker: %q", rec.Body.String())
+	}
+
+	rec = httptest.NewRecorder()
+	handler(sub, true).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
+	if strings.Contains(rec.Body.String(), "tstamps-legal") {
+		t.Fatalf("unconfigured instance carries the legal marker: %q", rec.Body.String())
+	}
+}

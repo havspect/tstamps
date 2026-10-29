@@ -40,6 +40,7 @@ type Config struct {
 	LogLevel    slog.Level
 	DevMode     bool
 	Demo        bool
+	LegalDir    string
 	EmailAPIKey string
 	EmailAPIURL string
 	EmailFrom   string
@@ -53,6 +54,7 @@ func FromConfig(c config.Config) Config {
 		DB:          c.DB,
 		LogLevel:    c.LogLevel,
 		Demo:        c.Demo,
+		LegalDir:    c.LegalDir,
 		EmailAPIKey: c.EmailAPIKey,
 		EmailAPIURL: c.EmailAPIURL,
 		EmailFrom:   c.EmailFrom,
@@ -156,6 +158,7 @@ func BuildServer(cfg Config) (http.Handler, *gorm.DB, error) {
 		MCPHandler:        mcpHandler,
 		DevMode:           cfg.DevMode,
 		Demo:              cfg.Demo,
+		LegalDir:          cfg.LegalDir,
 	})
 
 	return httpHandler, db, nil

@@ -17,8 +17,8 @@ func Handler() http.Handler { return handler(openDist(), false) }
 
 // HostedHandler marks the shell as a server shell: the root is the homepage and
 // workspace prompt, and every workspace lives under /w/{slug}. The marker lets
-// the SPA show the prompt instead of a login form at the root. A demo server
-// passes its public accounts so the login page can offer them.
+// the SPA show the prompt instead of a login form at the root. Options carries
+// the demo accounts and the legal-page marker.
 func HostedHandler(opts ...Options) http.Handler { return handler(openDist(), true, opts...) }
 
 func openDist() fs.FS {

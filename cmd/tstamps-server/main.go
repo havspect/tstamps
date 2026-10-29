@@ -61,7 +61,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 
 const usageText = `usage: tstamps-server <command> [flags]
 
-  serve                      run the web UI and API (--addr, --db, --log-level)
+  serve                      run the web UI and API (--addr, --db, --legal-dir, --log-level)
   workspace create           create a workspace and its first admin (slug, --email, --name, --db)
   backup <destination>       copy the database
   openapi                    print the OpenAPI document

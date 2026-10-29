@@ -1,0 +1,114 @@
+---
+# Build with `just deploy <host>`; this playbook only ships the binary that
+# already sits in the repository root.
+- name: Deploy Tstamps
+  hosts: all
+  become: true
+  gather_facts: false
+
+  vars:
+    tstamps_bin: /usr/local/bin/tstamps-server
+    tstamps_unit: tstamps-server
+    tstamps_db: /var/lib/tstamps/tstamps.db
+    tstamps_backups: /var/backups/tstamps
+    tstamps_health: http://127.0.0.1:8080/healthz
+    tstamps_local_bin: "{{ playbook_dir }}/../../tstamps-server"
+
+  tasks:
+    - name: Check the local build
+      ansible.builtin.stat:
+        path: "{{ tstamps_local_bin }}"
+      delegate_to: localhost
+      become: false
+      register: tstamps_local
+
+    - name: Require a local build
+      ansible.builtin.assert:
+        that: tstamps_local.stat.exists
+        fail_msg: "No tstamps-server in the repository root. Run `just build-prod linux amd64`."
+
+    - name: Name this deploy's snapshot
+      ansible.builtin.set_fact:
+        tstamps_snapshot: "{{ tstamps_backups }}/tstamps-{{ now(utc=true).strftime('%Y%m%dT%H%M%SZ') }}.db"
+
+    - name: Check the installed server
+      ansible.builtin.stat:
+        path: "{{ tstamps_bin }}"
+      register: tstamps_installed
+
+    - name: Ensure the backup directory
+      ansible.builtin.file:
+        path: "{{ tstamps_backups }}"
+        state: directory
+        owner: tstamps
+        group: tstamps
+        mode: "0700"
+
+    - name: Snapshot the database
+      ansible.builtin.command:
+        argv:
+          - "{{ tstamps_bin }}"
+          - backup
+          - --db
+          - "{{ tstamps_db }}"
+          - "{{ tstamps_snapshot }}"
+      become: true
+      become_user: tstamps
+      changed_when: true
+      when: tstamps_installed.stat.exists
+
+    - name: Upload the new binary
+      ansible.builtin.copy:
+        src: "{{ tstamps_local_bin }}"
+        dest: "{{ tstamps_bin }}.new"
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Swap, restart and check health
+      block:
+        - name: Keep the previous binary
+          ansible.builtin.command:
+            argv: [mv, -f, "{{ tstamps_bin }}", "{{ tstamps_bin }}.prev"]
+          changed_when: true
+          failed_when: false
+
+        - name: Install the new binary
+          ansible.builtin.command:
+            argv: [mv, -f, "{{ tstamps_bin }}.new", "{{ tstamps_bin }}"]
+          changed_when: true
+
+        - name: Restart the server
+          ansible.builtin.systemd:
+            name: "{{ tstamps_unit }}"
+            state: restarted
+
+        - name: Wait for /healthz
+          ansible.builtin.uri:
+            url: "{{ tstamps_health }}"
+            status_code: 200
+            use_proxy: false
+          register: tstamps_health_result
+          until: tstamps_health_result.status == 200
+          retries: 30
+          delay: 1
+
+      rescue:
+        - name: Restore the previous binary
+          ansible.builtin.command:
+            argv: [mv, -f, "{{ tstamps_bin }}.prev", "{{ tstamps_bin }}"]
+          changed_when: true
+          failed_when: false
+
+        - name: Restart the previous binary
+          ansible.builtin.systemd:
+            name: "{{ tstamps_unit }}"
+            state: restarted
+          failed_when: false
+
+        - name: Report the rollback
+          ansible.builtin.fail:
+            msg: >-
+              Deploy failed at "{{ ansible_failed_task.name }}"; the previous
+              binary was restored if one existed. If the new binary already
+              migrated the schema, restore {{ tstamps_snapshot }}.

@@ -25,10 +25,16 @@ build: types
     go build -tags web -o tstamps-server ./cmd/tstamps-server
 
 # Build a static, stripped server binary for deployment (the SQLite driver is pure Go, so no CGO).
-build-prod: types
+# Pass os and arch to cross-compile, for example `just build-prod linux arm64`.
+build-prod os="" arch="": types
     pnpm --dir web build
     pnpm --dir docs build
-    CGO_ENABLED=0 go build -tags web -trimpath -ldflags='-s -w' -o tstamps-server ./cmd/tstamps-server
+    CGO_ENABLED=0 GOOS={{os}} GOARCH={{arch}} go build -tags web -trimpath -ldflags='-s -w' -o tstamps-server ./cmd/tstamps-server
+
+# Build locally and deploy with Ansible: just deploy time.example.com [user] [arch]
+deploy host user="root" arch="amd64":
+    just build-prod linux {{arch}}
+    ansible-playbook -i "{{host}}," -u {{user}} deploy/ansible/deploy.yml
 
 # Build the manual into web/dist/docs; a dead internal link fails the build.
 docs:

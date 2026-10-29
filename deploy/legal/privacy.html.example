@@ -1,0 +1,191 @@
+<!doctype html>
+<!--
+  Datenschutzerklärung template for a Tstamps instance.
+  Copy to privacy.html, fill every [PLACEHOLDER], check the sections against
+  what your instance actually does, and put it in the directory passed to the
+  legal-dir option. This is a template, not legal advice.
+-->
+<html lang="de">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Datenschutzerklärung</title>
+    <style>
+      body {
+        max-width: 46rem;
+        margin: 3rem auto;
+        padding: 0 1.25rem;
+        color: #1d1d1a;
+        background: #f6f6f3;
+        font: 16px/1.6 system-ui, -apple-system, 'Segoe UI', sans-serif;
+      }
+      a { color: #2f5d50; }
+      h1 { font-size: 1.75rem; }
+      h2 { margin-top: 2rem; font-size: 1.15rem; }
+      .muted { color: #6b6b63; font-size: 0.9rem; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <p><a href="/">← Zurück zu Tstamps</a></p>
+      <h1>Datenschutzerklärung</h1>
+
+      <h2>1. Verantwortlicher</h2>
+      <p>
+        [Firma oder Vor- und Nachname]<br />
+        [Straße und Hausnummer]<br />
+        [Postleitzahl und Ort]<br />
+        [Land]<br />
+        E-Mail: <a href="mailto:[E-Mail-Adresse]">[E-Mail-Adresse]</a><br />
+        Telefon: [Telefonnummer]
+      </p>
+      <p>
+        Datenschutzbeauftragte/r: [Name und Kontakt, falls bestellt. Andernfalls diesen Absatz löschen und
+        unten einen Kontakt für Datenschutzanfragen nennen.]
+      </p>
+
+      <h2>2. Zweck und Rechtsgrundlagen</h2>
+      <p>
+        Tstamps ist eine Anwendung zur Zeiterfassung für Teams. Wir verarbeiten personenbezogene Daten, um
+        Konten bereitzustellen, Arbeitszeiten zu erfassen, Berichte zu erstellen, Berechtigungen zu prüfen
+        und den Betrieb abzusichern.
+      </p>
+      <p>
+        Rechtsgrundlagen sind je nach Verarbeitung: Art. 6 Abs. 1 lit. b DSGVO (Vertrag oder
+        Vertragsanbahnung), Art. 6 Abs. 1 lit. f DSGVO (berechtigtes Interesse an Sicherheit und
+        Missbrauchsabwehr), Art. 6 Abs. 1 lit. c DSGVO (gesetzliche Aufbewahrungspflichten) und, bei
+        Beschäftigten, § 26 Abs. 1 BDSG (Beschäftigungsverhältnis). Soweit eine Einwilligung erforderlich
+        ist, beruht die Verarbeitung auf Art. 6 Abs. 1 lit. a DSGVO; eine erteilte Einwilligung kann jederzeit
+        mit Wirkung für die Zukunft widerrufen werden.
+      </p>
+      <p>
+        Betroffene Personen sind Beschäftigte, Admins, Leads und Mitglieder des jeweiligen Workspace sowie
+        Personen, die ein Konto anlegen oder sich registrieren. Die Angabe der Konto- und
+        Zeiterfassungsdaten ist für die Nutzung erforderlich; ohne sie kann kein Konto angelegt oder keine
+        Arbeitszeit erfasst werden. Für Beschäftigte kann die Erfassung der Arbeitszeit gesetzlich
+        vorgeschrieben sein.
+      </p>
+
+      <h2>3. Hosting und Server-Logfiles</h2>
+      <p>
+        Die Anwendung wird bei [Hosting-Anbieter] mit Serverstandort [Serverstandort] betrieben. Mit dem
+        Anbieter besteht ein Vertrag zur Auftragsverarbeitung nach Art. 28 DSGVO.
+      </p>
+      <p>
+        Bei jedem Aufruf verarbeitet der Server technisch erforderliche Verbindungsdaten: gekürzte oder
+        vollständige IP-Adresse, Datum und Uhrzeit, angeforderte Ressource, HTTP-Status, Übertragungsgröße,
+        Dauer, User-Agent und, nach Anmeldung, die interne Benutzer-ID. Diese Daten dienen dem sicheren
+        Betrieb, der Fehlersuche und der Abwehr von Angriffen (Art. 6 Abs. 1 lit. f DSGVO). Die Logs werden
+        nach [Aufbewahrungsdauer, z. B. 14 Tagen] gelöscht, sofern sie nicht zur Aufklärung eines konkreten
+        Sicherheitsvorfalls länger benötigt werden.
+      </p>
+
+      <h2>4. Konto und Anmeldung</h2>
+      <p>
+        Für ein Konto speichern wir E-Mail-Adresse, Namen, Passwort-Hash (Argon2id), Zeitzone, wöchentliche
+        Arbeitszeit, Rolle und Status. Bei der Anmeldung entsteht eine Sitzung mit einem zufälligen Token,
+        das als HttpOnly-Cookie gespeichert wird; serverseitig liegt nur der Hash des Tokens. Die Sitzung
+        läuft nach 30 Tagen ab. Beim Anlegen oder Zurücksetzen eines Kontos wird ein Einmalpasswort
+        erzeugt, das beim ersten Anmelden geändert werden muss.
+      </p>
+      <p>
+        Wenn die Selbstregistrierung aktiviert ist, speichern wir die angegebene E-Mail-Adresse als
+        ausstehende Registrierung und versenden einen Bestätigungslink. Die Adresse wird gelöscht, sobald
+        der Link eingelöst oder die Registrierung vom Betreiber entfernt wird.
+      </p>
+
+      <h2>5. Zeiterfassung, Projekte und Pläne</h2>
+      <p>
+        Wir speichern Einträge mit Start, Ende, Zeitzone, Projektbezug und optionaler Notiz, außerdem
+        Projekt-, Team- und Mitgliedschaftsdaten, Planwerte pro Person, Projekt und Kalenderwoche sowie
+        API-Token (nur als Hash, mit Name und letzter Nutzung).
+      </p>
+      <p>
+        Zweck ist die Erfassung und Auswertung von Arbeitszeit im jeweiligen Workspace. Bei Beschäftigten
+        ist die Verarbeitung für die Erfüllung des Arbeitsverhältnisses erforderlich (§ 26 Abs. 1 BDSG);
+        gesetzliche Pflichten zur Arbeitszeitdokumentation bleiben unberührt. Bitte tragen Sie in Notizen
+        keine besonderen Kategorien personenbezogener Daten (z. B. Gesundheitsdaten) ein, wenn dies nicht
+        ausdrücklich erforderlich ist.
+      </p>
+      <p>
+        Änderungen an Rollen, Projekten, Einträgen und Plänen werden in einem Audit-Log mit Akteur, Aktion,
+        Ziel und Änderungsdetails gespeichert. Das dient der Nachvollziehbarkeit und der Wiederherstellung
+        (Art. 6 Abs. 1 lit. f DSGVO).
+      </p>
+
+      <h2>6. Cookies und lokale Speicherung</h2>
+      <p>
+        Wir setzen ein technisch notwendiges Sitzungscookie (<code>tstamps_session</code> bzw.
+        <code>__Host-tstamps_session</code>) mit einer Laufzeit von 30 Tagen. Es ist HttpOnly, SameSite=Lax
+        und bei HTTPS Secure. Rechtsgrundlage ist § 25 Abs. 2 Nr. 2 TDDDG; eine Einwilligung ist dafür nicht
+        erforderlich.
+      </p>
+      <p>
+        Die Timeline speichert die Reihenfolge der Spuren im <code>localStorage</code> des Browsers, damit
+        die Ansicht beim nächsten Besuch gleich aussieht. Auch das ist eine vom Nutzer gewünschte Funktion
+        nach § 25 Abs. 2 Nr. 2 TDDDG. In der Standardinstallation gibt es keine Analyse-, Werbe- oder
+        Tracking-Cookies und keine Einbindung externer Schriftarten oder Skripte.
+      </p>
+
+      <h2>7. Empfänger und Auftragsverarbeitung</h2>
+      <p>
+        Empfänger sind der Hosting-Anbieter und, soweit für den Betrieb erforderlich, unser
+        E-Mail-Dienstleister. Eine Weitergabe an Dritte zu Werbe- oder Analysezwecken findet nicht statt.
+      </p>
+      <p>
+        Betreibt ein anderer Verantwortlicher einen Workspace auf dieser Instanz, ist er für die Daten in
+        diesem Workspace verantwortlich; wir verarbeiten sie dann als Auftragsverarbeiter nach Art. 28 DSGVO
+        auf seine Weisung. Seine eigene Datenschutzerklärung gilt für Beschäftigte und Nutzer dieses
+        Workspace.
+      </p>
+
+      <h2>8. Übermittlung in Drittländer</h2>
+      <p>
+        [Nur ausfüllen, wenn die Selbstregistrierung aktiviert ist und ein E-Mail-Dienst außerhalb der EU/des
+        EWR genutzt wird.] Für den Versand von Bestätigungs-E-Mails nutzen wir [E-Mail-Anbieter] mit Sitz in
+        [Land]. Die Übermittlung erfolgt auf Grundlage von [EU-Standardvertragsklauseln / Angemessenheits-
+        beschluss, z. B. EU-US Data Privacy Framework] und einer dokumentierten Transferfolgenabschätzung.
+        Ohne Selbstregistrierung findet keine solche Übermittlung statt.
+      </p>
+
+      <h2>9. Speicherdauer und Löschung</h2>
+      <p>
+        Kontodaten bleiben bis zur Löschung des Kontos oder des Workspace gespeichert. Zeiteinträge und
+        Pläne bleiben, solange der Workspace besteht; gesetzliche Aufbewahrungspflichten (z. B. § 16 ArbZG,
+        §§ 147 AO, 257 HGB) können eine längere Aufbewahrung erfordern. Gelöschte Einträge werden zunächst
+        nur ausgeblendet und können von Administratoren wiederhergestellt werden; auf Antrag werden
+        personenbezogene Daten endgültig gelöscht, soweit keine Aufbewahrungspflicht entgegensteht.
+      </p>
+      <p>
+        Sicherungskopien werden [Aufbewahrungsdauer, z. B. 14 Tage] aufbewahrt und danach gelöscht. Eine
+        Löschung im Produktivsystem erreicht Sicherungskopien erst nach Ablauf dieser Frist.
+      </p>
+
+      <h2>10. Ihre Rechte</h2>
+      <p>
+        Sie haben nach der DSGVO das Recht auf Auskunft (Art. 15), Berichtigung (Art. 16), Löschung
+        (Art. 17), Einschränkung der Verarbeitung (Art. 18), Datenübertragbarkeit (Art. 20) und Widerspruch
+        gegen die Verarbeitung (Art. 21). Eine erteilte Einwilligung können Sie jederzeit widerrufen.
+      </p>
+      <p>
+        Für Anträge genügt eine Nachricht an <a href="mailto:[E-Mail-Adresse]">[E-Mail-Adresse]</a>. Wir
+        können zur Identitätsprüfung Rückfragen stellen.
+      </p>
+
+      <h2>11. Beschwerderecht</h2>
+      <p>
+        Sie können sich bei einer Datenschutz-Aufsichtsbehörde beschweren, insbesondere bei
+        [zuständige Aufsichtsbehörde, z. B. Landesbeauftragte für Datenschutz und Informationsfreiheit
+        des Landes …].
+      </p>
+
+      <h2>12. Keine automatisierte Entscheidungsfindung</h2>
+      <p>
+        Eine automatisierte Entscheidungsfindung einschließlich Profiling im Sinne von Art. 22 DSGVO findet
+        nicht statt.
+      </p>
+
+      <p class="muted">Stand: [Datum]</p>
+    </main>
+  </body>
+</html>

@@ -8,6 +8,8 @@ import (
 	"io"
 	"log/slog"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 )
@@ -18,6 +20,10 @@ type Config struct {
 	DB       string     // sqlite database file holding every workspace
 	LogLevel slog.Level // minimum level written to stderr
 	Demo     bool       // serve the seeded, hourly-reset demo workspace
+
+	// LegalDir holds imprint.html and privacy.html served at /imprint and
+	// /privacy. Empty means no legal links are shown.
+	LegalDir string
 
 	// Self-service signup email. Enabled only when all three of EmailAPIKey,
 	// EmailFrom and PublicURL are set.
@@ -46,6 +52,7 @@ func Load(args []string, getenv func(string) string) (Config, error) {
 		Addr:        envOr("TSTAMPS_ADDR", DefaultAddr),
 		DB:          envOr("TSTAMPS_DB", DefaultDB),
 		LogLevel:    slog.LevelInfo,
+		LegalDir:    getenv("TSTAMPS_LEGAL_DIR"),
 		EmailAPIKey: getenv("TSTAMPS_EMAIL_API_KEY"),
 		EmailAPIURL: getenv("TSTAMPS_EMAIL_API_URL"),
 		EmailFrom:   getenv("TSTAMPS_EMAIL_FROM"),
@@ -68,6 +75,7 @@ func Load(args []string, getenv func(string) string) (Config, error) {
 	fs.SetOutput(io.Discard) // the caller reports the error, so no flag chatter on stderr
 	fs.StringVar(&cfg.Addr, "addr", cfg.Addr, "listen address")
 	fs.StringVar(&cfg.DB, "db", cfg.DB, "sqlite database file")
+	fs.StringVar(&cfg.LegalDir, "legal-dir", cfg.LegalDir, "directory holding imprint.html and privacy.html")
 	fs.StringVar(&cfg.EmailAPIKey, "email-api-key", cfg.EmailAPIKey, "email API key for self-service signup")
 	fs.StringVar(&cfg.EmailAPIURL, "email-api-url", cfg.EmailAPIURL, "email API endpoint (default https://api.resend.com/emails)")
 	fs.StringVar(&cfg.EmailFrom, "email-from", cfg.EmailFrom, "From address for signup email")
@@ -76,6 +84,13 @@ func Load(args []string, getenv func(string) string) (Config, error) {
 	level := fs.String("log-level", cfg.LogLevel.String(), "debug, info, warn or error")
 	if err := fs.Parse(args); err != nil {
 		return Config{}, err
+	}
+	if cfg.LegalDir != "" {
+		for _, name := range []string{"imprint.html", "privacy.html"} {
+			if _, err := os.Stat(filepath.Join(cfg.LegalDir, name)); err != nil {
+				return Config{}, fmt.Errorf("--legal-dir: %w", err)
+			}
+		}
 	}
 	if err := cfg.LogLevel.UnmarshalText([]byte(*level)); err != nil {
 		return Config{}, err

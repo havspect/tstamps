@@ -932,3 +932,15 @@ main.wide {
   font-size: 0.875rem;
   font-weight: 600;
 }
+
+footer.legal {
+  display: flex;
+  justify-content: center;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  font-size: 0.875rem;
+}
+
+footer.legal a {
+  color: var(--muted);
+}

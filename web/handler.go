@@ -14,6 +14,9 @@ type Options struct {
 	// DemoAccounts is a JSON array stamped into the shell so the login page can
 	// show the public demo sign-ins. Empty on any other server.
 	DemoAccounts string
+
+	// Legal stamps the marker that makes the SPA link to /imprint and /privacy.
+	Legal bool
 }
 
 // handler serves the SPA and falls back to index.html for client-side routes. A
@@ -84,6 +87,10 @@ func handler(sub fs.FS, hosted bool, opts ...Options) http.Handler {
 				if options.DemoAccounts != "" {
 					out = bytes.Replace(out, []byte("</head>"),
 						[]byte(`<meta name="tstamps-demo" content="`+html.EscapeString(options.DemoAccounts)+`"></head>`), 1)
+				}
+				if options.Legal && !bytes.Contains(out, []byte(`name="tstamps-legal"`)) {
+					out = bytes.Replace(out, []byte("</head>"),
+						[]byte(`<meta name="tstamps-legal" content="1"></head>`), 1)
 				}
 				w.Header().Set("Content-Type", "text/html; charset=utf-8")
 				_, _ = w.Write(out)
