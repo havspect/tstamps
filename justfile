@@ -53,9 +53,10 @@ serve-watch:
     air
 
 # Run the server binary with the UI and the manual embedded.
+# Port: PORT=8081 just serve (default 8080).
 serve *args:
     @if [ ! -f ./tstamps-server ]; then just build; fi
-    ./tstamps-server serve {{args}}
+    ./tstamps-server serve --addr :${PORT:-8080} {{args}}
 
 # Create a workspace (slug, admin email, admin name) and print its initial password.
 workspace-create slug email name:
