@@ -137,7 +137,7 @@
       Live demo — fictional data. Everything resets at the top of the hour, so you may be signed out.
     </div>
   {/if}
-  <header>
+  <header class="app-bar">
     <Link href={user ? '/timeline' : '/'} class="brand">Tstamps</Link>
     {#if user && !session.mustChangePassword}
       <nav>
