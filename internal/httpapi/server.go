@@ -22,6 +22,7 @@ import (
 	"github.com/havspect/tstamps/internal/entry"
 	"github.com/havspect/tstamps/internal/oauth"
 	"github.com/havspect/tstamps/internal/onboarding"
+	"github.com/havspect/tstamps/internal/plan"
 	"github.com/havspect/tstamps/internal/project"
 	"github.com/havspect/tstamps/internal/report"
 	gormrepo "github.com/havspect/tstamps/internal/repository/gorm"
@@ -45,6 +46,7 @@ type Dependencies struct {
 	TeamService       *team.Service
 	EntryService      *entry.Service
 	ReportService     *report.Service
+	PlanService       *plan.Service
 	AuditService      *audit.Service
 	OnboardingService *onboarding.Service
 	OAuthProvider     *oauth.Provider
@@ -77,10 +79,10 @@ func New(deps Dependencies) http.Handler {
 	doc := api.OpenAPI()
 	doc.Components.SecuritySchemes = map[string]*huma.SecurityScheme{
 		"bearerAuth": {
-			Type:        "http",
-			Scheme:      "bearer",
+			Type:         "http",
+			Scheme:       "bearer",
 			BearerFormat: "ts_",
-			Description: "Personal API token or OAuth access token.",
+			Description:  "Personal API token or OAuth access token.",
 		},
 		"sessionCookie": {
 			Type:        "apiKey",
@@ -100,6 +102,7 @@ func New(deps Dependencies) http.Handler {
 	s.entryRoutes(api)
 	s.timerRoutes(api)
 	s.reportRoutes(api)
+	s.planRoutes(api)
 	s.auditRoutes(api)
 	s.signupRoutes(api)
 
@@ -279,7 +282,7 @@ func (s *Server) health(w http.ResponseWriter, _ *http.Request) {
 
 func (s *Server) robots(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-	_, _ = fmt.Fprintf(w, "User-agent: *\nAllow: /\nAllow: /docs/\nDisallow: /login\nDisallow: /password\nDisallow: /signup\nDisallow: /timeline\nDisallow: /reports\nDisallow: /admin/\nDisallow: /api/\n\nSitemap: %s/sitemap.xml\n", origin(r))
+	_, _ = fmt.Fprintf(w, "User-agent: *\nAllow: /\nAllow: /docs/\nDisallow: /login\nDisallow: /password\nDisallow: /signup\nDisallow: /timeline\nDisallow: /reports\nDisallow: /plan\nDisallow: /admin/\nDisallow: /api/\n\nSitemap: %s/sitemap.xml\n", origin(r))
 }
 
 func (s *Server) sitemap(w http.ResponseWriter, r *http.Request) {
@@ -291,6 +294,7 @@ func (s *Server) sitemap(w http.ResponseWriter, r *http.Request) {
 		"/docs/install-cli",
 		"/docs/timeline",
 		"/docs/reports",
+		"/docs/plan",
 		"/docs/cli",
 		"/docs/mcp",
 		"/docs/agents/",

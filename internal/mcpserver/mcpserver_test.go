@@ -18,10 +18,10 @@ import (
 )
 
 type mockUserService struct {
-	profile   *user.Profile
+	profile    *user.Profile
 	profileErr error
-	users     []user.User
-	usersErr  error
+	users      []user.User
+	usersErr   error
 }
 
 func (m *mockUserService) GetProfile(ctx context.Context) (*user.Profile, error) {
@@ -167,6 +167,10 @@ func TestToolsCatalogueAndAnnotations(t *testing.T) {
 		"list_users":    true,
 		"list_entries":  true,
 		"report":        true,
+		"get_plan":      true,
+		"set_plan":      false,
+		"seed_plan":     false,
+		"repeat_plan":   false,
 		"start_timer":   false,
 		"stop_timer":    false,
 		"add_entry":     false,

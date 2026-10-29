@@ -51,6 +51,7 @@ func auditFields(u *User) map[string]any {
 		"email":                u.Email,
 		"name":                 u.Name,
 		"timezone":             u.Timezone,
+		"weekly_hours":         u.WeeklyHours,
 		"is_admin":             u.IsAdmin,
 		"active":               u.Active,
 		"must_change_password": u.MustChangePassword,
@@ -78,6 +79,13 @@ func (s *Service) CreateUser(ctx context.Context, in CreateInput) (*User, string
 	if tz == "" {
 		tz = "UTC"
 	}
+	weeklyHours := in.WeeklyHours
+	if weeklyHours == 0 {
+		weeklyHours = 40
+	}
+	if weeklyHours < 0 || weeklyHours > 168 {
+		return nil, "", ErrInvalidWeeklyHours
+	}
 
 	if existing, err := s.repo.GetByEmail(ctx, email); err == nil && existing != nil {
 		return nil, "", ErrDuplicateEmail
@@ -100,6 +108,7 @@ func (s *Service) CreateUser(ctx context.Context, in CreateInput) (*User, string
 		Name:               name,
 		PasswordHash:       hash,
 		Timezone:           tz,
+		WeeklyHours:        weeklyHours,
 		IsAdmin:            in.IsAdmin,
 		Active:             true,
 		MustChangePassword: true,
@@ -149,6 +158,12 @@ func (s *Service) UpdateUser(ctx context.Context, in UpdateInput) (*User, error)
 	}
 	if in.IsAdmin != nil {
 		after.IsAdmin = *in.IsAdmin
+	}
+	if in.WeeklyHours != nil {
+		if *in.WeeklyHours < 0 || *in.WeeklyHours > 168 {
+			return nil, ErrInvalidWeeklyHours
+		}
+		after.WeeklyHours = *in.WeeklyHours
 	}
 	if in.Active != nil {
 		after.Active = *in.Active

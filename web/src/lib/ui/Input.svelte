@@ -9,7 +9,7 @@
     checked = $bindable(false),
     hint = '',
     ...rest
-  }: Omit<HTMLInputAttributes, 'value' | 'checked' | 'type'> & {
+  }: Omit<HTMLInputAttributes, 'value' | 'checked' | 'type' | 'size'> & {
     label: string
     id: string
     type?: HTMLInputAttributes['type']
@@ -24,6 +24,7 @@
     {id}
     {checked}
     hint={hint || undefined}
+    size="s"
     onchange={(event) => (checked = event.currentTarget.checked)}
     {...rest}
   >
@@ -43,6 +44,7 @@
     {type}
     hint={hint || undefined}
     value={value}
+    size="s"
     oninput={(event) => (value = event.currentTarget.value)}
     {...rest}
   ></wa-input>

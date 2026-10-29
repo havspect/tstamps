@@ -38,6 +38,7 @@ type User struct {
 	Name               string `gorm:"not null"`
 	PasswordHash       string `gorm:"not null"`
 	Timezone           string `gorm:"not null;default:UTC"`
+	WeeklyHours        int    `gorm:"not null;default:40"`
 	IsAdmin            bool   `gorm:"not null;default:false"`
 	Active             bool   `gorm:"not null;default:true"`
 	MustChangePassword bool   `gorm:"not null;default:false"`
@@ -115,6 +116,19 @@ type Entry struct {
 	CreatedAt   time.Time
 	UpdatedAt   time.Time
 	DeletedAt   *time.Time `gorm:"index"`
+}
+
+// Plan is the hours a person intends to spend on a project in one ISO week.
+// It is not an entry: no report, CSV or timeline reads it (ADR-0022).
+type Plan struct {
+	ID          uint      `gorm:"primarykey"`
+	WorkspaceID uint      `gorm:"not null;uniqueIndex:idx_plans_cell,priority:1"`
+	UserID      uint      `gorm:"not null;uniqueIndex:idx_plans_cell,priority:2"`
+	ProjectID   uint      `gorm:"not null;uniqueIndex:idx_plans_cell,priority:3"`
+	WeekStart   time.Time `gorm:"not null;uniqueIndex:idx_plans_cell,priority:4;index"`
+	Hours       int       `gorm:"not null"`
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
 }
 
 // AuditLog is one record in the workspace's tamper-evident audit log.

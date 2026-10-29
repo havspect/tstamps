@@ -10,6 +10,7 @@ import (
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/havspect/tstamps/internal/entry"
+	"github.com/havspect/tstamps/internal/plan"
 	"github.com/havspect/tstamps/internal/project"
 	"github.com/havspect/tstamps/internal/report"
 	"github.com/havspect/tstamps/internal/team"
@@ -48,6 +49,14 @@ type ReportService interface {
 	GenerateReport(ctx context.Context, filter report.Filter) (*report.Report, error)
 }
 
+// PlanService defines the plan domain operations needed by MCP tools.
+type PlanService interface {
+	List(ctx context.Context, filter plan.Filter) (*plan.Board, error)
+	Set(ctx context.Context, userID, projectID uint, weekStart time.Time, hours int) (*plan.Plan, error)
+	Seed(ctx context.Context, in plan.SeedInput) (*plan.Summary, error)
+	Repeat(ctx context.Context, in plan.RepeatInput) (*plan.Summary, error)
+}
+
 // Config configures the MCP server tool catalogue with domain services.
 type Config struct {
 	UserService    UserService
@@ -55,6 +64,7 @@ type Config struct {
 	TeamService    TeamService
 	EntryService   EntryService
 	ReportService  ReportService
+	PlanService    PlanService
 }
 
 // NewServer returns an MCP server with all tools registered directly to domain services.
@@ -314,6 +324,82 @@ func register(s *sdk.Server, cfg Config) {
 			}, nil
 		})
 
+	sdk.AddTool(s, readOnly("get_plan",
+		"Planned hours per person, project and ISO week, with each person's weekly capacity and the weeks of the range. Omit from and to for next month. A member sees their own row; a lead sees their teams' projects and any other load that person carries on other teams as 'other' hours; an admin sees everything."),
+		func(ctx context.Context, _ *sdk.CallToolRequest, in PlanInput) (*sdk.CallToolResult, PlanBoard, error) {
+			if cfg.PlanService == nil {
+				return nil, PlanBoard{}, nil
+			}
+			now := time.Now()
+			from, to, err := nextMonthRange(in.From, in.To, now)
+			if err != nil {
+				return nil, PlanBoard{}, err
+			}
+			board, err := cfg.PlanService.List(ctx, plan.Filter{
+				From: from, To: to, TeamID: in.TeamID, UserID: in.UserID,
+			})
+			if err != nil {
+				return nil, PlanBoard{}, err
+			}
+			return nil, toPlanBoard(board), nil
+		})
+
+	sdk.AddTool(s, write("set_plan",
+		"Set the hours a person will spend on a project in one ISO week (0–168, 0 removes the cell). week_start is any date in that week, YYYY-MM-DD. A lead may plan people of their teams onto their teams' projects; a week that has ended in the person's timezone is refused."),
+		func(ctx context.Context, _ *sdk.CallToolRequest, in SetPlanInput) (*sdk.CallToolResult, PlanCell, error) {
+			if cfg.PlanService == nil {
+				return nil, PlanCell{}, nil
+			}
+			week, err := time.Parse("2006-01-02", in.WeekStart)
+			if err != nil {
+				return nil, PlanCell{}, err
+			}
+			cell, err := cfg.PlanService.Set(ctx, in.UserID, in.ProjectID, week, in.Hours)
+			if err != nil {
+				return nil, PlanCell{}, err
+			}
+			return nil, PlanCell{
+				UserID: cell.UserID, ProjectID: cell.ProjectID,
+				WeekStart: cell.WeekStart.Format("2006-01-02"), Hours: cell.Hours,
+			}, nil
+		})
+
+	sdk.AddTool(s, write("seed_plan",
+		"Fill a month's plan from the previous month's logged hours, split evenly across the target month's weeks and rounded to whole hours. Empty cells only; frozen weeks and existing cells are skipped. dry_run reports what would be filled without writing."),
+		func(ctx context.Context, _ *sdk.CallToolRequest, in SeedPlanInput) (*sdk.CallToolResult, PlanSummary, error) {
+			if cfg.PlanService == nil {
+				return nil, PlanSummary{}, nil
+			}
+			sum, err := cfg.PlanService.Seed(ctx, plan.SeedInput{
+				FromMonth: in.FromMonth, IntoMonth: in.IntoMonth,
+				TeamID: in.TeamID, DryRun: in.DryRun,
+			})
+			if err != nil {
+				return nil, PlanSummary{}, err
+			}
+			return nil, toPlanSummary(sum), nil
+		})
+
+	sdk.AddTool(s, write("repeat_plan",
+		"Copy one week's plan into the following weeks (1–52). Empty cells only; existing cells and frozen weeks are skipped. dry_run reports what would be filled without writing."),
+		func(ctx context.Context, _ *sdk.CallToolRequest, in RepeatPlanInput) (*sdk.CallToolResult, PlanSummary, error) {
+			if cfg.PlanService == nil {
+				return nil, PlanSummary{}, nil
+			}
+			week, err := time.Parse("2006-01-02", in.WeekStart)
+			if err != nil {
+				return nil, PlanSummary{}, err
+			}
+			sum, err := cfg.PlanService.Repeat(ctx, plan.RepeatInput{
+				WeekStart: week, Weeks: in.Weeks, TeamID: in.TeamID,
+				UserID: in.UserID, ProjectID: in.ProjectID, DryRun: in.DryRun,
+			})
+			if err != nil {
+				return nil, PlanSummary{}, err
+			}
+			return nil, toPlanSummary(sum), nil
+		})
+
 	sdk.AddTool(s, write("start_timer",
 		"Start the token holder's running entry on a project. timezone is the IANA zone it is logged in, defaulting to caller's zone. A user has at most one running entry; a second start is refused with 409 and the running entry."),
 		func(ctx context.Context, _ *sdk.CallToolRequest, in StartTimerInput) (*sdk.CallToolResult, Entry, error) {
@@ -419,6 +505,40 @@ type ReportInput struct {
 	TeamID    uint   `json:"team_id,omitempty" jsonschema:"only entries on this team's projects"`
 	UserID    uint   `json:"user_id,omitempty" jsonschema:"only this user's entries, within what the caller may read"`
 	ProjectID uint   `json:"project_id,omitempty" jsonschema:"only this project's entries"`
+}
+
+// PlanInput contains filters for get_plan.
+type PlanInput struct {
+	From   string `json:"from,omitempty" jsonschema:"inclusive start date, YYYY-MM-DD; omit both from and to for next month"`
+	To     string `json:"to,omitempty" jsonschema:"exclusive end date, YYYY-MM-DD; required with from"`
+	TeamID uint   `json:"team_id,omitempty" jsonschema:"only this team's people and projects"`
+	UserID uint   `json:"user_id,omitempty" jsonschema:"only this person's cells, within what the caller may read"`
+}
+
+// SetPlanInput contains arguments for set_plan.
+type SetPlanInput struct {
+	UserID    uint   `json:"user_id" jsonschema:"the person to plan; get_plan returns the ids"`
+	ProjectID uint   `json:"project_id" jsonschema:"the project to plan against; list_projects returns the ids"`
+	WeekStart string `json:"week_start" jsonschema:"any date in the ISO week, YYYY-MM-DD"`
+	Hours     int    `json:"hours" jsonschema:"planned hours, 0-168; 0 removes the cell"`
+}
+
+// SeedPlanInput contains arguments for seed_plan.
+type SeedPlanInput struct {
+	FromMonth string `json:"from_month" jsonschema:"month whose logged hours seed the plan, YYYY-MM"`
+	IntoMonth string `json:"into_month" jsonschema:"month that is planned, YYYY-MM"`
+	TeamID    uint   `json:"team_id,omitempty" jsonschema:"only this team's projects"`
+	DryRun    bool   `json:"dry_run,omitempty" jsonschema:"report what would be filled without writing"`
+}
+
+// RepeatPlanInput contains arguments for repeat_plan.
+type RepeatPlanInput struct {
+	WeekStart string `json:"week_start" jsonschema:"any date in the source ISO week, YYYY-MM-DD"`
+	Weeks     int    `json:"weeks" jsonschema:"how many following weeks to fill, 1-52"`
+	TeamID    uint   `json:"team_id,omitempty" jsonschema:"only this team's projects"`
+	UserID    uint   `json:"user_id,omitempty" jsonschema:"only this person's cells"`
+	ProjectID uint   `json:"project_id,omitempty" jsonschema:"only this project's cells"`
+	DryRun    bool   `json:"dry_run,omitempty" jsonschema:"report what would be filled without writing"`
 }
 
 // StartTimerInput contains arguments for start_timer.
@@ -547,4 +667,105 @@ type ReportRow struct {
 type Report struct {
 	Rows         []ReportRow `json:"rows"`
 	TotalSeconds int64       `json:"total_seconds"`
+}
+
+// PlanPerson is a person who can be planned, with their weekly capacity.
+type PlanPerson struct {
+	UserID      uint     `json:"user_id"`
+	User        string   `json:"user"`
+	Email       string   `json:"email"`
+	WeeklyHours int      `json:"weekly_hours"`
+	Teams       []string `json:"teams"`
+	Deactivated bool     `json:"deactivated,omitempty"`
+}
+
+// PlanCell is one person, project and ISO week of planned hours.
+type PlanCell struct {
+	UserID    uint   `json:"user_id"`
+	ProjectID uint   `json:"project_id"`
+	Project   string `json:"project,omitempty"`
+	Archived  bool   `json:"archived,omitempty"`
+	WeekStart string `json:"week_start"`
+	Hours     int    `json:"hours"`
+}
+
+// PlanOther is a person's hours on projects the caller may not read.
+type PlanOther struct {
+	UserID    uint   `json:"user_id"`
+	WeekStart string `json:"week_start"`
+	Hours     int    `json:"hours"`
+}
+
+// PlanBoard is one range of planning data.
+type PlanBoard struct {
+	Weeks  []string     `json:"weeks"`
+	People []PlanPerson `json:"people"`
+	Cells  []PlanCell   `json:"cells"`
+	Other  []PlanOther  `json:"other"`
+}
+
+// PlanSummaryCell is one cell a bulk wrote or would write.
+type PlanSummaryCell struct {
+	UserID    uint   `json:"user_id"`
+	ProjectID uint   `json:"project_id"`
+	WeekStart string `json:"week_start"`
+	Hours     int    `json:"hours"`
+}
+
+// PlanSummary reports what a seed or repeat did.
+type PlanSummary struct {
+	Filled  int               `json:"filled"`
+	Skipped int               `json:"skipped"`
+	Cells   []PlanSummaryCell `json:"cells"`
+}
+
+// nextMonthRange defaults a board to the month that has not happened yet.
+func nextMonthRange(fromStr, toStr string, now time.Time) (time.Time, time.Time, error) {
+	if fromStr == "" && toStr == "" {
+		start := time.Date(now.Year(), now.Month()+1, 1, 0, 0, 0, 0, time.UTC)
+		return start, start.AddDate(0, 1, 0), nil
+	}
+	return parseDateRange(fromStr, toStr, "UTC", now)
+}
+
+func toPlanBoard(b *plan.Board) PlanBoard {
+	out := PlanBoard{Weeks: make([]string, len(b.Weeks))}
+	for i, week := range b.Weeks {
+		out.Weeks[i] = week.Format("2006-01-02")
+	}
+	out.People = make([]PlanPerson, len(b.People))
+	for i, person := range b.People {
+		teams := make([]string, len(person.Teams))
+		for j, team := range person.Teams {
+			teams[j] = team.Name
+		}
+		out.People[i] = PlanPerson{
+			UserID: person.UserID, User: person.Name, Email: person.Email,
+			WeeklyHours: person.WeeklyHours, Teams: teams, Deactivated: !person.Active,
+		}
+	}
+	out.Cells = make([]PlanCell, len(b.Cells))
+	for i, cell := range b.Cells {
+		out.Cells[i] = PlanCell{
+			UserID: cell.UserID, ProjectID: cell.ProjectID, Project: cell.Project,
+			Archived: cell.Archived, WeekStart: cell.WeekStart.Format("2006-01-02"), Hours: cell.Hours,
+		}
+	}
+	out.Other = make([]PlanOther, len(b.Other))
+	for i, other := range b.Other {
+		out.Other[i] = PlanOther{UserID: other.UserID, WeekStart: other.WeekStart.Format("2006-01-02"), Hours: other.Hours}
+	}
+	return out
+}
+
+func toPlanSummary(sum *plan.Summary) PlanSummary {
+	out := PlanSummary{Filled: sum.Filled, Skipped: sum.Skipped}
+	out.Cells = make([]PlanSummaryCell, len(sum.Cells))
+	for i, cell := range sum.Cells {
+		out.Cells[i] = PlanSummaryCell{
+			UserID: cell.UserID, ProjectID: cell.ProjectID,
+			WeekStart: cell.WeekStart.Format("2006-01-02"), Hours: cell.Hours,
+		}
+	}
+	return out
 }

@@ -10,6 +10,7 @@ In v1:
 
 - Users log hours on a personal timeline, with one running entry at a time.
 - Leads create projects for their teams and read hours logged on those projects.
+- Leads and admins plan the next weeks: how many hours each person will spend on which project, by ISO week, against each person's weekly capacity ([ADR-0022](./adr/0022-plan-is-not-an-entry.md)).
 - Admins manage users, teams, memberships, and restore deleted data.
 - Reports per person / project / day or week, plus CSV.
 - A REST API, a CLI, and an MCP server (stdio), all over the same HTTP API.
@@ -27,6 +28,8 @@ A user has exactly one of two global states — admin or not — plus zero or mo
 | Log / edit / delete own entries | yes | yes | yes |
 | Read own hours | yes | yes | yes |
 | Read hours on their teams' projects | no | yes | yes |
+| Read own plan | yes | yes | yes |
+| Read and write plans on their teams' projects | no | yes | yes |
 | Create / edit / archive projects | no | their teams | all |
 | Manage teams and memberships | no | no | yes |
 | Create / deactivate users, reset passwords | no | no | yes |
@@ -40,11 +43,12 @@ A lead's report scope is *entries booked on projects owned by a team they lead*,
 ```
 workspaces(id, slug)
 pending_signups(token_hash, email, created_at)
-users(id, email, name, password_hash, timezone, is_admin, active, must_change_password, created_at, updated_at)
+users(id, email, name, password_hash, timezone, weekly_hours, is_admin, active, must_change_password, created_at, updated_at)
 teams(id, name, created_at, updated_at, archived_at)
 team_memberships(id, team_id, user_id, role, created_at)         unique(team_id, user_id)
 projects(id, team_id, name, color, created_at, updated_at, archived_at)
 entries(id, user_id, project_id, start_at, end_at, timezone, note, created_at, updated_at, deleted_at)
+plans(id, user_id, project_id, week_start, hours, created_at, updated_at)     unique(user_id, project_id, week_start)
 sessions(id, user_id, token_hash, expires_at, created_at)
 api_tokens(id, user_id, name, token_hash, created_at, last_used_at, revoked_at)
 audit_events(id, at, actor_user_id, actor_token_id, actor_role, action, target_type, target_id, changes)
@@ -67,6 +71,12 @@ Rules the store enforces, with tests:
 - The last active admin cannot be demoted or deactivated (`422 last-admin`).
 - An audit event commits in the same transaction as the mutation it describes, never after it ([ADR-0013](./adr/0013-audit-role-actions.md)).
 - Deleting an entry sets `deleted_at`; restoring clears it. No hard deletes anywhere.
+- A plan cell holds 0–168 hours for one user, one project and one ISO week; writing 0 deletes the row, so a person can be planned for at most every hour of a week.
+- A week that has ended, measured in the planned person's timezone, refuses plan writes (`422 plan-week-frozen`). Current and future weeks accept them.
+- A plan is never an entry: it does not appear in a report, a CSV export, a timeline or an entry list.
+- A lead may plan people of a team they lead onto a project of a team they lead, but on nobody else's project or person. A member may write no plan at all.
+- Every plan cell write, including each cell a seed or repeat fills, is an audit event committed with it, because the write rests on a role rather than on ownership ([ADR-0013](./adr/0013-audit-role-actions.md)).
+- `users.weekly_hours` is `0–168`, defaults to 40, and only an admin changes it.
 
 Email comparison is case-insensitive; emails are stored lowercased.
 
@@ -80,6 +90,8 @@ All instants are UTC. Each entry stores the IANA timezone it was logged in; days
 - A 12-hour entry crossing local midnight becomes two rows, and their seconds still sum to 12h across DST shifts.
 - An entry's `timezone` is an IANA name the server knows; creating one without it (including `POST /timer/start`) is a `422`. `PATCH /entries/{id}` may correct it.
 - Reports include hours on archived projects, labelled as archived. They exclude deleted entries.
+
+A plan is the forward-looking twin and is not a report: how many hours a person will spend on a project in one ISO week. Week boundaries are Mondays stored as dates; a week is frozen once its last day has passed in the planned person's timezone. Seeding reads a past month's logged hours per person and project and splits them evenly across the target month's weeks, rounded to the nearest hour; repeating copies one week's plan into the following weeks. Both fill empty cells only and report what they skipped.
 
 CSV export is the detail behind the table: one row per entry per local day.
 
@@ -125,6 +137,10 @@ Errors are RFC 9457 problem+json. The stable machine-readable code lives in the 
 | POST | `/timer/stop` | ends at now, optional note |
 | GET | `/reports?from&to&by=week\|day\|month\|none[&team_id][&user_id][&project_id]` | aggregated seconds |
 | GET | `/reports.csv` | same filters, entry-per-day rows |
+| GET | `/plan?from&to[&team_id][&user_id]` | planned hours per person, project and ISO week, with capacity and the weeks of the range |
+| PUT | `/plan` | set one cell `{user_id, project_id, week_start, hours}`; 0 deletes it |
+| POST | `/plan/seed` | fill a month from the previous month's logged hours `{from_month, into_month, team_id, dry_run}` |
+| POST | `/plan/repeat` | copy one week's plan into the following weeks `{week_start, weeks, team_id, user_id, project_id, dry_run}` |
 | GET | `/audit?from&to[&actor_user_id][&action][&target_type][&target_id][&limit]` | admin: role-based actions, newest first |
 | GET | `/healthz` | database reachability + schema version |
 | GET | `/openapi.json` | OpenAPI 3.1 document, generated from handlers |
@@ -185,6 +201,11 @@ tstamps rm <id>
 tstamps projects [--all] | tstamps projects add <name> --team <team> | tstamps projects archive <id>
 tstamps teams | tstamps teams members <team>
 tstamps report --from 2026-10-19 --to 2026-10-26 [--by week|day|month] [--json|--csv]
+tstamps plan [--from 2026-11-01 --to 2026-12-01] [--team ...] [--user ...] [--json]
+tstamps plan set <person> <project> --week 2026-W46 --hours 20
+tstamps plan rm <person> <project> --week 2026-W46
+tstamps plan seed --from 2026-10 --into 2026-11 [--team ...] [--dry-run] [--json]
+tstamps plan repeat --week 2026-W46 --weeks 4 [--dry-run] [--json]
 tstamps tokens create <name> | tstamps tokens ls | tstamps tokens rm <id>
 tstamps audit [--from 2026-10-01 --to 2026-11-01] [--actor <email>] [--action user.update] [--target-type project] [--target-id 7] [--limit 50] [--json]
 tstamps mcp                                        # MCP server on stdio
@@ -197,7 +218,7 @@ Times without a date mean today in the machine's timezone. Durations are accepte
 
 `tstamps mcp` speaks MCP over stdio and uses the same config and token as the CLI. Tools mirror the API, with read tools annotated read-only:
 
-`whoami`, `list_projects`, `list_entries`, `start_timer`, `stop_timer`, `add_entry`, `update_entry`, `delete_entry`, `report`, `list_teams`, `list_users` (admin).
+`whoami`, `list_projects`, `list_entries`, `start_timer`, `stop_timer`, `add_entry`, `update_entry`, `delete_entry`, `report`, `get_plan`, `set_plan`, `seed_plan`, `repeat_plan`, `list_teams`, `list_users` (admin).
 
 Tool descriptions state the permission each one needs, so an agent can explain a refusal instead of retrying. Tools that create an entry take its IANA `timezone`, defaulting to the machine's zone. No MCP resources; the API is the source of truth.
 
@@ -207,6 +228,7 @@ Svelte 5 + Vite, built to static assets and embedded with `go:embed`. The SPA ca
 
 - **/timeline** — personal canvas timeline, infinite horizontally, wheel to zoom (day ↔ week), drag to create, drag edges to retime, drag body to move, click to edit project and note, running entry pinned at "now", overlaps marked, project colors, 15-minute snap with `Alt` for 1-minute precision, `space` start/stop, `n` new, `Esc` cancel, `Delete` remove.
 - **/reports** — a summary strip (total hours, people who logged, average per person, busiest project and its share) over one table: projects as rows, one column per day, ISO week or calendar month across the range, plus a total column; rows ordered by hours, biggest first, with a grand total row at the bottom. Click a project to unfold one line per person. A Day | Week | Month switch, a range preset (this week / last week / this month / custom) that picks the granularity, a team filter when more than one team is readable, and CSV. Read-only; leads and admins only.
+- **/plan** — the forward-looking board, for leads and admins: one row per person for a chosen week, month or quarter, one column per ISO week, each cell a stacked bar of planned projects in their timeline colors, capacity and unallocated hours at the edges, and a By person | By project switch over the same cells. Hours are always per week, whatever the range. In By project the project rows expand to their team's members, each cell set the same way; archived projects and their members stay read-only. Click a cell to set hours per project. **Seed from last month** (month view only) and **repeat week** fill empty cells only and say how many they skipped. A member sees their own row read-only.
 - **/admin/users**, **/admin/teams**, **/admin/projects** — tables with inline create and edit. No separate settings screen; a workspace is identified by its slug.
 
 Leads do not get a team timeline in v1; the report table answers their question.
@@ -253,9 +275,10 @@ One build pipeline, in this order: `go run ./cmd/tstamps-server openapi > web/op
 `go test ./...` must pass offline, with no external services.
 
 - **entry/report unit tests** — local-midnight splits, DST spring-forward and fall-back, ISO week edges around New Year, calendar month edges, 14-hour padding, overlap detection, CSV escaping.
+- **plan unit tests** — the 0–168 bound, 0 deleting a cell, the frozen-week rule at the person's midnight, seed splitting a month evenly and filling only empty cells, repeat never overwriting, and a lead's read seeing only their teams' cells with the rest summed as "other".
 - **store tests** — `AutoMigrate` on an empty temp-dir database, a second boot being a no-op, the schema version being recorded and a newer one refused, the partial index actually rejecting a second running entry, archived-project filtering, deleted-entry exclusion, soft delete and restore, and a backup that can be opened with the rows intact.
 - **API tests** — `httptest` with the full router; table-driven permission matrix (member / lead of that team / lead of another team / admin) over every endpoint; session and bearer auth incl. expired and revoked; range validation; 409 on double start; `/healthz` failing when the database is gone; security headers; the request body cap; the access-log line. One test asserts `/openapi.json` lists every route in the spec table, so a missing Huma registration fails CI.
-- **CLI tests** — subcommands against a fake `client.Interface`. The `e2e` package builds both binaries, bootstraps a workspace with its first admin, serves on a free port, logs in, creates a project and entry, reads a report and a CSV, performs an MCP initialize + tool call over stdio, and runs signup against a stand-in email endpoint.
+- **CLI tests** — subcommands against a fake `client.Interface`. The `e2e` package builds both binaries, bootstraps a workspace with its first admin, serves on a free port, logs in, creates a project and entry, reads a report and a CSV, plans a week, performs an MCP initialize + tool call over stdio, and runs signup against a stand-in email endpoint.
 - **Workspace tests** — slug/path validation, atomic creation with its first admin, all-workspace backup, unknown slugs writing nothing, and two workspaces with the same email where neither a session nor an API token crosses workspaces. Signup is tested verify-first: no workspace exists before the link is used, a token works once, an invalid form leaves the link usable, a slug collision keeps it usable, a mail failure leaves nothing, and the pending row lives in the same database. The single-workspace `/login` redirect and the multi-workspace prompt are both covered. A path-bearing client base URL is tested against the router.
 - **Frontend** — `pnpm run check` (svelte-check + tsc) runs against freshly generated types, so an API change the UI did not follow fails the build. Vitest covers timeline math (pixels ↔ time, snapping, resize clamps) and workspace-prefixed CSV URLs. Playwright runs a smoke walk on a one-workspace server and a prompt walk on a two-workspace server — choose a workspace, log in, reload a deep link, reject an unknown slug, and reach signup from the homepage — in CI.
 - **CI** — `ci.yml` runs vet, `go test -race`, the web checks, both builds and the browser smoke test on every push and pull request; the release workflow reuses it, so a tag cannot ship code that did not pass.

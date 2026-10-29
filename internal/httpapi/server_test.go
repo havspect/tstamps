@@ -17,6 +17,7 @@ import (
 	"github.com/havspect/tstamps/internal/entry"
 	"github.com/havspect/tstamps/internal/mcpserver"
 	"github.com/havspect/tstamps/internal/onboarding"
+	"github.com/havspect/tstamps/internal/plan"
 	"github.com/havspect/tstamps/internal/project"
 	"github.com/havspect/tstamps/internal/report"
 	gormrepo "github.com/havspect/tstamps/internal/repository/gorm"
@@ -53,6 +54,7 @@ func setupTestServer(t *testing.T) (http.Handler, *Dependencies) {
 	projectSvc := project.NewService(projectRepo, uow, auditSvc, projectRepo, policy, clk)
 	entrySvc := entry.NewService(entryRepo, uow, auditSvc, entryRepo, policy, clk)
 	reportSvc := report.NewService(reportSource, policy, clk)
+	planSvc := plan.NewService(gormrepo.NewPlanRepository(db), uow, auditSvc, reportSvc, policy, clk)
 	onboardingSvc := onboarding.NewService(onboardingRepo)
 
 	mcpHandler := mcpserver.NewHandler(mcpserver.Config{
@@ -61,6 +63,7 @@ func setupTestServer(t *testing.T) (http.Handler, *Dependencies) {
 		TeamService:    teamSvc,
 		EntryService:   entrySvc,
 		ReportService:  reportSvc,
+		PlanService:    planSvc,
 	})
 
 	deps := &Dependencies{
@@ -71,6 +74,7 @@ func setupTestServer(t *testing.T) (http.Handler, *Dependencies) {
 		TeamService:       teamSvc,
 		EntryService:      entrySvc,
 		ReportService:     reportSvc,
+		PlanService:       planSvc,
 		AuditService:      auditSvc,
 		OnboardingService: onboardingSvc,
 		MCPHandler:        mcpHandler,
@@ -297,14 +301,14 @@ func TestFullDomainOperations(t *testing.T) {
 
 	hash, _ := auth.HashPassword("adminpass123")
 	admin := &gormrepo.User{
-		WorkspaceID: ws.ID,
-		Email:       "admin@acme.com",
-		Name:        "Admin",
+		WorkspaceID:  ws.ID,
+		Email:        "admin@acme.com",
+		Name:         "Admin",
 		PasswordHash: hash,
-		IsAdmin:     true,
-		Active:      true,
-		CreatedAt:   time.Now(),
-		UpdatedAt:   time.Now(),
+		IsAdmin:      true,
+		Active:       true,
+		CreatedAt:    time.Now(),
+		UpdatedAt:    time.Now(),
 	}
 	_ = deps.DB.WithContext(ctxWs).Create(admin)
 
@@ -347,7 +351,29 @@ func TestFullDomainOperations(t *testing.T) {
 	var projResp projectResponse
 	_ = json.NewDecoder(rec.Body).Decode(&projResp)
 
-	// 3. Timer: Start, GetRunning, Stop
+	// 3. Plan: set a future cell and read the board back
+	week := time.Now().UTC().AddDate(0, 0, 14).Truncate(24 * time.Hour)
+	monday := week.AddDate(0, 0, -((int(week.Weekday()) + 6) % 7))
+	planJSON := `{"user_id":` + jsonNum(admin.ID) + `,"project_id":` + jsonNum(projResp.ID) +
+		`,"week_start":"` + week.Format("2006-01-02") + `","hours":12}`
+	rec = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodPut, "/api/v1/plan", strings.NewReader(planJSON))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", authHeader)
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("set plan status=%d: %s", rec.Code, rec.Body.String())
+	}
+
+	rec = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/plan?from="+monday.Format("2006-01-02")+"&to="+monday.AddDate(0, 0, 7).Format("2006-01-02"), nil)
+	req.Header.Set("Authorization", authHeader)
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"hours":12`) {
+		t.Fatalf("get plan status=%d: %s", rec.Code, rec.Body.String())
+	}
+
+	// 4. Timer: Start, GetRunning, Stop
 	startTimerJSON := `{"project_id":` + jsonNum(projResp.ID) + `,"note":"Coding"}`
 	rec = httptest.NewRecorder()
 	req = httptest.NewRequest(http.MethodPost, "/api/v1/timer/start", strings.NewReader(startTimerJSON))
@@ -436,4 +462,3 @@ func TestFullDomainOperations(t *testing.T) {
 func jsonNum(n uint) string {
 	return strconv.FormatUint(uint64(n), 10)
 }
-

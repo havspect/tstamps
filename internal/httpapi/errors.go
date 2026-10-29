@@ -11,6 +11,7 @@ import (
 	"github.com/havspect/tstamps/internal/authz"
 	"github.com/havspect/tstamps/internal/entry"
 	"github.com/havspect/tstamps/internal/onboarding"
+	"github.com/havspect/tstamps/internal/plan"
 	"github.com/havspect/tstamps/internal/project"
 	"github.com/havspect/tstamps/internal/team"
 	"github.com/havspect/tstamps/internal/user"
@@ -30,6 +31,7 @@ const (
 	urnPasswordChangeRequired = "urn:tstamps:error:password-change-required"
 	urnTimerAlreadyRunning    = "urn:tstamps:error:timer-already-running"
 	urnEntryTooLong           = "urn:tstamps:error:entry-too-long"
+	urnPlanWeekFrozen         = "urn:tstamps:error:plan-week-frozen"
 	urnProjectHasEntries      = "urn:tstamps:error:project-has-entries"
 	urnUnavailable            = "urn:tstamps:error:unavailable"
 	urnInvalidToken           = "urn:tstamps:error:invalid-token"
@@ -70,6 +72,7 @@ func fail(err error) *huma.ErrorModel {
 		errors.Is(err, project.ErrNotFound),
 		errors.Is(err, team.ErrNotFound),
 		errors.Is(err, user.ErrNotFound),
+		errors.Is(err, plan.ErrNotFound),
 		errors.Is(err, onboarding.ErrNotFound):
 		return problem(http.StatusNotFound, urnNotFound, "not found")
 
@@ -128,6 +131,16 @@ func fail(err error) *huma.ErrorModel {
 		return problem(http.StatusUnprocessableEntity, urnInvalidInput, "team name cannot be empty")
 	case errors.Is(err, team.ErrInvalidRole):
 		return problem(http.StatusUnprocessableEntity, urnInvalidInput, "invalid role")
+
+	// Plan domain
+	case errors.Is(err, plan.ErrInvalidHours):
+		return problem(http.StatusUnprocessableEntity, urnInvalidInput, "plan hours must be between 0 and 168")
+	case errors.Is(err, plan.ErrInvalidRange), errors.Is(err, plan.ErrUnknownMonth):
+		return problem(http.StatusUnprocessableEntity, urnInvalidInput, "from and to must form a range of weeks, and months are YYYY-MM")
+	case errors.Is(err, plan.ErrProjectNotPlannable):
+		return problem(http.StatusUnprocessableEntity, urnInvalidInput, "an archived project cannot take new plan hours")
+	case errors.Is(err, plan.ErrFrozenWeek):
+		return problem(http.StatusUnprocessableEntity, urnPlanWeekFrozen, "the week has ended")
 
 	// Onboarding domain
 	case errors.Is(err, onboarding.ErrSignupDisabled):

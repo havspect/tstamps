@@ -23,6 +23,7 @@ import (
 	"github.com/havspect/tstamps/internal/mcpserver"
 	"github.com/havspect/tstamps/internal/oauth"
 	"github.com/havspect/tstamps/internal/onboarding"
+	"github.com/havspect/tstamps/internal/plan"
 	"github.com/havspect/tstamps/internal/project"
 	"github.com/havspect/tstamps/internal/report"
 	gormrepo "github.com/havspect/tstamps/internal/repository/gorm"
@@ -97,6 +98,8 @@ func BuildServer(cfg Config) (http.Handler, *gorm.DB, error) {
 	projectSvc := project.NewService(projectRepo, uow, auditSvc, projectRepo, policy, clk)
 	entrySvc := entry.NewService(entryRepo, uow, auditSvc, entryRepo, policy, clk)
 	reportSvc := report.NewService(reportSource, policy, clk)
+	planRepo := gormrepo.NewPlanRepository(db)
+	planSvc := plan.NewService(planRepo, uow, auditSvc, reportSvc, policy, clk)
 	onboardingSvc := onboarding.NewService(onboardingRepo)
 	if cfg.EmailAPIKey != "" {
 		endpoint := cfg.EmailAPIURL
@@ -122,6 +125,7 @@ func BuildServer(cfg Config) (http.Handler, *gorm.DB, error) {
 		TeamService:    teamSvc,
 		EntryService:   entrySvc,
 		ReportService:  reportSvc,
+		PlanService:    planSvc,
 	})
 
 	// Inbound Transport: HTTP API
@@ -133,6 +137,7 @@ func BuildServer(cfg Config) (http.Handler, *gorm.DB, error) {
 		TeamService:       teamSvc,
 		EntryService:      entrySvc,
 		ReportService:     reportSvc,
+		PlanService:       planSvc,
 		AuditService:      auditSvc,
 		OnboardingService: onboardingSvc,
 		OAuthProvider:     oauthProvider,

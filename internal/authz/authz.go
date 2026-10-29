@@ -36,6 +36,8 @@ const (
 	ActionViewUsers      Action = "ActionViewUsers"
 	ActionViewAudit      Action = "ActionViewAudit"
 	ActionViewReport     Action = "ActionViewReport"
+	ActionViewPlan       Action = "ActionViewPlan"
+	ActionManagePlan     Action = "ActionManagePlan"
 )
 
 // IsWrite reports whether the action mutates state.
@@ -48,7 +50,8 @@ func (a Action) IsWrite() bool {
 		ActionManageProject, "project:manage",
 		ActionRestoreProject, "project:restore",
 		ActionManageTeam, "team:manage",
-		ActionManageUsers, "users:manage", "user:manage":
+		ActionManageUsers, "users:manage", "user:manage",
+		ActionManagePlan, "plan:manage":
 		return true
 	default:
 		return false
@@ -69,6 +72,12 @@ type ProjectResource struct {
 
 // TeamResource models a team target for authorization checks.
 type TeamResource struct {
+	TeamID uint
+}
+
+// PlanResource models a plan cell target: a person on a project's team.
+type PlanResource struct {
+	UserID uint
 	TeamID uint
 }
 
@@ -249,6 +258,29 @@ func (e *PolicyEngine) Check(ctx context.Context, p *auth.Principal, action Acti
 			if pr, ok := toProjectResource(res); ok && pr.TeamID != 0 && !p.LeadsTeam(pr.TeamID) {
 				return ErrForbidden
 			}
+			return nil
+		}
+		return ErrForbidden
+
+	case ActionViewPlan, "plan:view":
+		// Every signed-in member may read a plan board; the domain service
+		// narrows people and cells to what the caller may see.
+		return nil
+
+	case ActionManagePlan, "plan:manage":
+		pr, ok := res.(PlanResource)
+		if !ok {
+			if ptr, isPtr := res.(*PlanResource); isPtr && ptr != nil {
+				pr, ok = *ptr, true
+			}
+		}
+		if !ok {
+			return ErrForbidden
+		}
+		if p.IsAdmin() {
+			return nil
+		}
+		if p.HasRole("lead") && p.LeadsTeam(pr.TeamID) {
 			return nil
 		}
 		return ErrForbidden

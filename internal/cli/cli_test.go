@@ -29,6 +29,10 @@ type fakeClient struct {
 	stopped  *client.Entry
 	audit    []client.AuditEvent
 
+	planIn   client.PlanCellInput
+	seedIn   client.SeedPlanInput
+	repeatIn client.RepeatPlanInput
+
 	startErr   error
 	deleted    uint
 	revoked    uint
@@ -343,5 +347,59 @@ func TestReadPasswordFallsBackWhenNotATerminal(t *testing.T) {
 	got, err := a.readPassword(bufio.NewReader(a.In))
 	if err != nil || got != "secret" {
 		t.Fatalf("readPassword = %q, %v, want secret", got, err)
+	}
+}
+
+func (f *fakeClient) Plan(client.PlanQuery) (*client.PlanBoard, error) {
+	return &client.PlanBoard{}, nil
+}
+
+func (f *fakeClient) SetPlan(in client.PlanCellInput) (*client.PlanCell, error) {
+	f.planIn = in
+	return &client.PlanCell{
+		UserID: in.UserID, ProjectID: in.ProjectID, WeekStart: in.WeekStart, Hours: in.Hours,
+	}, nil
+}
+
+func (f *fakeClient) SeedPlan(in client.SeedPlanInput) (*client.PlanSummary, error) {
+	f.seedIn = in
+	return &client.PlanSummary{Filled: 2, Skipped: 1}, nil
+}
+
+func (f *fakeClient) RepeatPlan(in client.RepeatPlanInput) (*client.PlanSummary, error) {
+	f.repeatIn = in
+	return &client.PlanSummary{Filled: 1}, nil
+}
+
+// TestPlanSetParsesAnISOWeek turns "2026-W46" into that week's Monday, which is
+// what the API stores; a date in the middle of a week works too.
+func TestPlanSetParsesAnISOWeek(t *testing.T) {
+	f := &fakeClient{
+		me:       client.Me{ID: 1, Email: "lead@example.com", IsAdmin: true},
+		users:    []client.User{{ID: 2, Email: "ana@example.com", Name: "Ana"}},
+		projects: []client.Project{{ID: 10, Name: "Timeline"}},
+	}
+	a, out, errOut := newTestApp(f)
+
+	if code := a.Run([]string{"plan", "set", "ana@example.com", "Timeline", "--week", "2026-W46", "--hours", "20"}); code != 0 {
+		t.Fatalf("exit %d: %s", code, errOut.String())
+	}
+	if f.planIn.WeekStart != "2026-11-09" || f.planIn.Hours != 20 || f.planIn.UserID != 2 || f.planIn.ProjectID != 10 {
+		t.Fatalf("plan input = %+v", f.planIn)
+	}
+	if !strings.Contains(out.String(), "2026-W46") {
+		t.Fatalf("output = %q", out.String())
+	}
+}
+
+func TestPlanSeedRequiresBothMonths(t *testing.T) {
+	f := &fakeClient{me: client.Me{ID: 1, IsAdmin: true}}
+	a, _, errOut := newTestApp(f)
+
+	if code := a.Run([]string{"plan", "seed", "--from", "2026-10"}); code != 2 {
+		t.Fatalf("exit %d, want usage error 2", code)
+	}
+	if !strings.Contains(errOut.String(), "plan seed") {
+		t.Fatalf("stderr = %q", errOut.String())
 	}
 }

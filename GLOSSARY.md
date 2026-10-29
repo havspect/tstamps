@@ -133,8 +133,16 @@ One column of a report: a day in an entry's timezone, an ISO week, or a calendar
 _Avoid_: period, column, interval
 
 **Report**:
-Totals of logged time, grouped by project and by person, over days, weeks or months.
+Totals of logged time, grouped by project and by person, over days, weeks or months. It looks only backwards, at hours logged.
 _Avoid_: dashboard, stats, analytics
+
+**Capacity**:
+The hours a person can work in one week, defaulting to a full workweek and set per person.
+_Avoid_: availability, FTE, utilization, headcount
+
+**Plan**:
+The hours a lead or admin intends a person to spend on a project in one week, chosen in advance and distinct from hours logged.
+_Avoid_: forecast, projection, budget, allocation, estimate
 
 **Timezone**:
 A user's own IANA zone. A default for undated queries and display; it does not decide which day an entry falls into.

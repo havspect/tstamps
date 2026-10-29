@@ -14,6 +14,7 @@ type userResponse struct {
 	Email              string `json:"email"`
 	Name               string `json:"name"`
 	Timezone           string `json:"timezone"`
+	WeeklyHours        int    `json:"weekly_hours"`
 	IsAdmin            bool   `json:"is_admin"`
 	Active             bool   `json:"active"`
 	MustChangePassword bool   `json:"must_change_password"`
@@ -28,6 +29,7 @@ func toUserResponse(u *user.User) userResponse {
 		Email:              u.Email,
 		Name:               u.Name,
 		Timezone:           u.Timezone,
+		WeeklyHours:        u.WeeklyHours,
 		IsAdmin:            u.IsAdmin,
 		Active:             u.Active,
 		MustChangePassword: u.MustChangePassword,
@@ -40,10 +42,11 @@ type userListOutput struct {
 
 type userCreateInput struct {
 	Body struct {
-		Email    string `json:"email" required:"true" format:"email"`
-		Name     string `json:"name" required:"true"`
-		Timezone string `json:"timezone,omitempty"`
-		IsAdmin  bool   `json:"is_admin,omitempty"`
+		Email       string `json:"email" required:"true" format:"email"`
+		Name        string `json:"name" required:"true"`
+		Timezone    string `json:"timezone,omitempty"`
+		WeeklyHours int    `json:"weekly_hours,omitempty" doc:"Hours per week this person can work. Defaults to 40."`
+		IsAdmin     bool   `json:"is_admin,omitempty"`
 	}
 }
 
@@ -57,10 +60,11 @@ type userCreateOutput struct {
 type userUpdateInput struct {
 	ID   uint `path:"id"`
 	Body struct {
-		Name     *string `json:"name,omitempty"`
-		Timezone *string `json:"timezone,omitempty"`
-		IsAdmin  *bool   `json:"is_admin,omitempty"`
-		Active   *bool   `json:"active,omitempty"`
+		Name        *string `json:"name,omitempty"`
+		Timezone    *string `json:"timezone,omitempty"`
+		WeeklyHours *int    `json:"weekly_hours,omitempty"`
+		IsAdmin     *bool   `json:"is_admin,omitempty"`
+		Active      *bool   `json:"active,omitempty"`
 	}
 }
 
@@ -136,10 +140,11 @@ func (s *Server) createUser(ctx context.Context, in *userCreateInput) (*userCrea
 	}
 
 	u, pass, err := s.deps.UserService.CreateUser(ctx, user.CreateInput{
-		Email:    in.Body.Email,
-		Name:     in.Body.Name,
-		Timezone: in.Body.Timezone,
-		IsAdmin:  in.Body.IsAdmin,
+		Email:       in.Body.Email,
+		Name:        in.Body.Name,
+		Timezone:    in.Body.Timezone,
+		WeeklyHours: in.Body.WeeklyHours,
+		IsAdmin:     in.Body.IsAdmin,
 	})
 	if err != nil {
 		return nil, fail(err)
@@ -157,11 +162,12 @@ func (s *Server) updateUser(ctx context.Context, in *userUpdateInput) (*userUpda
 	}
 
 	u, err := s.deps.UserService.UpdateUser(ctx, user.UpdateInput{
-		ID:       in.ID,
-		Name:     in.Body.Name,
-		Timezone: in.Body.Timezone,
-		IsAdmin:  in.Body.IsAdmin,
-		Active:   in.Body.Active,
+		ID:          in.ID,
+		Name:        in.Body.Name,
+		Timezone:    in.Body.Timezone,
+		WeeklyHours: in.Body.WeeklyHours,
+		IsAdmin:     in.Body.IsAdmin,
+		Active:      in.Body.Active,
 	})
 	if err != nil {
 		return nil, fail(err)

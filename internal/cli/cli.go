@@ -42,6 +42,11 @@ type Client interface {
 	Report(q client.ReportQuery) (*client.Report, error)
 	ReportCSV(q client.ReportQuery) ([]byte, error)
 
+	Plan(q client.PlanQuery) (*client.PlanBoard, error)
+	SetPlan(in client.PlanCellInput) (*client.PlanCell, error)
+	SeedPlan(in client.SeedPlanInput) (*client.PlanSummary, error)
+	RepeatPlan(in client.RepeatPlanInput) (*client.PlanSummary, error)
+
 	ListTokens() ([]client.Token, error)
 	CreateToken(name string) (*client.Token, error)
 	RevokeToken(id uint) error
@@ -116,6 +121,8 @@ func (a *App) Run(args []string) int {
 		return a.teams(rest)
 	case "report":
 		return a.report(rest)
+	case "plan":
+		return a.plan(rest)
 	case "tokens":
 		return a.tokens(rest)
 	case "audit":

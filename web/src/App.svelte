@@ -10,6 +10,7 @@
   import NotFound from './pages/NotFound.svelte'
   import Password from './pages/Password.svelte'
   import Reports from './pages/Reports.svelte'
+  import Plan from './pages/Plan.svelte'
   import WorkspaceSelect from './pages/WorkspaceSelect.svelte'
   import Timeline from './pages/Timeline.svelte'
   import Signup from './pages/Signup.svelte'
@@ -30,6 +31,7 @@
     '/signup/verify': SignupVerify,
     '/timeline': Timeline,
     '/reports': Reports,
+    '/plan': Plan,
     '/admin/users': AdminUsers,
     '/admin/teams': AdminTeams,
     '/admin/projects': AdminProjects,
@@ -128,6 +130,7 @@
     {#if user && !session.mustChangePassword}
       <nav>
         <Link href="/timeline">Timeline</Link>
+        <Link href="/plan">Plan</Link>
         {#if user.is_admin || leads}
           <Link href="/reports">Reports</Link>
         {/if}
@@ -144,7 +147,7 @@
     {/if}
   </header>
 
-  <main class:wide={router.path === '/timeline' || router.path === '/reports'}>
+  <main class:wide={router.path === '/timeline' || router.path === '/reports' || router.path === '/plan'}>
     {#if ready && allowed}
       <Page />
     {/if}

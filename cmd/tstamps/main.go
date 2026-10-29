@@ -63,6 +63,11 @@ client (needs a token from "tstamps login"):
   teams                      list teams (--json)
   teams members <team>       list a team's members
   report                     hours totals (--from, --to, --by, --json, --csv)
+  plan                       planned hours by person, project and week
+  plan set <person> <project> --week 2026-W46 --hours 20
+  plan rm <person> <project> --week 2026-W46
+  plan seed --from 2026-10 --into 2026-11 [--dry-run]
+  plan repeat --week 2026-W46 --weeks 4 [--dry-run]
   tokens create|ls|rm        manage personal API tokens
   audit                      role-based changes (--from, --to, --actor, --action, --json)
   mcp                        MCP server on stdio

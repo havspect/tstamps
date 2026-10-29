@@ -9,7 +9,7 @@
     hint = '',
     children,
     ...rest
-  }: Omit<HTMLSelectAttributes, 'value'> & {
+  }: Omit<HTMLSelectAttributes, 'value' | 'size'> & {
     label: string
     id: string
     value?: string
@@ -23,6 +23,7 @@
   {label}
   hint={hint || undefined}
   {value}
+  size="s"
   oninput={(event) => (value = event.currentTarget.value)}
   {...rest}
 >

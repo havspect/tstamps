@@ -293,6 +293,40 @@ tstamps report --from 2026-10-19 --to 2026-10-26 --csv | Set-Content -Encoding u
 
 `--json` and `--csv` are mutually exclusive. `--by none` returns one row for the whole range.
 
+## plan
+
+Planned hours by person, project and ISO week, against each person's weekly capacity. With no dates the range is next month. `--team`, `--user`, `--json`.
+
+`plan set <person> <project> --week 2026-W46 --hours 20` writes one cell; `--hours 0` clears it. The week may be given as an ISO week or any date in it. `plan seed --from 2026-10 --into 2026-11` fills a month from the previous month's logged hours, and `plan repeat --week 2026-W46 --weeks 4` copies one week forward. Both fill empty cells only, take `--dry-run`, and print how many cells they filled and skipped.
+
+A lead may plan people of their teams onto their teams' projects; an admin may plan anything. A week that has ended refuses writes. See [Plan](./plan.md).
+
+::: code-group
+```sh [Linux]
+tstamps plan --from 2026-11-01 --to 2026-12-01 --team Platform
+tstamps plan set ana@example.com Timeline --week 2026-W46 --hours 20
+tstamps plan rm ana@example.com Timeline --week 2026-W46
+tstamps plan seed --from 2026-10 --into 2026-11 --dry-run
+tstamps plan repeat --week 2026-W46 --weeks 4
+```
+
+```sh [macOS]
+tstamps plan --from 2026-11-01 --to 2026-12-01 --team Platform
+tstamps plan set ana@example.com Timeline --week 2026-W46 --hours 20
+tstamps plan rm ana@example.com Timeline --week 2026-W46
+tstamps plan seed --from 2026-10 --into 2026-11 --dry-run
+tstamps plan repeat --week 2026-W46 --weeks 4
+```
+
+```powershell [Windows]
+tstamps plan --from 2026-11-01 --to 2026-12-01 --team Platform
+tstamps plan set ana@example.com Timeline --week 2026-W46 --hours 20
+tstamps plan rm ana@example.com Timeline --week 2026-W46
+tstamps plan seed --from 2026-10 --into 2026-11 --dry-run
+tstamps plan repeat --week 2026-W46 --weeks 4
+```
+:::
+
 ## audit
 
 The workspace's audit log, newest first; admin only. `--from` and `--to` are dates (`from` inclusive, `to` exclusive). `--actor EMAIL`, `--action NAME`, `--target-type TYPE`, `--target-id N`, `--limit N` (default 200, at most 1000), `--json`.

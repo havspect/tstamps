@@ -21,14 +21,16 @@ declare module 'svelte/elements' {
       variant?: 'brand' | 'neutral' | 'success' | 'warning' | 'danger'
       appearance?: 'accent' | 'filled' | 'outlined' | 'plain' | 'filled-outlined'
     }
-    'wa-input': HTMLInputAttributes & {
+    'wa-input': Omit<HTMLInputAttributes, 'size'> & {
       label?: string
       hint?: string
       'with-clear'?: boolean
+      size?: 'xs' | 's' | 'm' | 'l' | 'xl' | 'small' | 'medium' | 'large'
     }
-    'wa-select': HTMLSelectAttributes & {
+    'wa-select': Omit<HTMLSelectAttributes, 'size'> & {
       label?: string
       hint?: string
+      size?: 'xs' | 's' | 'm' | 'l' | 'xl' | 'small' | 'medium' | 'large'
     }
     'wa-option': HTMLAttributes<HTMLElement> & {
       value?: string
@@ -39,8 +41,9 @@ declare module 'svelte/elements' {
       label?: string
       hint?: string
     }
-    'wa-checkbox': HTMLInputAttributes & {
+    'wa-checkbox': Omit<HTMLInputAttributes, 'size'> & {
       hint?: string
+      size?: 'xs' | 's' | 'm' | 'l' | 'xl' | 'small' | 'medium' | 'large'
     }
     'wa-dialog': HTMLAttributes<HTMLElement> & {
       label?: string

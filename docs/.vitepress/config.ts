@@ -31,6 +31,7 @@ export default defineConfig({
         items: [
           { text: 'Timeline', link: '/timeline' },
           { text: 'Reports', link: '/reports' },
+          { text: 'Plan', link: '/plan' },
           { text: 'CLI reference', link: '/cli' },
         ],
       },

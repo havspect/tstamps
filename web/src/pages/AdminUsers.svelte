@@ -18,12 +18,14 @@
   let email = $state('')
   let name = $state('')
   let timezone = $state('UTC')
+  let weeklyHours = $state('40')
   let isAdmin = $state(false)
   let createPending = $state(false)
 
   let editing = $state<number | null>(null)
   let editName = $state('')
   let editTimezone = $state('')
+  let editWeekly = $state('40')
   let editAdmin = $state(false)
   let editActive = $state(false)
   let savePending = $state(false)
@@ -47,13 +49,14 @@
     createPending = true
     try {
       const { data, error: problem, response } = await api.POST('/api/v1/users', {
-        body: { email, name, timezone, is_admin: isAdmin },
+        body: { email, name, timezone, weekly_hours: Number(weeklyHours), is_admin: isAdmin },
       })
       if (problem) throw new Error(problemMessage(problem, response))
       if (data) notice = { who: email, password: data.initial_password }
       email = ''
       name = ''
       timezone = 'UTC'
+      weeklyHours = '40'
       isAdmin = false
       await load()
     } catch (err) {
@@ -71,6 +74,7 @@
     editing = user.id
     editName = user.name
     editTimezone = user.timezone
+    editWeekly = String(user.weekly_hours)
     editAdmin = user.is_admin
     editActive = user.active
   }
@@ -82,7 +86,7 @@
     try {
       const { error: problem, response } = await api.PATCH('/api/v1/users/{id}', {
         params: { path: { id: user.id } },
-        body: { name: editName, timezone: editTimezone, is_admin: editAdmin, active: editActive },
+        body: { name: editName, timezone: editTimezone, weekly_hours: Number(editWeekly), is_admin: editAdmin, active: editActive },
       })
       if (problem) throw new Error(problemMessage(problem, response))
       editing = null
@@ -152,6 +156,7 @@
   <Input id="new-email" label="Email" type="email" bind:value={email} required autocomplete="off" />
   <Input id="new-name" label="Name" bind:value={name} required />
   <Input id="new-timezone" label="Timezone" bind:value={timezone} required />
+  <Input id="new-weekly" label="Hours/week" type="number" min="0" max="168" bind:value={weeklyHours} required />
   <Input id="new-admin" label="Admin" type="checkbox" bind:checked={isAdmin} />
   <Button type="submit" disabled={createPending}>
     {createPending ? 'Creating…' : 'Create user'}
@@ -170,6 +175,7 @@
           <th scope="col">Email</th>
           <th scope="col">Name</th>
           <th scope="col">Timezone</th>
+          <th scope="col">Hours/week</th>
           <th scope="col">Admin</th>
           <th scope="col">Active</th>
           <th scope="col">Password</th>
@@ -182,6 +188,7 @@
             <td>{user.email}</td>
             <td>{user.name}</td>
             <td>{user.timezone}</td>
+            <td>{user.weekly_hours}</td>
             <td>{user.is_admin ? 'yes' : 'no'}</td>
             <td>{user.active ? 'yes' : 'no'}</td>
             <td>
@@ -206,13 +213,22 @@
           </tr>
           {#if editing === user.id}
             <tr>
-              <td colspan="7">
+              <td colspan="8">
                 <form class="toolbar" onsubmit={(event) => save(event, user)}>
                   <Input id={`edit-name-${user.id}`} label="Name" bind:value={editName} required />
                   <Input
                     id={`edit-timezone-${user.id}`}
                     label="Timezone"
                     bind:value={editTimezone}
+                    required
+                  />
+                  <Input
+                    id={`edit-weekly-${user.id}`}
+                    label="Hours/week"
+                    type="number"
+                    min="0"
+                    max="168"
+                    bind:value={editWeekly}
                     required
                   />
                   <Input

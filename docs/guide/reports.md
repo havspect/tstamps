@@ -1,6 +1,6 @@
 # Reports
 
-Open `/w/{slug}/reports` after signing in. Reports are read-only.
+Open `/w/{slug}/reports` after signing in. Reports are read-only. To look forward instead of back, use [Plan](./plan.md).
 
 - A **lead** reads every hour booked on projects owned by a team they lead, whoever logged it, plus their own entries.
 - An **admin** reads everything.

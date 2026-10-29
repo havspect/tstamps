@@ -31,6 +31,9 @@ var (
 
 	// ErrPasswordTooShort indicates the new password has fewer than 8 characters.
 	ErrPasswordTooShort = errors.New("password must be at least 8 characters")
+
+	// ErrInvalidWeeklyHours indicates capacity outside 0–168 hours.
+	ErrInvalidWeeklyHours = errors.New("weekly hours must be between 0 and 168")
 )
 
 // User represents an identity within a workspace.
@@ -41,6 +44,7 @@ type User struct {
 	Name               string
 	PasswordHash       string
 	Timezone           string
+	WeeklyHours        int
 	IsAdmin            bool
 	Active             bool
 	MustChangePassword bool
@@ -79,19 +83,21 @@ type Profile struct {
 
 // CreateInput contains parameters for creating a new user.
 type CreateInput struct {
-	Email    string
-	Name     string
-	Timezone string
-	IsAdmin  bool
+	Email       string
+	Name        string
+	Timezone    string
+	WeeklyHours int
+	IsAdmin     bool
 }
 
 // UpdateInput contains parameters for updating user details.
 type UpdateInput struct {
-	ID       uint
-	Name     *string
-	Timezone *string
-	IsAdmin  *bool
-	Active   *bool
+	ID          uint
+	Name        *string
+	Timezone    *string
+	WeeklyHours *int
+	IsAdmin     *bool
+	Active      *bool
 }
 
 // Repository defines storage operations for users, sessions, and tokens.
