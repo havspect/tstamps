@@ -12,3 +12,6 @@ web/src/lib/api/schema.d.ts
 web/e2e/.state.json
 web/test-results/
 web/playwright-report/
+# The operator's own legal pages, never committed.
+deploy/legal/demo/imprint.html
+deploy/legal/demo/privacy.html

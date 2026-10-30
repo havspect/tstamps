@@ -105,8 +105,7 @@ hand:
 ```sh
 sudo install -d -o tstamps -g tstamps -m 0700 /var/lib/tstamps-demo
 sudo install -d -o tstamps -g tstamps -m 0750 /var/lib/tstamps-demo/legal
-sudo install -m 0644 deploy/legal/demo/imprint.html deploy/legal/demo/privacy.html \
-  /var/lib/tstamps-demo/legal/
+sudo install -m 0644 imprint.html privacy.html /var/lib/tstamps-demo/legal/
 sudo install -m 0644 deploy/tstamps-demo.service /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable --now tstamps-demo
@@ -115,9 +114,8 @@ sudo systemctl enable --now tstamps-demo
 Its unit runs `tstamps-server serve --demo --addr 127.0.0.1:8081 --db
 /var/lib/tstamps-demo/demo.db --legal-dir /var/lib/tstamps-demo/legal`; add the
 `demo.` host from the Caddyfile and point it at port 8081. Nothing in that
-database is worth backing up. `deploy/legal/demo` holds the demo operator's
-Impressum and privacy notice, not a template; replace them if you run the demo
-for your own organisation.
+database is worth backing up. The demo's Impressum and privacy notice are the
+operator's own pages, kept out of the repository; supply your own pair.
 
 At boot the server creates a workspace with the slug `demo` and seeds three
 accounts, all with the password `demo`:
