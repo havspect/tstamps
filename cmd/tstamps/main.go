@@ -60,8 +60,8 @@ client (needs a token from "tstamps login"):
   projects                   list projects (--all, --json)
   projects add               create a project (--team, --color)
   projects archive <id>      archive a project
-  teams                      list teams (--json)
-  teams members <team>       list a team's members
+  teams                      list teams (admin or team lead; --json)
+  teams members <team>       list a team's members (admin or team lead)
   report                     hours totals (--from, --to, --by, --json, --csv)
   plan                       planned hours by person, project and week
   plan set <person> <project> --week 2026-W46 --hours 20

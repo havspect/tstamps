@@ -1,7 +1,9 @@
 package cli
 
 import (
+	"errors"
 	"fmt"
+	"net/http"
 	"strconv"
 	"strings"
 
@@ -29,7 +31,7 @@ func (a *App) teams(args []string) int {
 	}
 	teams, err := c.ListTeams()
 	if err != nil {
-		return a.fail("teams", err)
+		return a.teamsListError("teams", err)
 	}
 	if *asJSON {
 		return a.writeJSON(teams)
@@ -65,7 +67,7 @@ func (a *App) teamsMembers(args []string) int {
 	}
 	teams, err := c.ListTeams()
 	if err != nil {
-		return a.fail("teams members", err)
+		return a.teamsListError("teams members", err)
 	}
 	team, err := findTeam(teams, ref)
 	if err != nil {
@@ -79,6 +81,17 @@ func (a *App) teamsMembers(args []string) int {
 	}
 	_ = w.Flush()
 	return 0
+}
+
+// teamsListError explains the 403 a plain member gets: only admins and team
+// leads may list teams.
+func (a *App) teamsListError(cmd string, err error) int {
+	var ce *client.Error
+	if errors.As(err, &ce) && ce.StatusCode == http.StatusForbidden {
+		fmt.Fprintf(a.Err, "tstamps %s: listing teams needs an admin or a team lead\n", cmd)
+		return 1
+	}
+	return a.fail(cmd, err)
 }
 
 // findTeam matches a team by name, then by id.

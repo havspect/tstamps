@@ -236,7 +236,7 @@ tstamps rm 42
 
 ## Projects and teams
 
-`projects --all` includes archived projects and needs an admin. `projects add` needs the team you lead, or an admin.
+`projects --all` includes archived projects and needs an admin. `projects add` needs the team you lead, or an admin. `teams` and `teams members` need an admin or a team lead; a member still sees their own teams in `whoami`.
 
 ::: code-group
 ```sh [Linux]

@@ -19,6 +19,7 @@ type fakeClient struct {
 	me       client.Me
 	projects []client.Project
 	teams    []client.Team
+	teamsErr error
 	users    []client.User
 	entries  []client.Entry
 	report   client.Report
@@ -93,7 +94,7 @@ func (f *fakeClient) PatchProject(id uint, p client.ProjectPatch) (*client.Proje
 	return &client.Project{ID: id, Name: "Timeline", ArchivedAt: &archived}, nil
 }
 
-func (f *fakeClient) ListTeams() ([]client.Team, error) { return f.teams, nil }
+func (f *fakeClient) ListTeams() ([]client.Team, error) { return f.teams, f.teamsErr }
 
 func (f *fakeClient) ListUsers() ([]client.User, error) { return f.users, nil }
 
