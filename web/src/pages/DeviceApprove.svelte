@@ -23,7 +23,7 @@
     error = ''
     pending = true
     try {
-      const res = await fetch(`${router.base}/api/v1/auth/device/approve`, {
+      const res = await fetch(`${router.base}/api/v1/auth/device/verify`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'same-origin',

@@ -234,8 +234,16 @@ func (s *Server) authenticateBearer(ctx context.Context, rawToken string) (*auth
 
 	// 2. Try OAuth access token via oauthProvider.IntrospectToken
 	if s.deps.OAuthProvider != nil {
+		introspectCtx := ctx
+		if _, ok := gormrepo.WorkspaceIDFrom(ctx); !ok {
+			sig := s.deps.OAuthProvider.Strategy().AccessTokenSignature(ctx, rawToken)
+			var at gormrepo.OAuthAccessToken
+			if err := s.deps.DB.WithContext(bypassCtx).Where("signature_hash = ?", sig).First(&at).Error; err == nil && at.WorkspaceID > 0 {
+				introspectCtx = gormrepo.WithWorkspaceID(ctx, at.WorkspaceID)
+			}
+		}
 		sess := oauth.NewSession(0, "", "")
-		tokenType, accessReq, err := s.deps.OAuthProvider.IntrospectToken(ctx, rawToken, oauth.AccessToken, sess)
+		tokenType, accessReq, err := s.deps.OAuthProvider.IntrospectToken(introspectCtx, rawToken, oauth.AccessToken, sess)
 		if err == nil && tokenType == oauth.AccessToken && sess.UserID > 0 {
 			var u gormrepo.User
 			if err := s.deps.DB.WithContext(bypassCtx).First(&u, sess.UserID).Error; err == nil && u.Active {
