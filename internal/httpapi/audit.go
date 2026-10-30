@@ -52,8 +52,8 @@ func toAuditEventResponse(e *audit.AuditEvent) auditEventResponse {
 }
 
 type auditQueryInput struct {
-	From        string `query:"from" doc:"Start time, RFC 3339"`
-	To          string `query:"to" doc:"End time, RFC 3339"`
+	From        string `query:"from" doc:"Start date, YYYY-MM-DD or RFC 3339"`
+	To          string `query:"to" doc:"End date, YYYY-MM-DD or RFC 3339"`
 	ActorUserID uint   `query:"actor_user_id" doc:"Filter by actor user ID"`
 	Action      string `query:"action" doc:"Filter by action"`
 	TargetType  string `query:"target_type" doc:"Filter by target type"`
@@ -77,6 +77,14 @@ func (s *Server) auditRoutes(api huma.API) {
 	}, s.listAudit)
 }
 
+// parseAuditBound accepts the YYYY-MM-DD dates the CLI sends (UTC midnight) and RFC 3339 timestamps.
+func parseAuditBound(v string) (time.Time, error) {
+	if t, err := time.Parse("2006-01-02", v); err == nil {
+		return t, nil
+	}
+	return time.Parse(time.RFC3339, v)
+}
+
 func (s *Server) listAudit(ctx context.Context, in *auditQueryInput) (*auditQueryOutput, error) {
 	if s.deps.AuditService == nil {
 		return nil, problem(http.StatusServiceUnavailable, urnUnavailable, "audit service not available")
@@ -91,17 +99,17 @@ func (s *Server) listAudit(ctx context.Context, in *auditQueryInput) (*auditQuer
 	}
 
 	if in.From != "" {
-		f, err := time.Parse(time.RFC3339, in.From)
+		f, err := parseAuditBound(in.From)
 		if err != nil {
-			return nil, problem(http.StatusUnprocessableEntity, urnInvalidInput, "invalid from format")
+			return nil, problem(http.StatusUnprocessableEntity, urnInvalidInput, "from must be a YYYY-MM-DD date or an RFC 3339 timestamp")
 		}
 		filter.From = f
 	}
 
 	if in.To != "" {
-		t, err := time.Parse(time.RFC3339, in.To)
+		t, err := parseAuditBound(in.To)
 		if err != nil {
-			return nil, problem(http.StatusUnprocessableEntity, urnInvalidInput, "invalid to format")
+			return nil, problem(http.StatusUnprocessableEntity, urnInvalidInput, "to must be a YYYY-MM-DD date or an RFC 3339 timestamp")
 		}
 		filter.To = t
 	}
