@@ -14,10 +14,11 @@ import (
 )
 
 type fakeRepo struct {
-	cells    map[string]*Plan
-	people   map[uint]*Person
-	projects map[uint]*Project
-	nextID   uint
+	cells     map[string]*Plan
+	people    map[uint]*Person
+	projects  map[uint]*Project
+	vacations []Vacation
+	nextID    uint
 }
 
 func newFakeRepo() *fakeRepo {
@@ -122,6 +123,40 @@ func (r *fakeRepo) Upsert(_ context.Context, p *Plan) error {
 func (r *fakeRepo) Delete(_ context.Context, userID, projectID uint, week time.Time) error {
 	delete(r.cells, cellKey(userID, projectID, week))
 	return nil
+}
+
+func (r *fakeRepo) ListVacations(_ context.Context, f VacationFilter) ([]Vacation, error) {
+	var out []Vacation
+	for _, v := range r.vacations {
+		if f.UserID != 0 && v.UserID != f.UserID {
+			continue
+		}
+		if !f.From.IsZero() && v.EndDate.Before(Date(f.From)) {
+			continue
+		}
+		if !f.To.IsZero() && !v.StartDate.Before(Date(f.To)) {
+			continue
+		}
+		out = append(out, v)
+	}
+	return out, nil
+}
+
+func (r *fakeRepo) CreateVacation(_ context.Context, v *Vacation) error {
+	v.ID = r.nextID
+	r.nextID++
+	r.vacations = append(r.vacations, *v)
+	return nil
+}
+
+func (r *fakeRepo) DeleteVacation(_ context.Context, id, userID uint) error {
+	for i, v := range r.vacations {
+		if v.ID == id && v.UserID == userID {
+			r.vacations = append(r.vacations[:i], r.vacations[i+1:]...)
+			return nil
+		}
+	}
+	return ErrNotFound
 }
 
 type fakeUOW struct{}
@@ -359,5 +394,151 @@ func TestListNarrowsToTheLeadsTeamsAndSumsOtherLoad(t *testing.T) {
 	}
 	if len(board.Other) != 1 || board.Other[0].Hours != 6 {
 		t.Fatalf("other = %+v", board.Other)
+	}
+}
+
+func TestVacationHoursCountWorkingDaysAndPartialEdges(t *testing.T) {
+	week := time.Date(2026, 11, 2, 0, 0, 0, 0, time.UTC) // Monday
+	// Wednesday to Sunday, 4 hours on Wednesday: Thursday and Friday are full
+	// days, Saturday and Sunday never count.
+	got := VacationHours(week, 40, []Vacation{{
+		StartDate:  time.Date(2026, 11, 4, 0, 0, 0, 0, time.UTC),
+		EndDate:    time.Date(2026, 11, 8, 0, 0, 0, 0, time.UTC),
+		StartHours: 4,
+	}})
+	if got != 20 {
+		t.Fatalf("VacationHours = %v, want 20", got)
+	}
+	// Monday to Friday with a partial first and last day.
+	got = VacationHours(week, 40, []Vacation{{
+		StartDate: week, EndDate: week.AddDate(0, 0, 4), StartHours: 6, EndHours: 4,
+	}})
+	if got != 34 {
+		t.Fatalf("partial-edge VacationHours = %v, want 34", got)
+	}
+	if got := VacationHours(week, 40, []Vacation{{
+		StartDate: week.AddDate(0, 0, 5), EndDate: week.AddDate(0, 0, 6), StartHours: 8,
+	}}); got != 0 {
+		t.Fatalf("weekend-only VacationHours = %v, want 0", got)
+	}
+	if got := VacationHours(week, 40, []Vacation{{
+		StartDate: week.AddDate(0, 0, 1), EndDate: week.AddDate(0, 0, 1), StartHours: 4,
+	}}); got != 4 {
+		t.Fatalf("one-day VacationHours = %v, want 4", got)
+	}
+	if got := WeeklyCapacity(40, 40); got != 0 {
+		t.Fatalf("full week off capacity = %d, want 0", got)
+	}
+	if got := WeeklyCapacity(40, 20); got != 20 {
+		t.Fatalf("half week off capacity = %d, want 20", got)
+	}
+	if got := WeeklyCapacity(37, 22.2); got != 15 {
+		t.Fatalf("rounded capacity = %d, want 15", got)
+	}
+}
+
+func TestListReducesCapacityByVacation(t *testing.T) {
+	now := time.Date(2026, 10, 29, 12, 0, 0, 0, time.UTC)
+	f := newFixture(now)
+	week := time.Date(2026, 11, 2, 0, 0, 0, 0, time.UTC)
+	f.repo.vacations = []Vacation{{
+		ID: 1, UserID: 2,
+		StartDate:  week.AddDate(0, 0, 2),
+		EndDate:    week.AddDate(0, 0, 4), // Wednesday to Friday
+		StartHours: 4, EndHours: 8,
+	}}
+
+	board, err := f.svc.List(leadCtx(1, 1), Filter{From: week, To: week.AddDate(0, 0, 7)})
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	byUser := map[uint]PersonWeek{}
+	for _, pw := range board.PersonWeeks {
+		byUser[pw.UserID] = pw
+	}
+	if got := byUser[2]; got.VacationHours != 20 || got.Capacity != 20 {
+		t.Fatalf("Bo's week = %+v, want 20 vacation hours and 20 capacity", got)
+	}
+	if got := byUser[1]; got.VacationHours != 0 || got.Capacity != 40 {
+		t.Fatalf("Ana's week = %+v, want no vacation and 40 hours", got)
+	}
+}
+
+func TestAddAndDeleteOwnVacation(t *testing.T) {
+	now := time.Date(2026, 10, 29, 12, 0, 0, 0, time.UTC)
+	f := newFixture(now)
+	ctx := leadCtx(2, 1)
+
+	v, err := f.svc.AddVacation(ctx, VacationInput{
+		StartDate:  time.Date(2026, 11, 4, 15, 0, 0, 0, time.UTC),
+		EndDate:    time.Date(2026, 11, 6, 9, 0, 0, 0, time.UTC),
+		StartHours: 4,
+		EndHours:   8,
+		Note:       "  family trip  ",
+	})
+	if err != nil {
+		t.Fatalf("AddVacation: %v", err)
+	}
+	if v.UserID != 2 || v.Note != "family trip" || v.StartDate.Format("2006-01-02") != "2026-11-04" ||
+		v.StartHours != 4 || v.EndHours != 8 || v.User != "Bo" {
+		t.Fatalf("vacation = %+v", v)
+	}
+	if _, err := f.svc.AddVacation(ctx, VacationInput{
+		StartDate: v.StartDate, EndDate: v.EndDate, StartHours: 8, EndHours: 8,
+	}); !errors.Is(err, ErrVacationOverlap) {
+		t.Fatalf("overlap: %v", err)
+	}
+	if _, err := f.svc.AddVacation(ctx, VacationInput{
+		StartDate: v.EndDate, EndDate: v.StartDate, StartHours: 8, EndHours: 8,
+	}); !errors.Is(err, ErrInvalidVacation) {
+		t.Fatalf("backwards range: %v", err)
+	}
+	if _, err := f.svc.AddVacation(ctx, VacationInput{
+		StartDate:  time.Date(2026, 11, 9, 0, 0, 0, 0, time.UTC),
+		EndDate:    time.Date(2026, 11, 9, 0, 0, 0, 0, time.UTC),
+		StartHours: 9,
+	}); !errors.Is(err, ErrInvalidVacation) {
+		t.Fatalf("more than one working day: %v", err)
+	}
+	if _, err := f.svc.AddVacation(ctx, VacationInput{
+		StartDate:  time.Date(2026, 11, 9, 0, 0, 0, 0, time.UTC),
+		EndDate:    time.Date(2026, 11, 9, 0, 0, 0, 0, time.UTC),
+		StartHours: 4.25,
+	}); !errors.Is(err, ErrInvalidVacation) {
+		t.Fatalf("more than one decimal: %v", err)
+	}
+
+	if err := f.svc.DeleteVacation(leadCtx(1, 1), v.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("deleted another user's vacation: %v", err)
+	}
+	if err := f.svc.DeleteVacation(ctx, v.ID); err != nil {
+		t.Fatalf("DeleteVacation: %v", err)
+	}
+	vacations, err := f.svc.ListVacations(ctx, VacationQuery{})
+	if err != nil || len(vacations) != 0 {
+		t.Fatalf("after delete: %v, %+v", err, vacations)
+	}
+}
+
+func TestLeadReadsTeamVacationsOnly(t *testing.T) {
+	now := time.Date(2026, 10, 29, 12, 0, 0, 0, time.UTC)
+	f := newFixture(now)
+	ctx := leadCtx(2, 1)
+	if _, err := f.svc.AddVacation(ctx, VacationInput{
+		StartDate:  time.Date(2026, 11, 9, 0, 0, 0, 0, time.UTC),
+		EndDate:    time.Date(2026, 11, 9, 0, 0, 0, 0, time.UTC),
+		StartHours: 8,
+	}); err != nil {
+		t.Fatalf("AddVacation: %v", err)
+	}
+
+	// Ana leads Platform, which Bo belongs to.
+	vacations, err := f.svc.ListVacations(leadCtx(1, 1), VacationQuery{UserID: 2})
+	if err != nil || len(vacations) != 1 || vacations[0].User != "Bo" {
+		t.Fatalf("lead read: %v, %+v", err, vacations)
+	}
+	// Cid leads Design, not Platform.
+	if _, err := f.svc.ListVacations(leadCtx(3, 2), VacationQuery{UserID: 2}); !errors.Is(err, authz.ErrForbidden) {
+		t.Fatalf("foreign lead read: %v", err)
 	}
 }

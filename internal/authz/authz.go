@@ -38,6 +38,7 @@ const (
 	ActionViewReport     Action = "ActionViewReport"
 	ActionViewPlan       Action = "ActionViewPlan"
 	ActionManagePlan     Action = "ActionManagePlan"
+	ActionManageVacation Action = "ActionManageVacation"
 )
 
 // IsWrite reports whether the action mutates state.
@@ -51,7 +52,8 @@ func (a Action) IsWrite() bool {
 		ActionRestoreProject, "project:restore",
 		ActionManageTeam, "team:manage",
 		ActionManageUsers, "users:manage", "user:manage",
-		ActionManagePlan, "plan:manage":
+		ActionManagePlan, "plan:manage",
+		ActionManageVacation, "vacation:manage":
 		return true
 	default:
 		return false
@@ -79,6 +81,11 @@ type TeamResource struct {
 type PlanResource struct {
 	UserID uint
 	TeamID uint
+}
+
+// VacationResource models a time-off range owned by one user.
+type VacationResource struct {
+	UserID uint
 }
 
 // Authorizer decides whether a principal may perform an action on a resource within a context.
@@ -130,6 +137,18 @@ func toTeamResource(res any) (TeamResource, bool) {
 		}
 	}
 	return TeamResource{}, false
+}
+
+func toVacationResource(res any) (VacationResource, bool) {
+	switch r := res.(type) {
+	case VacationResource:
+		return r, true
+	case *VacationResource:
+		if r != nil {
+			return *r, true
+		}
+	}
+	return VacationResource{}, false
 }
 
 // Check evaluates whether principal p is authorized to perform action on resource res.
@@ -286,6 +305,13 @@ func (e *PolicyEngine) Check(ctx context.Context, p *auth.Principal, action Acti
 			return nil
 		}
 		return ErrForbidden
+
+	case ActionManageVacation, "vacation:manage":
+		vr, ok := toVacationResource(res)
+		if !ok || vr.UserID == 0 || vr.UserID != p.UserID {
+			return ErrForbidden
+		}
+		return nil
 
 	default:
 		return ErrForbidden

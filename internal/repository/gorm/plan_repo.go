@@ -268,3 +268,73 @@ func (r *PlanRepository) Delete(ctx context.Context, userID, projectID uint, wee
 	return db.Where("user_id = ? AND project_id = ? AND week_start = ?", userID, projectID, weekStart).
 		Delete(&Plan{}).Error
 }
+
+// ListVacations returns time off overlapping a date range, newest first.
+func (r *PlanRepository) ListVacations(ctx context.Context, filter plan.VacationFilter) ([]plan.Vacation, error) {
+	db := DBFrom(ctx, r.db)
+	q := db.Model(&Vacation{})
+	if filter.UserID != 0 {
+		q = q.Where("user_id = ?", filter.UserID)
+	}
+	if !filter.From.IsZero() {
+		q = q.Where("end_date >= ?", plan.Date(filter.From))
+	}
+	if !filter.To.IsZero() {
+		q = q.Where("start_date < ?", plan.Date(filter.To))
+	}
+	var rows []Vacation
+	if err := q.Order("start_date DESC, id DESC").Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	out := make([]plan.Vacation, len(rows))
+	for i, row := range rows {
+		out[i] = plan.Vacation{
+			ID:          row.ID,
+			WorkspaceID: row.WorkspaceID,
+			UserID:      row.UserID,
+			StartDate:   row.StartDate,
+			EndDate:     row.EndDate,
+			StartHours:  row.StartHours,
+			EndHours:    row.EndHours,
+			Note:        row.Note,
+			CreatedAt:   row.CreatedAt,
+			UpdatedAt:   row.UpdatedAt,
+		}
+	}
+	return out, nil
+}
+
+// CreateVacation stores one time-off range.
+func (r *PlanRepository) CreateVacation(ctx context.Context, v *plan.Vacation) error {
+	db := DBFrom(ctx, r.db)
+	row := &Vacation{
+		WorkspaceID: v.WorkspaceID,
+		UserID:      v.UserID,
+		StartDate:   v.StartDate,
+		EndDate:     v.EndDate,
+		StartHours:  v.StartHours,
+		EndHours:    v.EndHours,
+		Note:        v.Note,
+		CreatedAt:   v.CreatedAt,
+		UpdatedAt:   v.UpdatedAt,
+	}
+	if err := db.Create(row).Error; err != nil {
+		return err
+	}
+	v.ID = row.ID
+	return nil
+}
+
+// DeleteVacation removes one of a user's ranges. Another user's row is reported
+// as missing so an id cannot be probed.
+func (r *PlanRepository) DeleteVacation(ctx context.Context, id, userID uint) error {
+	db := DBFrom(ctx, r.db)
+	res := db.Where("id = ? AND user_id = ?", id, userID).Delete(&Vacation{})
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return plan.ErrNotFound
+	}
+	return nil
+}

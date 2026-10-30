@@ -49,7 +49,7 @@ Three audiences, one page:
 - No hosted-availability claim. The managed path is marked “coming soon” and
   links only to the GitHub repository: no price, uptime figure, waitlist, signup
   flow, email address or launch date.
-- No marketing claims the specification cannot keep: approvals, leave and
+- No marketing claims the specification cannot keep: approvals, public
   holidays, invoicing and rates, SSO, billing, a mobile app, reminders,
   realtime co-editing. The audit log is shipped, so it is no longer in that
   list.
@@ -322,10 +322,11 @@ Motion: a single 500ms rise on the hero copy and image, and a slow pulse on the
 - Intro: “Tstamps is not trying to run your whole company. If you need the list
   on the right, choose something else — and that is the point.”
 - Left (it does): timeline logging with one running entry · plan by person,
-  project and week · reports with plan drift, and My hours · CLI, remote MCP and
-  an agent skill · entry timezones that decide the day · audit log of role-based
-  changes · several workspaces, one database.
-- Right (it does not): approvals, leave and holidays · invoicing and rates · SSO,
+  project and week · vacations that lower plan capacity · reports with plan
+  drift, and My hours · CLI, remote MCP and an agent skill · entry timezones
+  that decide the day · audit log of role-based changes · several workspaces,
+  one database.
+- Right (it does not): approvals and public holidays · invoicing and rates · SSO,
   billing and a mobile app · reminders and notifications · realtime co-editing.
 - Footer of section: “What it does and does not do is in the specification.”
 

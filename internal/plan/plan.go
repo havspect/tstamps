@@ -5,6 +5,7 @@ package plan
 
 import (
 	"errors"
+	"math"
 	"time"
 )
 
@@ -21,6 +22,12 @@ var (
 	ErrUnknownMonth = errors.New("month must be YYYY-MM")
 	// ErrInvalidRange is returned when a board range is empty or backwards.
 	ErrInvalidRange = errors.New("from and to must form a range")
+	// ErrInvalidVacation is returned for a vacation that ends before it starts,
+	// is longer than a year, or has hours outside its working day.
+	ErrInvalidVacation = errors.New("vacation must be a date range of at most 366 days with hours inside one working day")
+	// ErrVacationOverlap is returned when a vacation covers a date another one
+	// already covers.
+	ErrVacationOverlap = errors.New("vacation overlaps another vacation")
 )
 
 const (
@@ -30,6 +37,8 @@ const (
 	DefaultWeeklyHours = 40
 	// MaxRepeatWeeks bounds one repeat call.
 	MaxRepeatWeeks = 52
+	// MaxVacationDays bounds one vacation range.
+	MaxVacationDays = 366
 )
 
 // Plan is one cell: a person, a project, an ISO week and a number of hours.
@@ -58,6 +67,25 @@ func (p *Plan) AuditFields() map[string]any {
 		"week_start":   p.WeekStart.Format("2006-01-02"),
 		"hours":        p.Hours,
 	}
+}
+
+// Vacation is a user's time off. Its dates are plain calendar dates in the
+// user's timezone. StartHours and EndHours are the hours off on the first and
+// last date (zero when that date is a weekend); interior working days take a
+// full day. User and Email are filled when a list is read for display.
+type Vacation struct {
+	ID          uint
+	WorkspaceID uint
+	UserID      uint
+	User        string
+	Email       string
+	StartDate   time.Time
+	EndDate     time.Time
+	StartHours  float64
+	EndHours    float64
+	Note        string
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
 }
 
 // TeamRef names one team a person belongs to.
@@ -98,12 +126,21 @@ type OtherHours struct {
 	Hours     int
 }
 
+// PersonWeek is one person's capacity in one ISO week after vacation.
+type PersonWeek struct {
+	UserID        uint
+	WeekStart     time.Time
+	Capacity      int
+	VacationHours float64
+}
+
 // Board is one range of planning data.
 type Board struct {
-	Weeks  []time.Time
-	People []Person
-	Cells  []Cell
-	Other  []OtherHours
+	Weeks       []time.Time
+	People      []Person
+	Cells       []Cell
+	Other       []OtherHours
+	PersonWeeks []PersonWeek
 }
 
 // Summary reports what a bulk write did.
@@ -117,6 +154,69 @@ type Summary struct {
 func WeekStart(t time.Time) time.Time {
 	t = time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, time.UTC)
 	return t.AddDate(0, 0, -((int(t.Weekday()) + 6) % 7))
+}
+
+// Date drops the time of day, keeping the calendar date in UTC.
+func Date(t time.Time) time.Time {
+	y, m, d := t.Date()
+	return time.Date(y, m, d, 0, 0, 0, 0, time.UTC)
+}
+
+// IsWorkingDay reports whether t is Monday to Friday.
+func IsWorkingDay(t time.Time) bool {
+	weekday := t.Weekday()
+	return weekday != time.Saturday && weekday != time.Sunday
+}
+
+// DailyHours is one working day of a person's capacity. A person with no
+// capacity set gets an eight-hour day so their own part-day entry still
+// validates; their weekly capacity stays zero.
+func DailyHours(weeklyHours int) float64 {
+	if weeklyHours <= 0 {
+		return 8
+	}
+	return float64(weeklyHours) / 5
+}
+
+// VacationHours counts the hours off in the Monday-to-Friday week that start one
+// of the vacations. The first and last dates use their own hours when they are
+// working days; the working days between them take a full day. Weekends never
+// count, and a vacation outside the week contributes nothing.
+func VacationHours(weekStart time.Time, weeklyHours int, vacations []Vacation) float64 {
+	daily := DailyHours(weeklyHours)
+	total := 0.0
+	for offset := 0; offset < 5; offset++ {
+		day := WeekStart(weekStart).AddDate(0, 0, offset)
+		for _, v := range vacations {
+			start, end := Date(v.StartDate), Date(v.EndDate)
+			if day.Before(start) || day.After(end) {
+				continue
+			}
+			switch {
+			case start.Equal(end), day.Equal(start):
+				total += v.StartHours
+			case day.Equal(end):
+				total += v.EndHours
+			default:
+				total += daily
+			}
+			break
+		}
+	}
+	return total
+}
+
+// WeeklyCapacity is a person's hours for one week after vacation, rounded to the
+// nearest hour and never below zero.
+func WeeklyCapacity(weeklyHours int, vacationHours float64) int {
+	if weeklyHours <= 0 {
+		return 0
+	}
+	remaining := float64(weeklyHours) - vacationHours
+	if remaining < 0 {
+		remaining = 0
+	}
+	return int(math.Round(remaining))
 }
 
 // WeeksIn lists the Mondays in [from, to). A week belongs to the month its

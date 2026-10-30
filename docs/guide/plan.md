@@ -29,8 +29,16 @@ Bulk actions fill empty cells only and tell you how many they skipped. Nothing i
 - A week that has ended, measured in the planned person's timezone, is frozen and refuses writes. Current and future weeks accept them.
 - Archived projects keep their existing plan hours, labelled as archived, but cannot take new ones.
 - A deactivated person keeps their row only while they still have plan hours in the range.
-- Capacity is a number per person on **Admin → Users**, defaulting to 40 hours. Leave and holidays are not tracked, so treat the unallocated row as an upper bound.
+- Capacity is a number per person on **Admin → Users**, defaulting to 40 hours. A [vacation](./vacations.md) lowers it by the working time it covers, so the unallocated row accounts for time off.
 - Every cell a lead or admin writes is an audit event, one per cell, including the cells a seed or repeat fills.
+
+## Vacations
+
+Every user records their own time off under **Vacations** in the top bar. A vacation is an inclusive range of dates with hours on its first and last date; the working days between them are full days. Only Monday-to-Friday time counts, so a range across a weekend does not change the board. A week cell whose person is away is marked `vac` and shows the reduced capacity, and planning over it is allowed but flagged like any other crunch.
+
+A lead can switch the **Vacations** page to a person in a team they lead and read the dates, hours and note. That view is read-only: only the owner writes a vacation.
+
+A vacation is not logged time. It never appears in reports, CSV exports or the timeline.
 
 ## Without a browser
 
@@ -42,4 +50,4 @@ tstamps plan seed --from 2026-10 --into 2026-11 --dry-run
 tstamps plan repeat --week 2026-W46 --weeks 4 --dry-run
 ```
 
-`--dry-run` on a bulk prints exactly what it would fill and writes nothing. `--json` on any of them prints the machine-readable shape. Agents reach the same operations through the `get_plan`, `set_plan`, `seed_plan` and `repeat_plan` MCP tools. See the [CLI reference](./cli.md).
+`--dry-run` on a bulk prints exactly what it would fill and writes nothing. `--json` on any of them prints the machine-readable shape. The capacity total in `tstamps plan` uses the same vacation-adjusted weeks as the board. Vacations are added in the web UI; the CLI and MCP tools do not expose them yet. Agents reach the same operations through the `get_plan`, `set_plan`, `seed_plan` and `repeat_plan` MCP tools. See the [CLI reference](./cli.md).

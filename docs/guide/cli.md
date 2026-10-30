@@ -295,11 +295,11 @@ tstamps report --from 2026-10-19 --to 2026-10-26 --csv | Set-Content -Encoding u
 
 ## plan
 
-Planned hours by person, project and ISO week, against each person's weekly capacity. With no dates the range is next month. `--team`, `--user`, `--json`.
+Planned hours by person, project and ISO week, against each person's vacation-adjusted weekly capacity. With no dates the range is next month. `--team`, `--user`, `--json`.
 
 `plan set <person> <project> --week 2026-W46 --hours 20` writes one cell; `--hours 0` clears it. The week may be given as an ISO week or any date in it. `plan seed --from 2026-10 --into 2026-11` fills a month from the previous month's logged hours, and `plan repeat --week 2026-W46 --weeks 4` copies one week forward. Both fill empty cells only, take `--dry-run`, and print how many cells they filled and skipped.
 
-A lead may plan people of their teams onto their teams' projects; an admin may plan anything. A week that has ended refuses writes. See [Plan](./plan.md).
+A lead may plan people of their teams onto their teams' projects; an admin may plan anything. A week that has ended refuses writes. See [Plan](./plan.md). Vacations are added and read in the web UI or REST API, not from the CLI.
 
 ::: code-group
 ```sh [Linux]

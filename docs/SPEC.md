@@ -11,13 +11,14 @@ In v1:
 - Users log hours on a personal timeline, with one running entry at a time.
 - Leads create projects for their teams and read hours logged on those projects.
 - Leads and admins plan the next weeks: how many hours each person will spend on which project, by ISO week, against each person's weekly capacity ([ADR-0022](./adr/0022-plan-is-not-an-entry.md)).
+- Users record their own vacations, with partial first and last days; the plan board lowers their capacity for the working time the vacation covers. Leads read their teams' vacations and admins read every vacation ([ADR-0023](./adr/0023-vacation-is-not-an-entry.md)).
 - Admins manage users, teams, memberships, and restore deleted data.
 - Reports per person / project / day or week, plus CSV.
 - A REST API, a CLI, and an MCP server (stdio), all over the same HTTP API.
 - An operator may host several workspaces on one server, each with its own slug and rows scoped by `workspace_id` ([ADR-0019](./adr/0019-workspaces-share-one-sqlite-file.md)).
 - A server may offer self-service signup: an email owner verifies the address, then creates a workspace and becomes its first admin ([ADR-0014](./adr/0014-self-service-workspace-signup.md)).
 
-Out of v1, deliberately: approvals, leave and holidays, invoicing and rates, reminders and notifications, mobile app, screenshots, Jira/Linear sync, realtime multi-user editing, project budgets, a team-wide timeline, SSO, i18n, drafting entries from coding-agent session history, billing, and workspace suspension or deletion workflows.
+Out of v1, deliberately: approvals, public holidays, invoicing and rates, reminders and notifications, mobile app, screenshots, Jira/Linear sync, realtime multi-user editing, project budgets, a team-wide timeline, SSO, i18n, drafting entries from coding-agent session history, billing, and workspace suspension or deletion workflows.
 
 ## Roles
 
@@ -29,6 +30,8 @@ A user has exactly one of two global states — admin or not — plus zero or mo
 | Read own hours | yes | yes | yes |
 | Read hours on their teams' projects | no | yes | yes |
 | Read own plan | yes | yes | yes |
+| Add, read and remove own vacations | yes | yes | yes |
+| Read team members' vacations | no | their teams | all |
 | Read and write plans on their teams' projects | no | yes | yes |
 | Create / edit / archive projects | no | their teams | all |
 | Manage teams and memberships | no | no | yes |
@@ -49,6 +52,7 @@ team_memberships(id, team_id, user_id, role, created_at)         unique(team_id,
 projects(id, team_id, name, color, created_at, updated_at, archived_at)
 entries(id, user_id, project_id, start_at, end_at, timezone, note, created_at, updated_at, deleted_at)
 plans(id, user_id, project_id, week_start, hours, created_at, updated_at)     unique(user_id, project_id, week_start)
+vacations(id, user_id, start_date, end_date, start_hours, end_hours, note, created_at, updated_at)
 sessions(id, user_id, token_hash, expires_at, created_at)
 api_tokens(id, user_id, name, token_hash, created_at, last_used_at, revoked_at)
 audit_events(id, at, actor_user_id, actor_token_id, actor_role, action, target_type, target_id, changes)
@@ -77,6 +81,7 @@ Rules the store enforces, with tests:
 - A lead may plan people of a team they lead onto a project of a team they lead, but on nobody else's project or person. A member may write no plan at all.
 - Every plan cell write, including each cell a seed or repeat fills, is an audit event committed with it, because the write rests on a role rather than on ownership ([ADR-0013](./adr/0013-audit-role-actions.md)).
 - `users.weekly_hours` is `0–168`, defaults to 40, and only an admin changes it.
+- A vacation is an inclusive range of plain dates owned by one user, at most 366 days long, with `start_hours` on its first date and `end_hours` on its last. A one-day vacation uses only `start_hours`. Only Monday-to-Friday time counts: each working day between the edges removes `weekly_hours / 5`, the edges remove their own hours, and the week's capacity is the weekly hours minus those hours, rounded to the nearest hour and never below zero. Edge hours are above zero and at most one working day, in 0.1-hour steps; a weekend edge stores zero. Weekends and public holidays never count. A new range that overlaps an existing one for the same person is `409 vacation-overlap`; the user deletes or re-adds instead of editing. Only the owner adds or deletes; a lead reads their teams' vacations and an admin reads every vacation. A vacation is not an entry and does not appear in a report, CSV, timeline or entry list, and changing one is not an audit event.
 
 Email comparison is case-insensitive; emails are stored lowercased.
 
@@ -115,7 +120,7 @@ Errors are RFC 9457 problem+json. The stable machine-readable code lives in the 
 | --- | --- | --- |
 | POST | `/auth/login` | email + password, sets session cookie |
 | POST | `/auth/logout` | clears session |
-| GET | `/me` | current user, memberships, admin flag |
+| GET | `/me` | current user, weekly hours, memberships, admin flag |
 | POST | `/me/password` | change own password |
 | GET/POST | `/me/tokens` | list / create personal API tokens |
 | DELETE | `/me/tokens/{id}` | revoke |
@@ -138,10 +143,12 @@ Errors are RFC 9457 problem+json. The stable machine-readable code lives in the 
 | POST | `/timer/stop` | ends at now, optional note |
 | GET | `/reports?from&to&by=week\|day\|month\|none[&team_id][&user_id][&project_id]` | aggregated seconds |
 | GET | `/reports.csv` | same filters, entry-per-day rows |
-| GET | `/plan?from&to[&team_id][&user_id]` | planned hours per person, project and ISO week, with capacity and the weeks of the range |
+| GET | `/plan?from&to[&team_id][&user_id]` | planned hours per person, project and ISO week, with capacity, vacation hours and the weeks of the range |
 | PUT | `/plan` | set one cell `{user_id, project_id, week_start, hours}`; 0 deletes it |
 | POST | `/plan/seed` | fill a month from the previous month's logged hours `{from_month, into_month, team_id, dry_run}` |
 | POST | `/plan/repeat` | copy one week's plan into the following weeks `{week_start, weeks, team_id, user_id, project_id, dry_run}` |
+| GET/POST | `/vacations[?user_id]` | list readable time off, or add the caller's own `{start_date, end_date, start_hours, end_hours?, note}`; `end_hours` is omitted for a one-day vacation |
+| DELETE | `/vacations/{id}` | remove one of the caller's own vacations |
 | GET | `/audit?from&to[&actor_user_id][&action][&target_type][&target_id][&limit]` | admin: role-based actions, newest first |
 | GET | `/healthz` | database reachability + schema version |
 | GET | `/openapi.json` | OpenAPI 3.1 document, generated from handlers |
@@ -215,6 +222,8 @@ tstamps version
 
 Times without a date mean today in the machine's timezone. Durations are accepted as `1h30m`. Exit codes: 0 ok, 1 error, 2 usage.
 
+Vacations are not in the CLI or the MCP catalogue in this version; the web page and REST API own them. The CLI's plan capacity total still uses the vacation-adjusted weeks from the API.
+
 ## MCP
 
 `tstamps mcp` speaks MCP over stdio and uses the same config and token as the CLI. Tools mirror the API, with read tools annotated read-only:
@@ -230,7 +239,8 @@ Svelte 5 + Vite, built to static assets and embedded with `go:embed`. The SPA ca
 - **/timeline** — personal canvas timeline, infinite horizontally, wheel to zoom (day ↔ week), drag to create, drag edges to retime, drag body to move, click to edit project and note, running entry pinned at "now", overlaps marked, project colors, 15-minute snap with `Alt` for 1-minute precision, `space` start/stop, `n` new, `Esc` cancel, `Delete` remove.
 - **/my-hours** — the same numbers for the caller alone: a stacked bar chart, one bar per bucket coloured by project, over the same project × bucket table with a total column, over the same presets, Day | Week | Month switch and CSV. Everyone; the chart's table is its accessible copy. Always one person's own entries, whatever the role — the team-wide picture stays on /reports.
 - **/reports** — a summary strip (total hours, people who logged, average per person, busiest project and its share) over one table: projects as rows, one column per day, ISO week or calendar month across the range, plus a total column; rows ordered by hours, biggest first, with a grand total row at the bottom. Click a project to unfold one line per person. On week and month columns a planned cell shows its plan drift below the logged hours (logged minus planned, positive for more than planned), and a project that was planned but logged nothing keeps a `0m` row. A weekly plan is spread evenly over its seven days, so week and month columns agree. A Day | Week | Month switch, a range preset (this week / last week / this month / custom) that picks the granularity, a team filter when more than one team is readable, and CSV. Read-only; leads and admins only.
-- **/plan** — the forward-looking board, for leads and admins: one row per person for a chosen week, month or quarter, one column per ISO week, each cell a stacked bar of planned projects in their timeline colors, capacity and unallocated hours at the edges, and a By person | By project switch over the same cells. Hours are always per week, whatever the range. In By project the project rows expand to their team's members, each cell set the same way; archived projects and their members stay read-only. Click a cell to set hours per project. **Seed from last month** (month view only) and **repeat week** fill empty cells only and say how many they skipped. A member sees their own row read-only.
+- **/vacations** — time off: everyone adds their own inclusive date range, with hours on the first and last date and an optional note, and deletes a wrong one. A lead can switch the person filter to a member of a team they lead; an admin can read anyone. A member sees only their own vacations.
+- **/plan** — the forward-looking board, for leads and admins: one row per person for a chosen week, month or quarter, one column per ISO week, each cell a stacked bar of planned projects in their timeline colors, capacity (lower in vacation weeks and marked `vac`) and unallocated hours at the edges, and a By person | By project switch over the same cells. Hours are always per week, whatever the range. In By project the project rows expand to their team's members, each cell set the same way; archived projects and their members stay read-only. Click a cell to set hours per project. **Seed from last month** (month view only) and **repeat week** fill empty cells only and say how many they skipped. A member sees their own row read-only.
 =======
 - **/my-hours** — the same numbers for the caller alone: a stacked bar chart, one bar per bucket coloured by project, over the same project × bucket table with a total column, over the same presets, Day | Week | Month switch and CSV. Everyone; the chart's table is its accessible copy. Always one person's own entries, whatever the role — the team-wide picture stays on /reports.
 - **/reports** — a summary strip (total hours, people who logged, average per person, busiest project and its share) over one table: projects as rows, one column per day, ISO week or calendar month across the range, plus a total column; rows ordered by hours, biggest first, with a grand total row at the bottom. Click a project to unfold one line per person. A Day | Week | Month switch, a range preset (this week / last week / this month / custom) that picks the granularity, a team filter when more than one team is readable, and CSV. Read-only; leads and admins only.
@@ -282,7 +292,7 @@ One build pipeline, in this order: `go run ./cmd/tstamps-server openapi > web/op
 `go test ./...` must pass offline, with no external services.
 
 - **entry/report unit tests** — local-midnight splits, DST spring-forward and fall-back, ISO week edges around New Year, calendar month edges, 14-hour padding, overlap detection, CSV escaping.
-- **plan unit tests** — the 0–168 bound, 0 deleting a cell, the frozen-week rule at the person's midnight, seed splitting a month evenly and filling only empty cells, repeat never overwriting, and a lead's read seeing only their teams' cells with the rest summed as "other".
+- **plan unit tests** — the 0–168 bound, 0 deleting a cell, the frozen-week rule at the person's midnight, seed splitting a month evenly and filling only empty cells, repeat never overwriting, and a lead's read seeing only their teams' cells with the rest summed as "other". Vacation tests count working days, partial edges and weekends, reject overlaps, cap edge hours at one working day, and prove a board week loses capacity.
 - **store tests** — `AutoMigrate` on an empty temp-dir database, a second boot being a no-op, the schema version being recorded and a newer one refused, the partial index actually rejecting a second running entry, archived-project filtering, deleted-entry exclusion, soft delete and restore, and a backup that can be opened with the rows intact.
 - **API tests** — `httptest` with the full router; table-driven permission matrix (member / lead of that team / lead of another team / admin) over every endpoint; session and bearer auth incl. expired and revoked; range validation; 409 on double start; `/healthz` failing when the database is gone; security headers; the request body cap; the access-log line. One test asserts `/openapi.json` lists every route in the spec table, so a missing Huma registration fails CI.
 - **CLI tests** — subcommands against a fake `client.Interface`. The `e2e` package builds both binaries, bootstraps a workspace with its first admin, serves on a free port, logs in, creates a project and entry, reads a report and a CSV, plans a week, performs an MCP initialize + tool call over stdio, and runs signup against a stand-in email endpoint.

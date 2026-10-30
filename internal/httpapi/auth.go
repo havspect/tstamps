@@ -24,6 +24,7 @@ type MeResponse struct {
 	Email              string               `json:"email"`
 	Name               string               `json:"name"`
 	Timezone           string               `json:"timezone"`
+	WeeklyHours        int                  `json:"weekly_hours"`
 	IsAdmin            bool                 `json:"is_admin"`
 	MustChangePassword bool                 `json:"must_change_password"`
 	Memberships        []MembershipResponse `json:"memberships"`
@@ -219,6 +220,7 @@ func (s *Server) buildMeResponse(ctx context.Context, u *gormrepo.User) (MeRespo
 		Email:              u.Email,
 		Name:               u.Name,
 		Timezone:           u.Timezone,
+		WeeklyHours:        u.WeeklyHours,
 		IsAdmin:            u.IsAdmin,
 		MustChangePassword: u.MustChangePassword,
 		Memberships:        []MembershipResponse{},

@@ -14,6 +14,7 @@
   import Password from './pages/Password.svelte'
   import Reports from './pages/Reports.svelte'
   import Plan from './pages/Plan.svelte'
+  import Vacations from './pages/Vacations.svelte'
   import WorkspaceSelect from './pages/WorkspaceSelect.svelte'
   import Timeline from './pages/Timeline.svelte'
   import Signup from './pages/Signup.svelte'
@@ -34,6 +35,7 @@
     '/signup/verify': SignupVerify,
     '/timeline': Timeline,
     '/my-hours': MyHours,
+    '/vacations': Vacations,
     '/reports': Reports,
     '/plan': Plan,
     '/admin/users': AdminUsers,
@@ -143,6 +145,7 @@
       <nav>
         <Link href="/timeline">Timeline</Link>
         <Link href="/my-hours">My hours</Link>
+        <Link href="/vacations">Vacations</Link>
         <Link href="/plan">Plan</Link>
         {#if user.is_admin || leads}
           <Link href="/reports">Reports</Link>

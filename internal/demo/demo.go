@@ -148,7 +148,7 @@ func wipe(db *gorm.DB, workspaceID uint) error {
 	for _, model := range []any{
 		&gormrepo.OAuthRefreshToken{}, &gormrepo.OAuthAccessToken{}, &gormrepo.OAuthCode{},
 		&gormrepo.OAuthDeviceCode{}, &gormrepo.OAuthClient{}, &gormrepo.Session{}, &gormrepo.APIToken{},
-		&gormrepo.Plan{}, &gormrepo.Entry{}, &gormrepo.TeamMembership{}, &gormrepo.Project{},
+		&gormrepo.Plan{}, &gormrepo.Vacation{}, &gormrepo.Entry{}, &gormrepo.TeamMembership{}, &gormrepo.Project{},
 		&gormrepo.Team{}, &gormrepo.User{},
 	} {
 		if err := db.Where("workspace_id = ?", workspaceID).Delete(model).Error; err != nil {
