@@ -648,6 +648,16 @@ main.wide {
   z-index: 3;
 }
 
+.draft.blocked {
+  border-color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 20%, transparent);
+}
+
+.entry-block.blocked {
+  outline: 2px solid var(--danger);
+  outline-offset: 1px;
+}
+
 .now-line {
   position: absolute;
   left: 0;

@@ -30,6 +30,7 @@ const (
 	urnLastAdmin              = "urn:tstamps:error:last-admin"
 	urnPasswordChangeRequired = "urn:tstamps:error:password-change-required"
 	urnTimerAlreadyRunning    = "urn:tstamps:error:timer-already-running"
+	urnEntryOverlap           = "urn:tstamps:error:entry-overlap"
 	urnEntryTooLong           = "urn:tstamps:error:entry-too-long"
 	urnPlanWeekFrozen         = "urn:tstamps:error:plan-week-frozen"
 	urnProjectHasEntries      = "urn:tstamps:error:project-has-entries"
@@ -79,6 +80,8 @@ func fail(err error) *huma.ErrorModel {
 	// Conflicts
 	case errors.Is(err, entry.ErrRunningExists):
 		return problem(http.StatusConflict, urnTimerAlreadyRunning, "an entry is already running")
+	case errors.Is(err, entry.ErrOverlap):
+		return problem(http.StatusConflict, urnEntryOverlap, "another entry already covers that time on this project")
 
 	// Domain invariants & validation (422 Unprocessable Entity)
 	case errors.Is(err, entry.ErrForbidden):

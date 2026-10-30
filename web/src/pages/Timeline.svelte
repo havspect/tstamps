@@ -4,7 +4,7 @@
   import type { components } from '../lib/api/schema'
   import { deviceTimezone, formatDuration } from '../lib/format'
   import { session } from '../lib/session.svelte'
-  import { FINE_SNAP, SNAP, clampRange, orderProjects, snap } from '../lib/timeline/layout'
+  import { FINE_SNAP, SNAP, clampRange, findOverlap, orderProjects, snap } from '../lib/timeline/layout'
   import { addDays, instantToWallTime, localDate, wallTimeToInstant, zonedParts } from '../lib/timeline/time'
   import Button from '../lib/ui/Button.svelte'
   import Input from '../lib/ui/Input.svelte'
@@ -82,6 +82,19 @@
   const projectByID = $derived(new Map(projects.map((project) => [project.id, project])))
   const choices = $derived(projects.filter((project) => !project.archived_at))
   const running = $derived(entries.find((entry) => entry.end_at === null) ?? null)
+  // Actual spans, not the day-clipped blocks: the overlap check needs real edges.
+  // A running entry is open-ended, like the server sees it.
+  // shortcut: only the loaded day±1 window is checked, so a panel time outside
+  // it is still caught by the server's 409; load more days if that gap matters.
+  const spans = $derived(
+    entries.map((entry) => ({
+      id: entry.id,
+      projectID: entry.project_id,
+      start: Date.parse(entry.start_at),
+      end: entry.end_at ? Date.parse(entry.end_at) : Number.POSITIVE_INFINITY,
+      entry,
+    })),
+  )
 
   function nameOf(entry: Entry): string {
     return projectByID.get(entry.project_id)?.name ?? `Archived project #${entry.project_id}`
@@ -95,6 +108,10 @@
     return `${nameOf(entry)}, ${f.stamp.format(start)} to ${f.clock.format(end)}${elsewhere} (${formatDuration(
       (end - start) / 1000,
     )})${note}`
+  }
+
+  function describeClash(clash: { entry: Entry; start: number; end: number }): string {
+    return describe(clash.entry, clash.start, Number.isFinite(clash.end) ? clash.end : now)
   }
 
   type Drag =
@@ -122,6 +139,15 @@
       }
 
   let drag = $state<Drag | null>(null)
+
+  const dragClash = $derived.by(() => {
+    const active = drag
+    if (!active || !active.moved) return null
+    const projectID =
+      active.mode === 'create' ? active.projectID : entries.find((entry) => entry.id === active.id)?.project_id
+    if (!projectID) return null
+    return findOverlap(spans, projectID, active.start, active.end, active.mode === 'create' ? 0 : active.id)
+  })
 
   function spanOf(entry: Entry): { start: number; end: number } {
     if (drag && drag.mode !== 'create' && drag.id === entry.id) {
@@ -205,6 +231,30 @@
   let panelTz = $state(tz)
   let panelNote = $state('')
   const panelRunning = $derived(panelEntry !== null && panelEntry.end_at === null)
+  const panelSpan = $derived.by(() => {
+    if (panelMode === null) return null
+    const projectID = Number(panelProject)
+    if (!projectID) return null
+    const start = wallTimeToInstant(panelTz, panelStart)
+    const end = panelRunning ? Number.POSITIVE_INFINITY : wallTimeToInstant(panelTz, panelEnd)
+    return end > start ? { projectID, start, end } : null
+  })
+  // A note-only edit must stay saveable even if the row predates the overlap rule.
+  const panelTouched = $derived.by(() => {
+    if (panelMode === 'new') return true
+    const entry = panelEntry
+    if (!entry) return false
+    if (Number(panelProject) !== entry.project_id) return true
+    if (entry.end_at === null) return false
+    return (
+      panelStart !== instantToWallTime(panelTz, Date.parse(entry.start_at)) ||
+      panelEnd !== instantToWallTime(panelTz, Date.parse(entry.end_at))
+    )
+  })
+  const panelClash = $derived.by(() => {
+    if (!panelSpan || !panelTouched) return null
+    return findOverlap(spans, panelSpan.projectID, panelSpan.start, panelSpan.end, panelEntry?.id ?? 0)
+  })
 
   let requestID = 0
 
@@ -389,11 +439,18 @@
   async function pointerUp() {
     const finished = drag
     if (!finished) return
+    const clash = dragClash
     drag = null
 
     if (!finished.moved) {
       if (finished.mode === 'create') openNew(finished.anchor, finished.anchor + HOUR, finished.projectID)
       else openEditById(finished.id)
+      return
+    }
+
+    if (clash) {
+      if (finished.mode === 'create') openNew(finished.start, finished.end, finished.projectID)
+      else error = `That time overlaps ${describeClash(clash)}.`
       return
     }
 
@@ -762,6 +819,7 @@
                 class="entry-block"
                 class:selected={selectedID === block.entry.id}
                 class:running={!block.entry.end_at}
+                class:blocked={dragClash !== null && drag !== null && drag.mode !== 'create' && drag.id === block.entry.id}
                 role="button"
                 tabindex="0"
                 aria-label={describe(block.entry, block.start, block.end)}
@@ -804,6 +862,7 @@
           {#if draft}
             <div
               class="draft"
+              class:blocked={dragClash !== null}
               style:left={`${draft.x + 6}px`}
               style:width={`${LANE_W - 12}px`}
               style:top={`${draft.top}px`}
@@ -857,6 +916,9 @@
               disabled={pending}
             />
           {/if}
+          {#if panelClash}
+            <p class="error" role="alert">That time overlaps {describeClash(panelClash)}.</p>
+          {/if}
           <Textarea
             id="panel-note"
             label="Note"
@@ -865,7 +927,7 @@
             disabled={pending}
           />
           <div class="row-actions">
-            <Button type="submit" disabled={pending}>
+            <Button type="submit" disabled={pending || panelClash !== null}>
               {pending ? 'Saving…' : 'Save'}
             </Button>
             {#if panelMode === 'edit'}

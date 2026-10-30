@@ -40,7 +40,7 @@ A running entry is retimed by stopping it, not by dragging. To backdate the star
 
 ## Overlaps
 
-Overlapping entries are allowed and both count. The API does not reject them: parallel work is real, and the report sums both.
+Entries on different projects may overlap and both count: parallel work is real, and the report sums both. Two entries on the same project may not overlap in time. While you drag, a clashing draft turns red and is not saved on release; the edit panel names the overlapping entry and keeps **Save** disabled until the time is free. The API enforces the same rule with `409 entry-overlap`.
 
 ## Timezones
 

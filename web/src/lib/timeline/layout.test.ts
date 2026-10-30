@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { FINE_SNAP, SNAP, clampRange, orderProjects, snap, timeToX, xToTime } from './layout'
+import { FINE_SNAP, SNAP, clampRange, findOverlap, orderProjects, snap, timeToX, xToTime } from './layout'
 
 const MIN = 60_000
 const HOUR = 60 * MIN
@@ -94,5 +94,33 @@ describe('orderProjects', () => {
 
   it('follows the remembered order when nothing has time', () => {
     expect(orderProjects([], [7, 2, 7])).toEqual([7, 2])
+  })
+})
+
+describe('findOverlap', () => {
+  const at = (h: number, m = 0) => NOW + h * HOUR + m * MIN
+  const spans = [
+    { id: 1, projectID: 7, start: at(9), end: at(10) },
+    { id: 2, projectID: 7, start: at(11), end: Number.POSITIVE_INFINITY },
+    { id: 3, projectID: 8, start: at(9), end: at(10) },
+  ]
+
+  it('finds a partial or enclosed overlap', () => {
+    expect(findOverlap(spans, 7, at(9, 30), at(10, 30))?.id).toBe(1)
+    expect(findOverlap(spans, 7, at(9, 15), at(9, 45))?.id).toBe(1)
+  })
+
+  it('treats touching edges as free', () => {
+    expect(findOverlap(spans, 7, at(10), at(11))).toBeNull()
+  })
+
+  it('treats a running entry as open-ended', () => {
+    expect(findOverlap(spans, 7, at(15), at(16))?.id).toBe(2)
+    expect(findOverlap(spans, 7, at(8), at(9))).toBeNull()
+  })
+
+  it('ignores other projects and the entry being edited', () => {
+    expect(findOverlap(spans, 7, at(9), at(10), 1)).toBeNull()
+    expect(findOverlap(spans, 9, at(9), at(10))).toBeNull()
   })
 })

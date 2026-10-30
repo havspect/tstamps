@@ -61,7 +61,7 @@ Rules the store enforces, with tests:
 - A user has at most one entry with `end_at IS NULL` and `deleted_at IS NULL` (partial unique index).
 - `end_at > start_at`, and a finished entry is no longer than 24 hours. Stopping a running entry that would exceed 24 hours returns `422 entry-too-long` and leaves it running, so the user picks an end time instead of losing hours.
 - Start and end may not be more than 5 minutes in the future.
-- Overlapping entries are allowed. The timeline marks them; the API does not reject them, because parallel work is real.
+- Entries on different projects may overlap in time, and both count: parallel work is real. Two entries for the same user on the same project may not overlap (`409 entry-overlap`); timer start and stop enforce the same rule.
 - Entries may span midnight; reports split them at the entry's local midnight.
 - Archived projects reject new entries but keep existing ones. Archiving a team archives its projects in the same step; the membership rows stay but grant nothing. A project of an archived team cannot be restored (`422 invalid-input`) until the team is live again.
 - A project's team cannot change once the project has entries (`422 project-has-entries`); while empty it can.

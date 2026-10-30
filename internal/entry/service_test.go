@@ -102,6 +102,12 @@ func (r *fakeRepo) List(ctx context.Context, filter ListFilter) ([]Entry, error)
 		if filter.ProjectID != 0 && e.ProjectID != filter.ProjectID {
 			continue
 		}
+		if filter.From != nil && e.EndAt != nil && !e.EndAt.After(*filter.From) {
+			continue
+		}
+		if filter.To != nil && !e.StartAt.Before(*filter.To) {
+			continue
+		}
 		out = append(out, *e)
 	}
 	return out, nil
@@ -444,5 +450,86 @@ func TestListEntries(t *testing.T) {
 	}
 	if len(adminEntries) != 3 {
 		t.Errorf("expected 3 entries for admin, got %d", len(adminEntries))
+	}
+}
+
+func TestOverlapRules(t *testing.T) {
+	svc, repo, _, projects, clk := newTestService()
+	projects.loggable[2] = true
+	user := &auth.Principal{WorkspaceID: 1, UserID: 10, Roles: []string{"member"}}
+	other := &auth.Principal{WorkspaceID: 1, UserID: 20, Roles: []string{"member"}}
+	admin := &auth.Principal{WorkspaceID: 1, UserID: 99, Roles: []string{"admin"}}
+	ctx := testContext(user)
+
+	start := testNow.Add(-2 * time.Hour)
+	end := start.Add(time.Hour)
+	if _, err := svc.LogEntry(ctx, 1, start, end, "UTC", "first"); err != nil {
+		t.Fatalf("log first: %v", err)
+	}
+
+	// Partial overlap on the same project is rejected.
+	if _, err := svc.LogEntry(ctx, 1, start.Add(30*time.Minute), end.Add(30*time.Minute), "UTC", "clash"); !errors.Is(err, ErrOverlap) {
+		t.Fatalf("overlapping entry: got %v, want ErrOverlap", err)
+	}
+
+	// Adjacent entries are fine, as is the same time on another project or by another user.
+	next, err := svc.LogEntry(ctx, 1, end, end.Add(time.Hour), "UTC", "next")
+	if err != nil {
+		t.Fatalf("adjacent entry: %v", err)
+	}
+	if _, err := svc.LogEntry(ctx, 2, start, end, "UTC", "parallel"); err != nil {
+		t.Fatalf("same time on another project: %v", err)
+	}
+	if _, err := svc.LogEntry(testContext(other), 1, start, end, "UTC", "colleague"); err != nil {
+		t.Fatalf("same time by another user: %v", err)
+	}
+
+	// Moving an entry onto another one on the same project is rejected.
+	movedStart, movedEnd := start.Add(-time.Hour), start.Add(time.Hour)
+	if _, err := svc.PatchEntry(ctx, next.ID, nil, &movedStart, &movedEnd, nil, nil); !errors.Is(err, ErrOverlap) {
+		t.Fatalf("retime onto overlap: got %v, want ErrOverlap", err)
+	}
+
+	// A restored entry may not overlap a live one either.
+	if err := svc.DeleteEntry(ctx, next.ID); err != nil {
+		t.Fatalf("delete next: %v", err)
+	}
+	if _, err := svc.LogEntry(ctx, 1, end.Add(15*time.Minute), end.Add(45*time.Minute), "UTC", "fills the gap"); err != nil {
+		t.Fatalf("log after delete: %v", err)
+	}
+	if _, err := svc.RestoreEntry(testContext(admin), next.ID); !errors.Is(err, ErrOverlap) {
+		t.Fatalf("restore onto overlap: got %v, want ErrOverlap", err)
+	}
+
+	// A running timer may not cover an existing entry on the same project.
+	futureStart := testNow.Add(4 * time.Minute)
+	futureEnd := testNow.Add(5 * time.Minute)
+	if _, err := svc.LogEntry(ctx, 1, futureStart, futureEnd, "UTC", "about to start"); err != nil {
+		t.Fatalf("log future entry: %v", err)
+	}
+	if _, err := svc.StartTimer(ctx, 1, "UTC", "timer"); !errors.Is(err, ErrOverlap) {
+		t.Fatalf("start timer over entry: got %v, want ErrOverlap", err)
+	}
+
+	// Stopping into an entry on the same project is rejected and leaves the timer running.
+	clk.Advance(10 * time.Minute)
+	timer, err := svc.StartTimer(ctx, 1, "UTC", "timer")
+	if err != nil {
+		t.Fatalf("start timer: %v", err)
+	}
+	conflictStart := clk.Now().Add(5 * time.Minute)
+	conflictEnd := conflictStart.Add(15 * time.Minute)
+	if err := repo.Create(context.Background(), &Entry{
+		WorkspaceID: 1, UserID: 10, ProjectID: 1, StartAt: conflictStart, EndAt: &conflictEnd,
+	}); err != nil {
+		t.Fatalf("create conflicting entry: %v", err)
+	}
+	clk.Advance(15 * time.Minute)
+	if _, err := svc.StopTimer(ctx, nil); !errors.Is(err, ErrOverlap) {
+		t.Fatalf("stop timer onto overlap: got %v, want ErrOverlap", err)
+	}
+	running, err := svc.GetRunning(ctx)
+	if err != nil || running == nil || running.ID != timer.ID {
+		t.Fatalf("timer should stay running: got %+v, %v", running, err)
 	}
 }

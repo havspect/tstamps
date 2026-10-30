@@ -25,6 +25,8 @@ var (
 	ErrRetimeRunning = errors.New("a running entry needs an end_at to be retimed")
 	// ErrRunningExists is returned when a write would leave a user with a second running entry.
 	ErrRunningExists = errors.New("user already has a running entry")
+	// ErrOverlap is returned when an entry would overlap another of the user's entries on the same project.
+	ErrOverlap = errors.New("entry overlaps another entry on the same project")
 	// ErrForbidden is returned when an entry belongs to another user.
 	ErrForbidden = errors.New("entry belongs to another user")
 )

@@ -83,6 +83,9 @@ func (s *Service) LogEntry(
 	}
 
 	err = s.uow.Run(ctx, func(txCtx context.Context) error {
+		if err := s.ensureNoOverlap(txCtx, e); err != nil {
+			return err
+		}
 		return s.repo.Create(txCtx, e)
 	})
 	if err != nil {
@@ -164,6 +167,12 @@ func (s *Service) PatchEntry(
 		}
 		e.UpdatedAt = now
 
+		if projectID != nil || start != nil || end != nil {
+			if err := s.ensureNoOverlap(txCtx, e); err != nil {
+				return err
+			}
+		}
+
 		if err := s.repo.Update(txCtx, e); err != nil {
 			return err
 		}
@@ -212,6 +221,10 @@ func (s *Service) RestoreEntry(ctx context.Context, id uint) (*Entry, error) {
 		}
 
 		if err := s.authorizer.Check(txCtx, p, authz.ActionRestoreEntry, authz.EntryResource{UserID: before.UserID, ProjectID: before.ProjectID}); err != nil {
+			return err
+		}
+
+		if err := s.ensureNoOverlap(txCtx, before); err != nil {
 			return err
 		}
 
@@ -283,6 +296,9 @@ func (s *Service) StartTimer(ctx context.Context, projectID uint, tz, note strin
 	}
 
 	err = s.uow.Run(ctx, func(txCtx context.Context) error {
+		if err := s.ensureNoOverlap(txCtx, e); err != nil {
+			return err
+		}
 		createErr := s.repo.Create(txCtx, e)
 		if createErr != nil {
 			if errors.Is(createErr, ErrRunningExists) {
@@ -329,6 +345,10 @@ func (s *Service) StopTimer(ctx context.Context, note *string) (*Entry, error) {
 		}
 		running.UpdatedAt = now
 
+		if err := s.ensureNoOverlap(txCtx, running); err != nil {
+			return err
+		}
+
 		if err := s.repo.Update(txCtx, running); err != nil {
 			return err
 		}
@@ -356,6 +376,22 @@ func (s *Service) GetRunning(ctx context.Context) (*Entry, error) {
 		return nil, err
 	}
 	return running, nil
+}
+
+// ensureNoOverlap rejects an entry that shares any time with another of the
+// user's live entries on the same project. Time on other projects may overlap.
+func (s *Service) ensureNoOverlap(ctx context.Context, e *Entry) error {
+	filter := ListFilter{UserID: e.UserID, ProjectID: e.ProjectID, From: &e.StartAt, To: e.EndAt}
+	existing, err := s.repo.List(ctx, filter)
+	if err != nil {
+		return err
+	}
+	for _, other := range existing {
+		if other.ID != e.ID {
+			return ErrOverlap
+		}
+	}
+	return nil
 }
 
 // ListEntries returns entries matching filter within user's permissions.

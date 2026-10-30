@@ -11,6 +11,7 @@ const urnMessages: Record<string, string> = {
   'invalid-credentials': 'Email or password is incorrect.',
   'password-change-required': 'Change your password before continuing.',
   'timer-already-running': 'A timer is already running. Stop it first.',
+  'entry-overlap': 'Another entry already covers that time on this project.',
   'entry-too-long': 'An entry may not be longer than 24 hours.',
   'last-admin': 'The last active admin cannot be demoted or deactivated.',
   'project-has-entries': 'A project with entries cannot change team.',

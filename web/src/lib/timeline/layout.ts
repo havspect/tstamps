@@ -56,6 +56,24 @@ export function clampRange(
   return { start: lo, end: hi }
 }
 
+export type Span = { id: number; projectID: number; start: number; end: number }
+
+// findOverlap returns the first span on the same project that shares any time
+// with [start, end). A running entry has an end of Infinity, as the API treats it.
+export function findOverlap<T extends Span>(
+  spans: readonly T[],
+  projectID: number,
+  start: number,
+  end: number,
+  excludeID = 0,
+): T | null {
+  return (
+    spans.find(
+      (span) => span.projectID === projectID && span.id !== excludeID && span.start < end && span.end > start,
+    ) ?? null
+  )
+}
+
 // orderProjects lists the lanes of a day: every project with time, in the
 // order its first block starts, then the projects that are shown but empty.
 // Each project appears once.

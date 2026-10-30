@@ -356,3 +356,61 @@ func TestTenancyIsolation(t *testing.T) {
 		t.Fatalf("ws2 listing ws1 entries: len=%d, err=%v", len(listWS2), err)
 	}
 }
+
+func TestEntryListOverlapWindow(t *testing.T) {
+	db := newTestDB(t)
+	repo := NewEntryRepository(db)
+	ctx := context.Background()
+
+	ws := &Workspace{Slug: "overlap"}
+	if err := db.WithContext(ctx).Create(ws).Error; err != nil {
+		t.Fatalf("create workspace: %v", err)
+	}
+	wsCtx := WithWorkspaceID(ctx, ws.ID)
+	user := &User{Email: "u@example.com", Name: "U", PasswordHash: "x"}
+	if err := db.WithContext(wsCtx).Create(user).Error; err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	team := &Team{Name: "T"}
+	if err := db.WithContext(wsCtx).Create(team).Error; err != nil {
+		t.Fatalf("create team: %v", err)
+	}
+	proj := &project.Project{WorkspaceID: ws.ID, TeamID: team.ID, Name: "P", Color: "#000"}
+	if err := NewProjectRepository(db).Create(wsCtx, proj); err != nil {
+		t.Fatalf("create project: %v", err)
+	}
+
+	base := time.Date(2026, 3, 4, 9, 0, 0, 0, time.UTC)
+	end := base.Add(2 * time.Hour)
+	live := &entry.Entry{WorkspaceID: ws.ID, UserID: user.ID, ProjectID: proj.ID, StartAt: base, EndAt: &end}
+	running := &entry.Entry{WorkspaceID: ws.ID, UserID: user.ID, ProjectID: proj.ID, StartAt: base.Add(3 * time.Hour)}
+	deletedAt := base.Add(5 * time.Hour)
+	deleted := &entry.Entry{WorkspaceID: ws.ID, UserID: user.ID, ProjectID: proj.ID, StartAt: base.Add(4 * time.Hour), EndAt: &deletedAt}
+	for _, e := range []*entry.Entry{live, running, deleted} {
+		if err := repo.Create(wsCtx, e); err != nil {
+			t.Fatalf("create entry: %v", err)
+		}
+	}
+	del := base.Add(6 * time.Hour)
+	if err := repo.SoftDelete(wsCtx, deleted.ID, del); err != nil {
+		t.Fatalf("soft delete: %v", err)
+	}
+
+	from, to := base.Add(time.Hour), base.Add(90*time.Minute)
+	got, err := repo.List(wsCtx, entry.ListFilter{UserID: user.ID, ProjectID: proj.ID, From: &from, To: &to})
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if len(got) != 1 || got[0].ID != live.ID {
+		t.Fatalf("overlap window: got %+v, want only the live entry", got)
+	}
+
+	from = base.Add(2 * time.Hour)
+	got, err = repo.List(wsCtx, entry.ListFilter{UserID: user.ID, ProjectID: proj.ID, From: &from})
+	if err != nil {
+		t.Fatalf("list open-ended: %v", err)
+	}
+	if len(got) != 1 || got[0].ID != running.ID {
+		t.Fatalf("open-ended window: got %+v, want the running entry only", got)
+	}
+}
