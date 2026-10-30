@@ -38,8 +38,9 @@ Templates live in [`deploy/legal/`](https://github.com/havspect/tstamps/tree/mai
 
 - `imprint.html.example`
 - `privacy.html.example`
+- `demo/imprint.html` and `demo/privacy.html` — the filled pages the public demo ships, as an example of a completed pair
 
-Copy them, fill every `[PLACEHOLDER]`, delete sections that do not apply, and check the result against what your instance actually does.
+Copy the templates, fill every `[PLACEHOLDER]`, delete sections that do not apply, and check the result against what your instance actually does.
 
 ## What the privacy notice must match
 

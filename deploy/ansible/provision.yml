@@ -1,0 +1,245 @@
+---
+# First install on a fresh VM; `just provision <host>` builds the binary first.
+# `just provision-demo` runs the same playbook with the demo site only.
+# Debian/Ubuntu only: Caddy comes from the distribution package.
+# The domain must already resolve here, or Caddy cannot get a certificate.
+- name: Provision Tstamps
+  hosts: all
+  become: true
+  gather_facts: false
+
+  vars:
+    tstamps_bin: /usr/local/bin/tstamps-server
+    tstamps_units_dir: /etc/systemd/system
+    tstamps_db: /var/lib/tstamps/tstamps.db
+    tstamps_backups: /var/backups/tstamps
+    tstamps_health: http://127.0.0.1:8080/healthz
+    tstamps_domain: "{{ inventory_hostname }}"
+    tstamps_admin_email: ""
+    tstamps_admin_name: "Your Name"
+    # The production site; off for a demo-only VM.
+    tstamps_prod: true
+    # The demo site on 127.0.0.1:8081; its database is reseeded hourly and never backed up.
+    tstamps_demo: false
+    tstamps_demo_domain: "demo.{{ tstamps_domain }}"
+    tstamps_demo_health: http://127.0.0.1:8081/healthz
+    tstamps_local_bin: "{{ playbook_dir }}/../../tstamps-server"
+
+  tasks:
+    - name: Check the local build
+      ansible.builtin.stat:
+        path: "{{ tstamps_local_bin }}"
+      delegate_to: localhost
+      become: false
+      register: tstamps_local
+
+    - name: Require a local build
+      ansible.builtin.assert:
+        that: tstamps_local.stat.exists
+        fail_msg: "No tstamps-server in the repository root. Run `just build-prod linux amd64`."
+
+    # Sites that are already installed keep their Caddy block when the other is provisioned.
+    - name: Check the installed units
+      ansible.builtin.stat:
+        path: "{{ tstamps_units_dir }}/{{ item }}"
+      loop:
+        - tstamps-server.service
+        - tstamps-demo.service
+      register: tstamps_units
+
+    - name: Install Caddy
+      ansible.builtin.apt:
+        name: caddy
+        state: present
+        update_cache: true
+
+    - name: Start Caddy
+      ansible.builtin.systemd:
+        name: caddy
+        enabled: true
+        state: started
+
+    - name: Create the service user
+      ansible.builtin.user:
+        name: tstamps
+        system: true
+        home: /var/lib/tstamps
+        create_home: false
+        shell: /usr/sbin/nologin
+
+    - name: Create the backup directory
+      ansible.builtin.file:
+        path: "{{ tstamps_backups }}"
+        state: directory
+        owner: tstamps
+        group: tstamps
+        mode: "0700"
+      when: tstamps_prod | bool
+
+    - name: Install the binary
+      ansible.builtin.copy:
+        src: "{{ tstamps_local_bin }}"
+        dest: "{{ tstamps_bin }}"
+        owner: root
+        group: root
+        mode: "0755"
+      notify:
+        - Restart Tstamps
+        - Restart Tstamps demo
+
+    - name: Install the production units
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../{{ item }}"
+        dest: "{{ tstamps_units_dir }}/"
+        owner: root
+        group: root
+        mode: "0644"
+      loop:
+        - tstamps-server.service
+        - tstamps-backup.service
+        - tstamps-backup.timer
+      when: tstamps_prod | bool
+      notify: Restart Tstamps
+
+    - name: Install the demo unit
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../tstamps-demo.service"
+        dest: "{{ tstamps_units_dir }}/"
+        owner: root
+        group: root
+        mode: "0644"
+      when: tstamps_demo | bool
+      notify: Restart Tstamps demo
+
+    - name: Create the demo legal directory
+      ansible.builtin.file:
+        path: /var/lib/tstamps-demo/legal
+        state: directory
+        owner: tstamps
+        group: tstamps
+        mode: "0750"
+      when: tstamps_demo | bool
+
+    - name: Install the demo legal pages
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../legal/demo/{{ item }}"
+        dest: /var/lib/tstamps-demo/legal/{{ item }}
+        owner: tstamps
+        group: tstamps
+        mode: "0644"
+      loop:
+        - imprint.html
+        - privacy.html
+      when: tstamps_demo | bool
+      notify: Restart Tstamps demo
+
+    # Mirrors deploy/Caddyfile: the production site has no demo header, the demo is unindexed.
+    - name: Install the Caddyfile
+      ansible.builtin.copy:
+        dest: /etc/caddy/Caddyfile
+        mode: "0644"
+        content: |
+          # Terminates TLS and forwards to the server on localhost. Caddy sets
+          # X-Forwarded-Proto, which is how the server knows to use the __Host- cookie.
+          {% if tstamps_prod | bool or tstamps_units.results[0].stat.exists %}
+          {{ tstamps_domain }} {
+          	encode zstd gzip
+          	header Strict-Transport-Security "max-age=31536000; includeSubDomains"
+          	reverse_proxy 127.0.0.1:8080
+          }
+          {% endif %}
+          {% if tstamps_demo | bool or tstamps_units.results[1].stat.exists %}
+          {{ tstamps_demo_domain }} {
+          	encode zstd gzip
+          	header Strict-Transport-Security "max-age=31536000; includeSubDomains"
+          	header X-Robots-Tag "noindex"
+          	reverse_proxy 127.0.0.1:8081
+          }
+          {% endif %}
+      notify: Reload Caddy
+
+    - name: Start the production server and the backup timer
+      ansible.builtin.systemd:
+        name: "{{ item }}"
+        enabled: true
+        state: started
+        daemon_reload: true
+      loop:
+        - tstamps-server.service
+        - tstamps-backup.timer
+      when: tstamps_prod | bool
+
+    - name: Start the demo server
+      ansible.builtin.systemd:
+        name: tstamps-demo.service
+        enabled: true
+        state: started
+        daemon_reload: true
+      when: tstamps_demo | bool
+
+    - name: Wait for the production /healthz
+      ansible.builtin.uri:
+        url: "{{ tstamps_health }}"
+        status_code: 200
+        use_proxy: false
+      register: tstamps_health_result
+      until: tstamps_health_result.status == 200
+      retries: 30
+      delay: 1
+      when: tstamps_prod | bool
+
+    - name: Wait for the demo /healthz
+      ansible.builtin.uri:
+        url: "{{ tstamps_demo_health }}"
+        status_code: 200
+        use_proxy: false
+      register: tstamps_demo_health_result
+      until: tstamps_demo_health_result.status == 200
+      retries: 30
+      delay: 1
+      when: tstamps_demo | bool
+
+    # The first admin of the first workspace; there is no server-wide admin.
+    - name: Create the first workspace
+      ansible.builtin.command:
+        argv:
+          - "{{ tstamps_bin }}"
+          - workspace
+          - create
+          - "{{ tstamps_domain }}"
+          - --db
+          - "{{ tstamps_db }}"
+          - --email
+          - "{{ tstamps_admin_email }}"
+          - --name
+          - "{{ tstamps_admin_name }}"
+      become_user: tstamps
+      when: tstamps_prod | bool and tstamps_admin_email | length > 0
+      register: tstamps_workspace
+      changed_when: tstamps_workspace.rc == 0
+      failed_when: tstamps_workspace.rc != 0 and 'already taken' not in tstamps_workspace.stderr
+
+    - name: Show the initial password
+      ansible.builtin.debug:
+        var: tstamps_workspace.stdout_lines
+      when: tstamps_workspace is changed
+
+  handlers:
+    - name: Reload Caddy
+      ansible.builtin.systemd:
+        name: caddy
+        state: reloaded
+
+    - name: Restart Tstamps
+      ansible.builtin.systemd:
+        name: tstamps-server.service
+        state: restarted
+        daemon_reload: true
+      when: tstamps_units.results[0].stat.exists
+
+    - name: Restart Tstamps demo
+      ansible.builtin.systemd:
+        name: tstamps-demo.service
+        state: restarted
+        daemon_reload: true
+      when: tstamps_units.results[1].stat.exists

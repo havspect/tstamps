@@ -12,7 +12,7 @@ Group=tstamps
 # rebuilt from the seed every hour, so it is never backed up.
 StateDirectory=tstamps-demo
 StateDirectoryMode=0750
-ExecStart=/usr/local/bin/tstamps-server serve --demo --addr 127.0.0.1:8081 --db /var/lib/tstamps-demo/demo.db
+ExecStart=/usr/local/bin/tstamps-server serve --demo --addr 127.0.0.1:8081 --db /var/lib/tstamps-demo/demo.db --legal-dir /var/lib/tstamps-demo/legal
 Restart=on-failure
 RestartSec=2
 UMask=0077

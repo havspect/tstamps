@@ -54,8 +54,15 @@ To let visitors create their own workspace, add `--email-api-key`, `--email-from
 
 The production shape is one VM running `tstamps-server` under systemd, with Caddy terminating TLS on the same host. The unit files and Caddyfile are in [`deploy/`](https://github.com/havspect/tstamps/tree/main/deploy). The server binds loopback; Caddy is the only public listener.
 
+On a fresh Debian or Ubuntu VM with SSH as root, one command does the whole first install: it builds the binary, installs Caddy, the service user, the units and the Caddyfile, starts both services and creates the first workspace.
+
 ```sh
-# After `just build-prod` and copying tstamps-server to the VM:
+just provision time.example.com you@example.com
+```
+
+The second argument is the workspace slug and Caddy hostname and defaults to the host; the third is the first admin's email, and without it no workspace is created. Point the domain's DNS at the VM first, or Caddy cannot get a certificate. The Caddyfile it writes is the production block only, without the demo. The same steps by hand, after `just build-prod` and copying `tstamps-server` to the VM:
+
+```sh
 sudo useradd --system --home /var/lib/tstamps --shell /usr/sbin/nologin tstamps
 sudo install -m 0755 tstamps-server /usr/local/bin/tstamps-server
 sudo install -d -o tstamps -g tstamps -m 0700 /var/backups/tstamps
@@ -83,18 +90,34 @@ Caddy sets `X-Forwarded-Proto`, which is how the server knows to mark the sessio
 ## Run a public demo
 
 A demo server seeds one fictional workspace and rebuilds it at the top of every
-hour, so visitors may change anything without keeping it:
+hour, so visitors may change anything without keeping it.
+
+```sh
+just provision-demo demo.example.com
+```
+
+That builds the binary and runs the same playbook as `just provision` with the
+demo site only, on a host whose DNS already points at the VM. Run it against a
+VM that already serves production and it adds the demo host beside the existing
+site instead of replacing it; nothing is backed up either way. The same steps by
+hand:
 
 ```sh
 sudo install -d -o tstamps -g tstamps -m 0700 /var/lib/tstamps-demo
+sudo install -d -o tstamps -g tstamps -m 0750 /var/lib/tstamps-demo/legal
+sudo install -m 0644 deploy/legal/demo/imprint.html deploy/legal/demo/privacy.html \
+  /var/lib/tstamps-demo/legal/
 sudo install -m 0644 deploy/tstamps-demo.service /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable --now tstamps-demo
 ```
 
 Its unit runs `tstamps-server serve --demo --addr 127.0.0.1:8081 --db
-/var/lib/tstamps-demo/demo.db`; add the `demo.` host from the Caddyfile and
-point it at port 8081. Nothing in that database is worth backing up.
+/var/lib/tstamps-demo/demo.db --legal-dir /var/lib/tstamps-demo/legal`; add the
+`demo.` host from the Caddyfile and point it at port 8081. Nothing in that
+database is worth backing up. `deploy/legal/demo` holds the demo operator's
+Impressum and privacy notice, not a template; replace them if you run the demo
+for your own organisation.
 
 At boot the server creates a workspace with the slug `demo` and seeds three
 accounts, all with the password `demo`:

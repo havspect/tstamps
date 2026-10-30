@@ -36,6 +36,16 @@ deploy host user="root" arch="amd64":
     just build-prod linux {{arch}}
     ansible-playbook -i "{{host}}," -u {{user}} deploy/ansible/deploy.yml
 
+# Provision a fresh Debian/Ubuntu VM as root with Ansible: just provision example.com [domain] [admin-email]. The domain must already resolve to the host.
+provision host domain="" email="" arch="amd64":
+    just build-prod linux {{arch}}
+    ansible-playbook -i "{{host}}," -u root deploy/ansible/provision.yml -e tstamps_domain={{ if domain == "" { host } else { domain } }} -e tstamps_admin_email={{email}}
+
+# Provision the public demo on a VM: just provision-demo demo.example.com [domain]. Same playbook, demo site only; run it on a production VM to add the demo beside it.
+provision-demo host domain="" arch="amd64":
+    just build-prod linux {{arch}}
+    ansible-playbook -i "{{host}}," -u root deploy/ansible/provision.yml -e tstamps_prod=false -e tstamps_demo=true -e tstamps_domain={{host}} -e tstamps_demo_domain={{ if domain == "" { host } else { domain } }}
+
 # Build the manual into web/dist/docs; a dead internal link fails the build.
 docs:
     pnpm --dir docs build
