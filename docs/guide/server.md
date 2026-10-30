@@ -99,8 +99,12 @@ just provision-demo demo.example.com
 That builds the binary and runs the same playbook as `just provision` with the
 demo site only, on a host whose DNS already points at the VM. Run it against a
 VM that already serves production and it adds the demo host beside the existing
-site instead of replacing it; nothing is backed up either way. The same steps by
-hand:
+site instead of replacing it; nothing is backed up either way.
+
+After the first install, updates use `just deploy-demo demo.example.com [user]
+[arch]`. It swaps the binary, restarts only `tstamps-demo`, and polls
+`http://127.0.0.1:8081/healthz`; it leaves the database alone because the demo
+reseeds hourly. The same steps by hand:
 
 ```sh
 sudo install -d -o tstamps -g tstamps -m 0700 /var/lib/tstamps-demo

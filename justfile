@@ -36,6 +36,11 @@ deploy host user="root" arch="amd64":
     just build-prod linux {{arch}}
     ansible-playbook -i "{{host}}," -u {{user}} deploy/ansible/deploy.yml
 
+# Build locally and deploy the public demo: just deploy-demo demo.example.com [user] [arch]
+deploy-demo host user="root" arch="amd64":
+    just build-prod linux {{arch}}
+    ansible-playbook -K -i "{{host}}," -u {{user}} deploy/ansible/deploy-demo.yml
+
 # Provision a fresh Debian/Ubuntu VM as root with Ansible: just provision example.com [domain] [admin-email]. The domain must already resolve to the host.
 provision host domain="" email="" arch="amd64":
     just build-prod linux {{arch}}
