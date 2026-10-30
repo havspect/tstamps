@@ -13,6 +13,7 @@
   type Board = components['schemas']['PlanBoardResponse']
   type Cell = components['schemas']['PlanCellResponse']
   type Person = components['schemas']['PlanPersonResponse']
+  type PersonWeek = components['schemas']['PlanPersonWeekResponse']
   type Project = components['schemas']['ProjectResponse']
   type MemberRow = { userID: number; user: string; total: number; weeks: Record<string, number> }
   type ProjectRow = {
@@ -55,7 +56,7 @@
   const rangeLabel = $derived(periodLabel(period, day))
 
   const planned = $derived(cells.reduce((sum, cell) => sum + cell.hours, 0) + other.reduce((sum, row) => sum + row.hours, 0))
-  const capacity = $derived(people.reduce((sum, person) => sum + person.weekly_hours * weeks.length, 0))
+  const capacity = $derived(people.reduce((sum, person) => sum + totalCapacity(person.user_id), 0))
 
   const projectRows = $derived.by(() => {
     const rows = new Map<number, ProjectRow>()
@@ -128,8 +129,20 @@
     return other.find((row) => row.user_id === personID && row.week_start === week)?.hours ?? 0
   }
 
-  function weeklyHours(personID: number): number {
-    return people.find((person) => person.user_id === personID)?.weekly_hours ?? 0
+  function weekRow(personID: number, week: string): PersonWeek | undefined {
+    return (people.find((person) => person.user_id === personID)?.weeks ?? []).find((row) => row.week_start === week)
+  }
+
+  function capacityOf(personID: number, week: string): number {
+    return weekRow(personID, week)?.capacity ?? 0
+  }
+
+  function vacationHoursOf(personID: number, week: string): number {
+    return weekRow(personID, week)?.vacation_hours ?? 0
+  }
+
+  function totalCapacity(personID: number): number {
+    return weeks.reduce((sum, week) => sum + capacityOf(personID, week), 0)
   }
 
   function weekPlanned(week: string): number {
@@ -139,15 +152,15 @@
   }
 
   function weekCapacity(week: string): number {
-    return people.reduce((sum, person) => sum + person.weekly_hours, 0)
+    return people.reduce((sum, person) => sum + capacityOf(person.user_id, week), 0)
   }
 
   function over(person: Person): boolean {
-    return person.weekly_hours > 0 && personTotal(person.user_id) > person.weekly_hours * weeks.length
+    return personTotal(person.user_id) > totalCapacity(person.user_id)
   }
 
   function overWeek(personID: number, week: string): boolean {
-    return weeklyHours(personID) > 0 && personWeek(personID, week) > weeklyHours(personID)
+    return personWeek(personID, week) > capacityOf(personID, week)
   }
 
   function toggle(projectID: number) {
@@ -374,6 +387,7 @@
       <tbody>
         {#each people as person (person.user_id)}
           {@const total = personTotal(person.user_id)}
+          {@const personCapacity = totalCapacity(person.user_id)}
           <tr>
             <th scope="row">
               {person.user}
@@ -384,13 +398,15 @@
               {@const entries = cellsOf(person.user_id, week)}
               {@const plannedHours = entries.reduce((sum, cell) => sum + cell.hours, 0)}
               {@const elsewhere = otherOf(person.user_id, week)}
+              {@const weekHours = capacityOf(person.user_id, week)}
+              {@const vacationHours = vacationHoursOf(person.user_id, week)}
               <td class="num">
                 <button
                   type="button"
                   class="cell"
-                  class:over={person.weekly_hours > 0 && plannedHours + elsewhere > person.weekly_hours}
+                  class:over={plannedHours + elsewhere > weekHours}
                   disabled={!canEdit}
-                  aria-label={`${person.user}, week of ${weekLabel(week)}: ${plannedHours} of ${person.weekly_hours} hours planned`}
+                  aria-label={`${person.user}, week of ${weekLabel(week)}: ${plannedHours} of ${weekHours} hours planned${vacationHours > 0 ? `, ${vacationHours}h vacation` : ''}`}
                   onclick={() => select(person.user_id, week)}
                 >
                   <span class="bar">
@@ -398,22 +414,25 @@
                       <span
                         class="segment"
                         title={`${cell.project}: ${cell.hours}h`}
-                        style:width={`${Math.min(100, (cell.hours / Math.max(person.weekly_hours, 1)) * 100)}%`}
+                        style:width={`${Math.min(100, (cell.hours / Math.max(weekHours, 1)) * 100)}%`}
                         style:background={colors.get(cell.project_id) ?? 'var(--muted)'}
                       ></span>
                     {/each}
                     {#if elsewhere > 0}
-                      <span class="segment other" title={`Other teams: ${elsewhere}h`} style:width={`${Math.min(100, (elsewhere / Math.max(person.weekly_hours, 1)) * 100)}%`}></span>
+                      <span class="segment other" title={`Other teams: ${elsewhere}h`} style:width={`${Math.min(100, (elsewhere / Math.max(weekHours, 1)) * 100)}%`}></span>
                     {/if}
                   </span>
                   <span class="value">
                     {plannedHours}{#if elsewhere > 0}<span class="other-hours">+{elsewhere}</span>{/if}
                   </span>
+                  {#if vacationHours > 0}
+                    <span class="vacation" title={`${vacationHours}h vacation`}>vac</span>
+                  {/if}
                 </button>
               </td>
             {/each}
             <td class="num total" class:over={over(person)}>
-              {total}{person.weekly_hours > 0 ? ` / ${person.weekly_hours * weeks.length}h` : ''}
+              {total}{personCapacity > 0 ? ` / ${personCapacity}h` : ''}
             </td>
           </tr>
         {/each}
@@ -468,16 +487,20 @@
               <tr class="plan-member">
                 <th scope="row">{member.user}</th>
                 {#each weeks as week (week)}
+                  {@const vacationHours = vacationHoursOf(member.userID, week)}
                   <td class="num">
                     <button
                       type="button"
                       class="cell"
                       class:over={overWeek(member.userID, week)}
                       disabled={!canEdit || row.archived}
-                      aria-label={`${member.user}, ${row.project}, week of ${weekLabel(week)}: ${member.weeks[week] ?? 0} hours planned`}
+                      aria-label={`${member.user}, ${row.project}, week of ${weekLabel(week)}: ${member.weeks[week] ?? 0} hours planned${vacationHours > 0 ? `, ${vacationHours}h vacation` : ''}`}
                       onclick={() => select(member.userID, week, row.projectID)}
                     >
                       <span class="value">{member.weeks[week] ?? ''}</span>
+                      {#if vacationHours > 0}
+                        <span class="vacation" title={`${vacationHours}h vacation`}>vac</span>
+                      {/if}
                     </button>
                   </td>
                 {/each}
@@ -515,6 +538,12 @@
           <li>{cell.project}: {cell.hours}h</li>
         {/each}
       </ul>
+    {/if}
+    {#if vacationHoursOf(editing.userID, editing.week) > 0}
+      <p class="hint">
+        Vacation: {vacationHoursOf(editing.userID, editing.week)}h off this week, so capacity is
+        {capacityOf(editing.userID, editing.week)}h.
+      </p>
     {/if}
     {#if notice}<p class="notice" role="status">{notice}</p>{/if}
   </section>
@@ -743,6 +772,17 @@
     margin-left: 0.25rem;
     color: var(--muted);
     font-size: 0.8125rem;
+  }
+
+  .vacation {
+    padding: 0 0.25rem;
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    color: var(--muted);
+    font-size: 0.6875rem;
+    line-height: 1.4;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
   }
 
   .total.over {

@@ -33,6 +33,7 @@ const (
 	urnEntryOverlap           = "urn:tstamps:error:entry-overlap"
 	urnEntryTooLong           = "urn:tstamps:error:entry-too-long"
 	urnPlanWeekFrozen         = "urn:tstamps:error:plan-week-frozen"
+	urnVacationOverlap        = "urn:tstamps:error:vacation-overlap"
 	urnProjectHasEntries      = "urn:tstamps:error:project-has-entries"
 	urnUnavailable            = "urn:tstamps:error:unavailable"
 	urnInvalidToken           = "urn:tstamps:error:invalid-token"
@@ -144,6 +145,10 @@ func fail(err error) *huma.ErrorModel {
 		return problem(http.StatusUnprocessableEntity, urnInvalidInput, "an archived project cannot take new plan hours")
 	case errors.Is(err, plan.ErrFrozenWeek):
 		return problem(http.StatusUnprocessableEntity, urnPlanWeekFrozen, "the week has ended")
+	case errors.Is(err, plan.ErrInvalidVacation):
+		return problem(http.StatusUnprocessableEntity, urnInvalidInput, "a vacation needs a valid date range and hours inside one working day")
+	case errors.Is(err, plan.ErrVacationOverlap):
+		return problem(http.StatusConflict, urnVacationOverlap, "this vacation overlaps another one")
 
 	// Onboarding domain
 	case errors.Is(err, onboarding.ErrSignupDisabled):

@@ -4,6 +4,7 @@ import (
 	"context"
 	"math"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/havspect/tstamps/internal/auth"
@@ -86,6 +87,20 @@ func mayPlanPerson(p *auth.Principal, person *Person) bool {
 	return false
 }
 
+// mayReadVacations lets a person read their own time off, an admin read any,
+// and a lead read anyone in a team they lead.
+func mayReadVacations(p *auth.Principal, person *Person) bool {
+	if p.IsAdmin() || person.UserID == p.UserID {
+		return true
+	}
+	for _, teamID := range p.LedTeamIDs {
+		if hasTeam(*person, teamID) {
+			return true
+		}
+	}
+	return false
+}
+
 // Readable reports whether the caller may see this cell with its project name.
 // Cells they may not see are summed into the board's "other" hours instead.
 func (s *Service) readable(p *auth.Principal, cell Cell) bool {
@@ -140,6 +155,14 @@ func (s *Service) List(ctx context.Context, filter Filter) (*Board, error) {
 	}
 
 	board := &Board{Weeks: WeeksIn(filter.From, filter.To)}
+	vacations, err := s.repo.ListVacations(ctx, VacationFilter{From: filter.From, To: filter.To})
+	if err != nil {
+		return nil, err
+	}
+	byUser := map[uint][]Vacation{}
+	for _, v := range vacations {
+		byUser[v.UserID] = append(byUser[v.UserID], v)
+	}
 	shown := make(map[uint]bool, len(eligible))
 	other := map[uint]map[time.Time]int{}
 	for _, cell := range all {
@@ -169,6 +192,17 @@ func (s *Service) List(ctx context.Context, filter Filter) (*Board, error) {
 		board.People = append(board.People, person)
 	}
 	sort.Slice(board.People, func(i, j int) bool { return board.People[i].Name < board.People[j].Name })
+	for _, person := range board.People {
+		for _, week := range board.Weeks {
+			hours := VacationHours(week, person.WeeklyHours, byUser[person.UserID])
+			board.PersonWeeks = append(board.PersonWeeks, PersonWeek{
+				UserID:        person.UserID,
+				WeekStart:     week,
+				Capacity:      WeeklyCapacity(person.WeeklyHours, hours),
+				VacationHours: hours,
+			})
+		}
+	}
 
 	for userID, weeks := range other {
 		for week, hours := range weeks {
@@ -261,6 +295,139 @@ func (s *Service) Set(ctx context.Context, userID, projectID uint, weekStart tim
 		return nil, err
 	}
 	return cell, nil
+}
+
+// VacationInput is a date range a user marks as time off.
+type VacationInput struct {
+	StartDate  time.Time
+	EndDate    time.Time
+	StartHours float64
+	EndHours   float64
+	Note       string
+}
+
+// VacationQuery narrows a vacation list to one person and optional dates. A
+// zero user means the caller.
+type VacationQuery struct {
+	UserID uint
+	From   time.Time
+	To     time.Time
+}
+
+// ListVacations returns readable vacations, newest first: the caller's own, a
+// lead's team members', or every person's for an admin.
+func (s *Service) ListVacations(ctx context.Context, q VacationQuery) ([]Vacation, error) {
+	p, err := principal(ctx)
+	if err != nil {
+		return nil, err
+	}
+	target := q.UserID
+	if target == 0 {
+		target = p.UserID
+	}
+	person, err := s.repo.GetPerson(ctx, target)
+	if err != nil {
+		return nil, err
+	}
+	if !mayReadVacations(p, person) {
+		return nil, authz.ErrForbidden
+	}
+	vacations, err := s.repo.ListVacations(ctx, VacationFilter{UserID: target, From: q.From, To: q.To})
+	if err != nil {
+		return nil, err
+	}
+	for i := range vacations {
+		vacations[i].User = person.Name
+		vacations[i].Email = person.Email
+	}
+	return vacations, nil
+}
+
+// validVacationHours reports whether h is a positive, one-decimal number inside
+// one working day.
+func validVacationHours(h, daily float64) bool {
+	if h <= 0 || h > daily+1e-9 {
+		return false
+	}
+	return math.Abs(h*10-math.Round(h*10)) < 1e-6
+}
+
+// AddVacation records time off for the caller. Any signed-in user may add their
+// own; nobody records leave for someone else. A first or last date on a weekend
+// keeps zero hours because weekends never lower capacity.
+func (s *Service) AddVacation(ctx context.Context, in VacationInput) (*Vacation, error) {
+	p, err := principal(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.authorizer.Check(ctx, p, authz.ActionManageVacation, authz.VacationResource{UserID: p.UserID}); err != nil {
+		return nil, err
+	}
+	start, end := Date(in.StartDate), Date(in.EndDate)
+	if start.IsZero() || end.IsZero() || end.Before(start) || end.After(start.AddDate(0, 0, MaxVacationDays-1)) {
+		return nil, ErrInvalidVacation
+	}
+	person, err := s.repo.GetPerson(ctx, p.UserID)
+	if err != nil {
+		return nil, err
+	}
+	startHours, endHours := in.StartHours, in.EndHours
+	daily := DailyHours(person.WeeklyHours)
+	if !IsWorkingDay(start) {
+		startHours = 0
+	} else if !validVacationHours(startHours, daily) {
+		return nil, ErrInvalidVacation
+	}
+	if start.Equal(end) {
+		endHours = 0
+	} else if !IsWorkingDay(end) {
+		endHours = 0
+	} else if !validVacationHours(endHours, daily) {
+		return nil, ErrInvalidVacation
+	}
+
+	now := s.clock.Now()
+	v := &Vacation{
+		WorkspaceID: p.WorkspaceID,
+		UserID:      p.UserID,
+		User:        person.Name,
+		Email:       person.Email,
+		StartDate:   start,
+		EndDate:     end,
+		StartHours:  startHours,
+		EndHours:    endHours,
+		Note:        strings.TrimSpace(in.Note),
+		CreatedAt:   now,
+		UpdatedAt:   now,
+	}
+	err = s.uow.Run(ctx, func(txCtx context.Context) error {
+		existing, err := s.repo.ListVacations(txCtx, VacationFilter{
+			UserID: p.UserID, From: start, To: end.AddDate(0, 0, 1),
+		})
+		if err != nil {
+			return err
+		}
+		if len(existing) > 0 {
+			return ErrVacationOverlap
+		}
+		return s.repo.CreateVacation(txCtx, v)
+	})
+	if err != nil {
+		return nil, err
+	}
+	return v, nil
+}
+
+// DeleteVacation removes one of the caller's own vacations.
+func (s *Service) DeleteVacation(ctx context.Context, id uint) error {
+	p, err := principal(ctx)
+	if err != nil {
+		return err
+	}
+	if err := s.authorizer.Check(ctx, p, authz.ActionManageVacation, authz.VacationResource{UserID: p.UserID}); err != nil {
+		return err
+	}
+	return s.repo.DeleteVacation(ctx, id, p.UserID)
 }
 
 // Seed splits the previous month's logged hours per person and project evenly

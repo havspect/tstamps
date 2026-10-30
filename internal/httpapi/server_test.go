@@ -561,3 +561,139 @@ func TestMemberReportScope(t *testing.T) {
 		}
 	}
 }
+
+func TestVacationsReducePlanCapacity(t *testing.T) {
+	handler, deps := setupTestServer(t)
+
+	ws := &gormrepo.Workspace{Slug: "acme"}
+	if err := deps.DB.Create(ws).Error; err != nil {
+		t.Fatalf("create workspace: %v", err)
+	}
+	user, auth := seedToken(t, deps, ws.ID, "member@acme.com", false)
+
+	call := func(method, path, body string) *httptest.ResponseRecorder {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(method, path, strings.NewReader(body))
+		if body != "" {
+			req.Header.Set("Content-Type", "application/json")
+		}
+		req.Header.Set("Authorization", auth)
+		handler.ServeHTTP(rec, req)
+		return rec
+	}
+
+	week := time.Now().UTC().AddDate(0, 0, 14).Truncate(24 * time.Hour)
+	monday := week.AddDate(0, 0, -((int(week.Weekday()) + 6) % 7))
+	friday := monday.AddDate(0, 0, 4)
+
+	rec := call(http.MethodGet, "/api/v1/plan?from="+monday.Format(dateLayout)+"&to="+monday.AddDate(0, 0, 7).Format(dateLayout), "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("get plan before vacation status=%d: %s", rec.Code, rec.Body.String())
+	}
+	var before planBoardResponse
+	if err := json.NewDecoder(rec.Body).Decode(&before); err != nil {
+		t.Fatalf("decode plan: %v", err)
+	}
+	if len(before.People) != 1 || len(before.People[0].Weeks) != 1 || before.People[0].Weeks[0].Capacity != 40 {
+		t.Fatalf("capacity before vacation = %+v", before.People)
+	}
+
+	body := `{"start_date":"` + monday.Format(dateLayout) + `","end_date":"` + friday.Format(dateLayout) + `","start_hours":8,"end_hours":8,"note":"time off"}`
+
+	rec = call(http.MethodPost, "/api/v1/vacations", body)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("create vacation status=%d: %s", rec.Code, rec.Body.String())
+	}
+	var created vacationResponse
+	if err := json.NewDecoder(rec.Body).Decode(&created); err != nil {
+		t.Fatalf("decode vacation: %v", err)
+	}
+	if created.UserID != user.ID || created.StartDate != monday.Format(dateLayout) || created.StartHours != 8 {
+		t.Fatalf("vacation = %+v", created)
+	}
+	if rec := call(http.MethodPost, "/api/v1/vacations", body); rec.Code != http.StatusConflict {
+		t.Fatalf("overlapping vacation status=%d: %s", rec.Code, rec.Body.String())
+	}
+
+	rec = call(http.MethodGet, "/api/v1/vacations", "")
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"note":"time off"`) {
+		t.Fatalf("list vacations status=%d: %s", rec.Code, rec.Body.String())
+	}
+
+	rec = call(http.MethodGet, "/api/v1/plan?from="+monday.Format(dateLayout)+"&to="+monday.AddDate(0, 0, 7).Format(dateLayout), "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("get plan status=%d: %s", rec.Code, rec.Body.String())
+	}
+	var board planBoardResponse
+	if err := json.NewDecoder(rec.Body).Decode(&board); err != nil {
+		t.Fatalf("decode plan: %v", err)
+	}
+	if len(board.People) != 1 || len(board.People[0].Weeks) != 1 {
+		t.Fatalf("board people = %+v", board.People)
+	}
+	if got := board.People[0].Weeks[0]; got.VacationHours != 40 || got.Capacity != 0 {
+		t.Fatalf("week = %+v, want 40 vacation hours and no capacity", got)
+	}
+
+	rec = call(http.MethodDelete, "/api/v1/vacations/"+jsonNum(created.ID), "")
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("delete vacation status=%d: %s", rec.Code, rec.Body.String())
+	}
+	rec = call(http.MethodGet, "/api/v1/vacations", "")
+	if rec.Code != http.StatusOK || strings.TrimSpace(rec.Body.String()) != "[]" {
+		t.Fatalf("vacations after delete status=%d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestLeadReadsTeamVacationsOnly(t *testing.T) {
+	handler, deps := setupTestServer(t)
+
+	ws := &gormrepo.Workspace{Slug: "acme"}
+	if err := deps.DB.Create(ws).Error; err != nil {
+		t.Fatalf("create workspace: %v", err)
+	}
+	ctxWs := gormrepo.WithWorkspaceID(context.Background(), ws.ID)
+	member, memberAuth := seedToken(t, deps, ws.ID, "member@acme.com", false)
+	lead, leadAuth := seedToken(t, deps, ws.ID, "lead@acme.com", false)
+	_, otherAuth := seedToken(t, deps, ws.ID, "other@acme.com", false)
+	team := &gormrepo.Team{WorkspaceID: ws.ID, Name: "Platform"}
+	if err := deps.DB.WithContext(ctxWs).Create(team).Error; err != nil {
+		t.Fatalf("create team: %v", err)
+	}
+	for _, membership := range []gormrepo.TeamMembership{
+		{WorkspaceID: ws.ID, TeamID: team.ID, UserID: member.ID, Role: "member"},
+		{WorkspaceID: ws.ID, TeamID: team.ID, UserID: lead.ID, Role: "lead"},
+	} {
+		if err := deps.DB.WithContext(ctxWs).Create(&membership).Error; err != nil {
+			t.Fatalf("create membership: %v", err)
+		}
+	}
+
+	call := func(method, path, authHeader, body string) *httptest.ResponseRecorder {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(method, path, strings.NewReader(body))
+		if body != "" {
+			req.Header.Set("Content-Type", "application/json")
+		}
+		req.Header.Set("Authorization", authHeader)
+		handler.ServeHTTP(rec, req)
+		return rec
+	}
+
+	body := `{"start_date":"2026-11-09","end_date":"2026-11-10","start_hours":4,"end_hours":8,"note":"dentist"}`
+	if rec := call(http.MethodPost, "/api/v1/vacations", memberAuth, body); rec.Code != http.StatusCreated {
+		t.Fatalf("create vacation status=%d: %s", rec.Code, rec.Body.String())
+	}
+
+	path := "/api/v1/vacations?user_id=" + jsonNum(member.ID)
+	rec := call(http.MethodGet, path, leadAuth, "")
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"note":"dentist"`) {
+		t.Fatalf("lead read status=%d: %s", rec.Code, rec.Body.String())
+	}
+	if rec := call(http.MethodGet, path, otherAuth, ""); rec.Code != http.StatusForbidden {
+		t.Fatalf("stranger read status=%d: %s", rec.Code, rec.Body.String())
+	}
+	if rec := call(http.MethodGet, "/api/v1/vacations", otherAuth, ""); rec.Code != http.StatusOK {
+		t.Fatalf("own list status=%d: %s", rec.Code, rec.Body.String())
+	}
+}

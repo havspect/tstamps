@@ -150,11 +150,18 @@ func TestSeedIsIdempotent(t *testing.T) {
 		db.WithContext(ctx).Model(model).Count(&n)
 		return n
 	}
-	before := [3]int64{count(&gormrepo.User{}), count(&gormrepo.Entry{}), count(&gormrepo.Plan{})}
+	before := [4]int64{count(&gormrepo.User{}), count(&gormrepo.Entry{}), count(&gormrepo.Plan{}), count(&gormrepo.Vacation{})}
 
 	junk := gormrepo.User{WorkspaceID: wsID, Email: "visitor@example.com", Name: "Visitor", PasswordHash: "x", Active: true}
 	if err := db.WithContext(ctx).Create(&junk).Error; err != nil {
 		t.Fatalf("create junk user: %v", err)
+	}
+	vacation := gormrepo.Vacation{
+		WorkspaceID: wsID, UserID: junk.ID,
+		StartDate: now, EndDate: now, CreatedAt: now, UpdatedAt: now,
+	}
+	if err := db.WithContext(ctx).Create(&vacation).Error; err != nil {
+		t.Fatalf("create junk vacation: %v", err)
 	}
 	// A visitor's admin action leaves an audit event, which the reset must clear
 	// despite the append-only trigger.
@@ -168,7 +175,7 @@ func TestSeedIsIdempotent(t *testing.T) {
 	if err := Seed(context.Background(), db, now); err != nil {
 		t.Fatalf("second seed: %v", err)
 	}
-	after := [3]int64{count(&gormrepo.User{}), count(&gormrepo.Entry{}), count(&gormrepo.Plan{})}
+	after := [4]int64{count(&gormrepo.User{}), count(&gormrepo.Entry{}), count(&gormrepo.Plan{}), count(&gormrepo.Vacation{})}
 	if before != after {
 		t.Errorf("counts changed across reset: before=%v after=%v", before, after)
 	}

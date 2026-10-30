@@ -95,7 +95,13 @@ func (a *App) printPlan(board *client.PlanBoard) {
 	capacity := 0
 	for _, person := range board.People {
 		people[person.UserID] = person.User
-		capacity += person.WeeklyHours * len(board.Weeks)
+		if len(person.Weeks) > 0 {
+			for _, week := range person.Weeks {
+				capacity += week.Capacity
+			}
+		} else {
+			capacity += person.WeeklyHours * len(board.Weeks)
+		}
 	}
 	planned := 0
 	for _, cell := range board.Cells {
