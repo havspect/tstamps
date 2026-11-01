@@ -5,12 +5,14 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/havspect/tstamps/internal/entry"
+	"github.com/havspect/tstamps/internal/plan"
 	"github.com/havspect/tstamps/internal/project"
 	"github.com/havspect/tstamps/internal/report"
 	"github.com/havspect/tstamps/internal/team"
@@ -132,6 +134,28 @@ type mockReportService struct {
 func (m *mockReportService) GenerateReport(ctx context.Context, filter report.Filter) (*report.Report, error) {
 	m.lastFilter = filter
 	return m.report, m.err
+}
+
+type mockPlanService struct {
+	repeatCalls int
+	repeatErr   error
+}
+
+func (m *mockPlanService) List(ctx context.Context, filter plan.Filter) (*plan.Board, error) {
+	return &plan.Board{}, nil
+}
+
+func (m *mockPlanService) Set(ctx context.Context, userID, projectID uint, weekStart time.Time, hours int) (*plan.Plan, error) {
+	return &plan.Plan{}, nil
+}
+
+func (m *mockPlanService) Seed(ctx context.Context, in plan.SeedInput) (*plan.Summary, error) {
+	return &plan.Summary{}, nil
+}
+
+func (m *mockPlanService) Repeat(ctx context.Context, in plan.RepeatInput) (*plan.Summary, error) {
+	m.repeatCalls++
+	return &plan.Summary{}, m.repeatErr
 }
 
 func connectTestClient(t *testing.T, cfg Config) *sdk.ClientSession {
@@ -398,6 +422,35 @@ func TestReportTool(t *testing.T) {
 	}
 	if len(res.Content) == 0 {
 		t.Fatalf("report expected content")
+	}
+}
+
+func TestRepeatPlanRejectsWeekBounds(t *testing.T) {
+	pSvc := &mockPlanService{}
+	cs := connectTestClient(t, Config{PlanService: pSvc})
+
+	for _, weeks := range []int{0, plan.MaxRepeatWeeks + 1} {
+		res, err := cs.CallTool(context.Background(), &sdk.CallToolParams{
+			Name:      "repeat_plan",
+			Arguments: map[string]any{"week_start": "2026-11-02", "weeks": weeks},
+		})
+		if err != nil {
+			t.Fatalf("%d weeks: %v", weeks, err)
+		}
+		if !res.IsError {
+			t.Fatalf("%d weeks: expected a tool error, got %+v", weeks, res)
+		}
+		raw, _ := json.Marshal(res.Content[0])
+		var txt struct {
+			Text string `json:"text"`
+		}
+		_ = json.Unmarshal(raw, &txt)
+		if !strings.Contains(txt.Text, "weeks must be between 1 and 52") {
+			t.Errorf("%d weeks: text = %q", weeks, txt.Text)
+		}
+	}
+	if pSvc.repeatCalls != 0 {
+		t.Errorf("service called %d times for rejected bounds", pSvc.repeatCalls)
 	}
 }
 

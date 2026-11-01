@@ -362,6 +362,25 @@ func TestRepeatNeverOverwrites(t *testing.T) {
 	}
 }
 
+func TestRepeatRejectsWeekBounds(t *testing.T) {
+	now := time.Date(2026, 10, 29, 12, 0, 0, 0, time.UTC)
+	f := newFixture(now)
+	ctx := leadCtx(1, 1)
+	week := time.Date(2026, 11, 2, 0, 0, 0, 0, time.UTC)
+	if _, err := f.svc.Set(ctx, 2, 10, week, 6); err != nil {
+		t.Fatalf("set source: %v", err)
+	}
+
+	for _, weeks := range []int{0, -1, MaxRepeatWeeks + 1} {
+		if _, err := f.svc.Repeat(ctx, RepeatInput{WeekStart: week, Weeks: weeks}); !errors.Is(err, ErrInvalidWeeks) {
+			t.Fatalf("%d weeks: %v", weeks, err)
+		}
+	}
+	if len(f.repo.cells) != 1 {
+		t.Fatalf("rejected repeats wrote %d cells", len(f.repo.cells))
+	}
+}
+
 func TestListNarrowsToTheLeadsTeamsAndSumsOtherLoad(t *testing.T) {
 	now := time.Date(2026, 10, 29, 12, 0, 0, 0, time.UTC)
 	f := newFixture(now)

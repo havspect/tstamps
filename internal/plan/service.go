@@ -2,6 +2,7 @@ package plan
 
 import (
 	"context"
+	"errors"
 	"math"
 	"sort"
 	"strings"
@@ -12,6 +13,9 @@ import (
 	"github.com/havspect/tstamps/internal/clock"
 	"github.com/havspect/tstamps/internal/report"
 )
+
+// ErrInvalidWeeks is returned when a repeat asks for a number of weeks outside 1–MaxRepeatWeeks.
+var ErrInvalidWeeks = errors.New("weeks must be between 1 and 52")
 
 // Service enforces the planning rules over the repository.
 type Service struct {
@@ -517,7 +521,7 @@ func (s *Service) Repeat(ctx context.Context, in RepeatInput) (*Summary, error) 
 		return nil, err
 	}
 	if in.Weeks < 1 || in.Weeks > MaxRepeatWeeks {
-		return nil, ErrInvalidHours
+		return nil, ErrInvalidWeeks
 	}
 	week := WeekStart(in.WeekStart)
 

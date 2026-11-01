@@ -139,6 +139,8 @@ func fail(err error) *huma.ErrorModel {
 	// Plan domain
 	case errors.Is(err, plan.ErrInvalidHours):
 		return problem(http.StatusUnprocessableEntity, urnInvalidInput, "plan hours must be between 0 and 168")
+	case errors.Is(err, plan.ErrInvalidWeeks):
+		return problem(http.StatusUnprocessableEntity, urnInvalidInput, "weeks must be between 1 and 52")
 	case errors.Is(err, plan.ErrInvalidRange), errors.Is(err, plan.ErrUnknownMonth):
 		return problem(http.StatusUnprocessableEntity, urnInvalidInput, "from and to must form a range of weeks, and months are YYYY-MM")
 	case errors.Is(err, plan.ErrProjectNotPlannable):
