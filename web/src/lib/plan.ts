@@ -85,6 +85,13 @@ export function nextMonth(day: string): string {
   return new Date(Date.UTC(year, month, 1)).toISOString().slice(0, 7)
 }
 
+// scaleFor returns the one bar scale for a board: the largest availability
+// rounded up to the next 5 hours, so every track is comparable.
+export function scaleFor(hours: number[]): number {
+  const max = hours.reduce((highest, value) => Math.max(highest, value), 0)
+  return Math.ceil(max / 5) * 5
+}
+
 export function previousMonth(value: string): string {
   const [year, month] = value.split('-').map(Number)
   return new Date(Date.UTC(year, month - 2, 1)).toISOString().slice(0, 7)

@@ -3,7 +3,7 @@
   import { api, problemMessage } from '../lib/api'
   import type { components } from '../lib/api/schema'
   import { deviceTimezone, todayIn } from '../lib/format'
-  import { assignableProjects, bulkPreview, monthLabel, nextMonth, periodLabel, planRange, previousMonth, summaryNotice, weekEnded, weekLabel } from '../lib/plan'
+  import { assignableProjects, bulkPreview, monthLabel, nextMonth, periodLabel, planRange, previousMonth, scaleFor, summaryNotice, weekEnded, weekLabel } from '../lib/plan'
   import type { PlanPeriod, Project } from '../lib/plan'
   import { session } from '../lib/session.svelte'
   import { notifyError } from '../lib/toast'
@@ -15,6 +15,7 @@
   type Cell = components['schemas']['PlanCellResponse']
   type Person = components['schemas']['PlanPersonResponse']
   type PersonWeek = components['schemas']['PlanPersonWeekResponse']
+  type Availability = components['schemas']['PlanAvailabilityResponse']
   type MemberRow = { userID: number; user: string; total: number; weeks: Record<string, number> }
   type ProjectRow = {
     projectID: number
@@ -54,6 +55,7 @@
   let editing = $state<{ userID: number; projectID: number | null; week: string } | null>(null)
   let formProject = $state('')
   let formHours = $state('')
+  let formAvailability = $state('')
 
   // A bulk write whose dry run has been shown and not yet run. The confirm sends
   // the same request without dry_run, so it writes exactly what was previewed.
@@ -66,6 +68,10 @@
   const people = $derived(board?.people ?? [])
   const cells = $derived(board?.cells ?? [])
   const other = $derived(board?.other ?? [])
+  const availabilityRows = $derived(board?.availability ?? [])
+  const availabilityOverrides = $derived(
+    new Map<string, number>(availabilityRows.map((row) => [`${row.user_id}|${row.week_start}`, row.hours])),
+  )
   const colors = $derived(new Map(projects.map((project) => [project.id, project.color])))
   const choices = $derived(
     assignableProjects(projects, people.find((person) => person.user_id === editing?.userID)),
@@ -74,6 +80,10 @@
 
   const planned = $derived(cells.reduce((sum, cell) => sum + cell.hours, 0) + other.reduce((sum, row) => sum + row.hours, 0))
   const capacity = $derived(people.reduce((sum, person) => sum + totalCapacity(person.user_id), 0))
+  // One scale for every track on the board, so the bars are comparable.
+  const scale = $derived(
+    scaleFor(people.flatMap((person) => weeks.map((week) => capacityOf(person.user_id, week)))),
+  )
   const onVacation = $derived(
     weeks.some((week) => people.some((person) => vacationHoursOf(person.user_id, week) > 0)),
   )
@@ -165,10 +175,21 @@
     return weeks.reduce((sum, week) => sum + capacityOf(personID, week), 0)
   }
 
-  // 0 weekly hours means no capacity configured, not zero hours available; only
-  // a configured person can be over capacity.
-  function hasCapacity(personID: number): boolean {
-    return (people.find((person) => person.user_id === personID)?.weekly_hours ?? 0) > 0
+  // The availability field edits the week's own hours, before a vacation lowers
+  // them. Absent overrides fall back to the person's weekly hours.
+  function baseAvailabilityOf(personID: number, week: string): number {
+    const person = people.find((row) => row.user_id === personID)
+    if (!person || person.deactivated) return 0
+    return availabilityOverrides.get(`${personID}|${week}`) ?? person.weekly_hours
+  }
+
+  function trackWidth(hours: number): number {
+    return scale > 0 ? Math.min(100, (hours / scale) * 100) : 0
+  }
+
+  // Segments are a share of their own track, which is a share of the scale.
+  function segmentWidth(hours: number, available: number): number {
+    return available > 0 ? Math.min(100, (hours / available) * 100) : 0
   }
 
   function weekPlanned(week: string): number {
@@ -182,11 +203,11 @@
   }
 
   function over(person: Person): boolean {
-    return person.weekly_hours > 0 && personTotal(person.user_id) > totalCapacity(person.user_id)
+    return personTotal(person.user_id) > totalCapacity(person.user_id)
   }
 
   function overWeek(personID: number, week: string): boolean {
-    return hasCapacity(personID) && personWeek(personID, week) > capacityOf(personID, week)
+    return personWeek(personID, week) > capacityOf(personID, week)
   }
 
   // A week that has ended where the planned person lives is history: the server
@@ -240,6 +261,7 @@
     formProject = projectID ? String(projectID) : ''
     const existing = projectID ? cellHours(personID, projectID, week) : 0
     formHours = existing > 0 ? String(existing) : ''
+    formAvailability = String(baseAvailabilityOf(personID, week))
     notice = ''
     jumpMonth = ''
     actionError = ''
@@ -268,36 +290,70 @@
 
   async function save() {
     if (!editing) return
+    const { userID, week } = editing
+    // Validate everything before the first write, so a bad project field cannot
+    // leave half a save behind.
+    if (formAvailability.trim() === '') {
+      fieldError = 'Enter the availability, or 0 for none.'
+      return
+    }
+    const available = Number(formAvailability)
+    if (!Number.isInteger(available) || available < 0 || available > 168) {
+      fieldError = 'Availability must be a whole number from 0 to 168.'
+      return
+    }
     const projectID = editing.projectID ?? Number(formProject)
-    if (!projectID) {
+    let hours = 0
+    if (!projectID && formHours.trim() !== '') {
       fieldError = 'Choose a project first.'
       return
     }
-    if (formHours.trim() === '') {
-      fieldError = 'Enter the hours, or 0 to clear this project from the week.'
-      return
-    }
-    const hours = Number(formHours)
-    if (!Number.isInteger(hours) || hours < 0 || hours > 168) {
-      fieldError = 'Hours must be a whole number from 0 to 168.'
-      return
+    if (projectID) {
+      if (formHours.trim() === '') {
+        fieldError = 'Enter the hours, or 0 to clear this project from the week.'
+        return
+      }
+      hours = Number(formHours)
+      if (!Number.isInteger(hours) || hours < 0 || hours > 168) {
+        fieldError = 'Hours must be a whole number from 0 to 168.'
+        return
+      }
     }
     fieldError = ''
-    const { error: problem, response } = await api.PUT('/api/v1/plan', {
-      body: {
-        user_id: editing.userID,
-        project_id: projectID,
-        week_start: editing.week,
-        hours,
-      },
-    })
-    if (problem) {
-      actionFailed(problem, response)
-      return
+    const saved: string[] = []
+    // Writing the person's weekly default clears an explicit override, so that
+    // counts as a change even when the effective hours did not move. The project
+    // view has no availability field, so it never writes one.
+    const explicit = availabilityOverrides.has(`${userID}|${week}`)
+    const weekly = people.find((person) => person.user_id === userID)?.weekly_hours ?? 0
+    if (editing.projectID === null && (available !== baseAvailabilityOf(userID, week) || (explicit && available === weekly))) {
+      const { error: problem, response } = await api.PUT('/api/v1/plan/availability', {
+        body: { user_id: userID, week_start: week, hours: available },
+      })
+      if (problem) {
+        actionFailed(problem, response)
+        return
+      }
+      saved.push(`availability ${available}h`)
+    }
+    if (projectID) {
+      const { error: problem, response } = await api.PUT('/api/v1/plan', {
+        body: {
+          user_id: userID,
+          project_id: projectID,
+          week_start: week,
+          hours,
+        },
+      })
+      if (problem) {
+        actionFailed(problem, response)
+        return
+      }
+      saved.push(`${hours}h`)
     }
     actionError = ''
     jumpMonth = ''
-    notice = `Saved ${hours}h.`
+    notice = saved.length > 0 ? `Saved ${saved.join(' and ')}.` : 'Nothing to save.'
     await load(true)
   }
 
@@ -475,7 +531,10 @@
 {:else if view === 'person'}
   <wa-scroller class="board-scroller">
     <table class="board wa-tabular-nums">
-      <caption class="range">{rangeLabel} {@render history()}</caption>
+      <caption class="range">
+        {rangeLabel} {@render history()}
+        {#if scale > 0}<span class="scalenote">Bars scale to {scale}h per week — the most anyone is available</span>{/if}
+      </caption>
       <thead>
         <tr>
           <th scope="col">Person</th>
@@ -506,29 +565,31 @@
                 <button
                   type="button"
                   class="cell"
-                  class:over={hasCapacity(person.user_id) && plannedHours + elsewhere > weekHours}
+                  class:over={overWeek(person.user_id, week)}
                   class:ended
                   disabled={!canEdit}
                   aria-disabled={(canEdit && ended) || undefined}
                   title={ended ? `Week of ${weekLabel(week)} has ended and cannot be planned` : undefined}
-                  aria-label={`${person.user}, week of ${weekLabel(week)}: ${plannedHours} of ${weekHours} hours planned${vacationHours > 0 ? `, ${vacationHours}h vacation` : ''}${ended ? ', the week has ended and cannot be planned' : ''}`}
+                  aria-label={`${person.user}, week of ${weekLabel(week)}: ${plannedHours + elsewhere} of ${weekHours} hours planned, ${weekHours} available${vacationHours > 0 ? `, ${vacationHours}h vacation` : ''}${ended ? ', the week has ended and cannot be planned' : ''}`}
                   onclick={() => select(person.user_id, week)}
                 >
-                  <span class="bar">
-                    {#each entries as cell (cell.project_id)}
-                      <span
-                        class="segment"
-                        title={`${cell.project}: ${cell.hours}h`}
-                        style:width={`${Math.min(100, (cell.hours / Math.max(weekHours, 1)) * 100)}%`}
-                        style:background={colors.get(cell.project_id) ?? 'var(--muted)'}
-                      ></span>
-                    {/each}
-                    {#if elsewhere > 0}
-                      <span class="segment other" title={`Other teams: ${elsewhere}h`} style:width={`${Math.min(100, (elsewhere / Math.max(weekHours, 1)) * 100)}%`}></span>
-                    {/if}
+                  <span class="barslot">
+                    <span class="bar" style:width={`${trackWidth(weekHours)}%`}>
+                      {#each entries as cell (cell.project_id)}
+                        <span
+                          class="segment"
+                          title={`${cell.project}: ${cell.hours}h`}
+                          style:width={`${segmentWidth(cell.hours, weekHours)}%`}
+                          style:background={colors.get(cell.project_id) ?? 'var(--muted)'}
+                        ></span>
+                      {/each}
+                      {#if elsewhere > 0}
+                        <span class="segment other" title={`Other teams: ${elsewhere}h`} style:width={`${segmentWidth(elsewhere, weekHours)}%`}></span>
+                      {/if}
+                    </span>
                   </span>
                   <span class="value">
-                    {plannedHours}{#if elsewhere > 0}<span class="other-hours">+{elsewhere}</span>{/if}
+                    {plannedHours}{#if elsewhere > 0}<span class="other-hours">+{elsewhere}</span>{/if}/{weekHours}
                   </span>
                   {#if vacationHours > 0}
                     <span class="vacation" title={`${vacationHours}h vacation`}>vac</span>
@@ -537,7 +598,7 @@
               </td>
             {/each}
             <td class="num total" class:over={over(person)}>
-              {total}{person.weekly_hours > 0 ? ` / ${personCapacity}h` : ''}
+              {total}{personCapacity > 0 ? ` / ${personCapacity}h` : ''}
             </td>
           </tr>
         {/each}
@@ -556,7 +617,10 @@
 {:else}
   <wa-scroller class="board-scroller">
     <table class="board wa-tabular-nums">
-      <caption class="range">{rangeLabel} {@render history()}</caption>
+      <caption class="range">
+        {rangeLabel} {@render history()}
+        {#if scale > 0}<span class="scalenote">Bars scale to {scale}h per week — the most anyone is available</span>{/if}
+      </caption>
       <thead>
         <tr>
           <th scope="col">Project</th>
@@ -594,6 +658,8 @@
                 {#each weeks as week (week)}
                   {@const vacationHours = vacationHoursOf(member.userID, week)}
                   {@const ended = endedWeek(member.userID, week)}
+                  {@const available = capacityOf(member.userID, week)}
+                  {@const hours = member.weeks[week] ?? 0}
                   <td class="num">
                     <button
                       type="button"
@@ -603,9 +669,16 @@
                       disabled={!canEdit || row.archived}
                       aria-disabled={(canEdit && !row.archived && ended) || undefined}
                       title={ended ? `Week of ${weekLabel(week)} has ended and cannot be planned` : undefined}
-                      aria-label={`${member.user}, ${row.project}, week of ${weekLabel(week)}: ${member.weeks[week] ?? 0} hours planned${vacationHours > 0 ? `, ${vacationHours}h vacation` : ''}${ended ? ', the week has ended and cannot be planned' : ''}`}
+                      aria-label={`${member.user}, ${row.project}, week of ${weekLabel(week)}: ${hours} hours planned, ${available} available${vacationHours > 0 ? `, ${vacationHours}h vacation` : ''}${ended ? ', the week has ended and cannot be planned' : ''}`}
                       onclick={() => select(member.userID, week, row.projectID)}
                     >
+                      <span class="barslot">
+                        <span class="bar" style:width={`${trackWidth(available)}%`}>
+                          {#if hours > 0}
+                            <span class="segment" style:width={`${segmentWidth(hours, available)}%`} style:background={colors.get(row.projectID) ?? 'var(--muted)'}></span>
+                          {/if}
+                        </span>
+                      </span>
                       <span class="value">{member.weeks[week] ?? ''}</span>
                       {#if vacationHours > 0}
                         <span class="vacation" title={`${vacationHours}h vacation`}>vac</span>
@@ -633,6 +706,7 @@
     <h2>{editedPerson.user}{#if editedProject}{` · ${editedProject}`}{/if} · week of {weekLabel(editing.week)}</h2>
     <div class="editor-fields">
       {#if !editing.projectID}
+        <Input id="plan-availability" label="Available this week" type="number" min="0" max="168" bind:value={formAvailability} />
         <Select id="plan-project" label="Project" bind:value={formProject} onchange={(event) => chooseProject(event.currentTarget.value)}>
           <wa-option value="">Choose a project</wa-option>
           {#each choices as project (project.id)}
@@ -749,6 +823,12 @@
     font-weight: 400;
   }
 
+  .scalenote {
+    margin-left: var(--space-2);
+    font-weight: 400;
+    font-size: 0.8125rem;
+  }
+
   .board th,
   .board td {
     padding: var(--space-2);
@@ -859,11 +939,16 @@
     cursor: default;
   }
 
+  .barslot {
+    display: block;
+    flex: 1 1 auto;
+    min-width: 4rem;
+    height: 0.5rem;
+  }
+
   .bar {
     display: flex;
-    flex: 1 1 auto;
-    height: 0.5rem;
-    min-width: 4rem;
+    height: 100%;
     border-radius: 999px;
     background: var(--border);
     overflow: hidden;
@@ -893,7 +978,7 @@
   }
 
   .value {
-    min-width: 2rem;
+    min-width: 3.5rem;
     text-align: right;
   }
 

@@ -37,6 +37,10 @@ type Repository interface {
 	ListVacations(ctx context.Context, filter VacationFilter) ([]Vacation, error)
 	CreateVacation(ctx context.Context, v *Vacation) error
 	DeleteVacation(ctx context.Context, id, userID uint) error
+	Availability(ctx context.Context, filter Filter) ([]Availability, error)
+	GetAvailability(ctx context.Context, userID uint, weekStart time.Time) (*Availability, error)
+	UpsertAvailability(ctx context.Context, a *Availability) error
+	DeleteAvailability(ctx context.Context, userID uint, weekStart time.Time) error
 }
 
 // UnitOfWork runs a block inside one transaction.

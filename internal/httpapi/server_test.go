@@ -416,6 +416,25 @@ func TestFullDomainOperations(t *testing.T) {
 		t.Fatalf("cross-team plan status=%d: %s", rec.Code, rec.Body.String())
 	}
 
+	// 3c. Plan: override one week's availability and read it back on the board
+	availJSON := `{"user_id":` + jsonNum(admin.ID) + `,"week_start":"` + monday.Format("2006-01-02") + `","hours":20}`
+	rec = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodPut, "/api/v1/plan/availability", strings.NewReader(availJSON))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", authHeader)
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"hours":20`) {
+		t.Fatalf("set availability status=%d: %s", rec.Code, rec.Body.String())
+	}
+
+	rec = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/plan?from="+monday.Format("2006-01-02")+"&to="+monday.AddDate(0, 0, 7).Format("2006-01-02"), nil)
+	req.Header.Set("Authorization", authHeader)
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"availability":[`) || !strings.Contains(rec.Body.String(), `"hours":20`) {
+		t.Fatalf("get plan availability status=%d: %s", rec.Code, rec.Body.String())
+	}
+
 	// 4. Timer: Start, GetRunning, Stop
 	startTimerJSON := `{"project_id":` + jsonNum(projResp.ID) + `,"note":"Coding"}`
 	rec = httptest.NewRecorder()

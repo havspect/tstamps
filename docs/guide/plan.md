@@ -13,13 +13,17 @@ A plan is never an entry. It does not appear in reports, CSV exports or the time
 
 ## Read the board
 
-Choose **Week**, **Month** or **Quarter**; the range defaults to next month. Pick any day in the range and press **Show**. Each column is one ISO week, and a cell's hours are always for that week, whatever the range. A bar is coloured by project, using the same project colours as the timeline. The right column compares planned hours with the person's capacity for the range, and the bottom row shows how much capacity is unplanned.
+Choose **Week**, **Month** or **Quarter**; the range defaults to next month. Pick any day in the range and press **Show**. Each column is one ISO week, and a cell's hours are always for that week, whatever the range. A bar is coloured by project, using the same project colours as the timeline. The right column compares planned hours with the person's availability for the range — their capacity, adjusted by a per-week override and any vacation — and the bottom row shows how much availability is unplanned; every capacity figure on the board, the KPIs included, uses availability.
 
-Switch **By person | By project** to read the same numbers the other way: which projects will consume the range. A project row expands (▸) to its team's members, and each member's week is the same editable cell as in the person view. Archived projects and their members stay read-only.
+Every bar shares one scale: the largest availability among the people and weeks on screen, rounded up to the next 5 hours, named in the caption. A track is as wide as the person's availability that week and fills from the left, so a shorter track means less availability, not fewer hours; the value reads `20/32`, planned of available.
+
+Switch **By person | By project** to read the same numbers the other way: which projects will consume the range. A project row expands (▸) to its team's members, and each member's week is the same editable cell as in the person view, on the same scale against that member's availability; project summary rows stay plain hour numbers. Archived projects and their members stay read-only.
 
 ## Set hours
 
-Click a person's week, or a member's week under a project, to open the editor. From the person view, choose a project, type the hours and press **Set**; from the project view the project is fixed and the person is the row you clicked. Setting `0` removes that project from the week. A person may be planned for up to 168 hours a week; over capacity is allowed and marked, because a crunch is the thing you came to see.
+Click a person's week, or a member's week under a project, to open the editor. From the person view, choose a project, type the hours and press **Set**; from the project view the project is fixed and the person is the row you clicked. Setting `0` removes that project from the week. A person may be planned for up to 168 hours a week; planning beyond their availability is allowed and marked, because a crunch is the thing you came to see.
+
+In the person view, **Available this week** above the project hours sets that week's availability, `0–168`, without touching any project hours. Setting it back to the person's default clears the override, so a later capacity change on **Admin → Users** still applies; `0` means genuinely unavailable. The project view edits only project hours.
 
 **Repeat 4 weeks** copies that person's week (or that person's hours on the clicked project) into the following four, and **Seed from last month** fills the whole month from the previous month's logged hours: each person's hours per project are split evenly across the month's weeks and rounded to whole hours.
 
@@ -31,11 +35,12 @@ Bulk actions fill empty cells only and tell you how many they skipped. Nothing i
 - Archived projects keep their existing plan hours, labelled as archived, but cannot take new ones.
 - A deactivated person keeps their row only while they still have plan hours in the range.
 - Capacity is a number per person on **Admin → Users**, defaulting to 40 hours. A [vacation](./vacations.md) lowers it by the working time it covers, so the unallocated row already excludes it.
-- Every cell a lead or admin writes is an audit event, one per cell, including the cells a seed or repeat fills.
+- A person's availability defaults to their capacity; only weeks that differ are stored, so changing capacity carries through every week without an override. An override applies before any vacation hours are taken off.
+- Every cell a lead or admin writes is an audit event, one per cell, including the cells a seed or repeat fills; an availability override is audited the same way.
 
 ## Vacations
 
-Every user records their own vacations under **Vacations** in the top bar. A vacation is an inclusive range of dates with hours on its first and last date; the working days between them are full days. Only Monday-to-Friday time counts, so a range across a weekend does not change the board. A week cell whose person is away is marked `vac` and shows the reduced capacity, and planning over it is allowed but flagged like any other crunch.
+Every user records their own vacations under **Vacations** in the top bar. A vacation is an inclusive range of dates with hours on its first and last date; the working days between them are full days. Only Monday-to-Friday time counts, so a range across a weekend does not change the board. A week cell whose person is away is marked `vac` and shows the reduced capacity, and planning over it is allowed but flagged like any other crunch. A vacation is taken off the week's availability, after any override.
 
 A lead can switch the **Vacations** page to a person in a team they lead and read the dates, hours and note. That view is read-only: only the owner writes a vacation.
 

@@ -338,3 +338,92 @@ func (r *PlanRepository) DeleteVacation(ctx context.Context, id, userID uint) er
 	}
 	return nil
 }
+
+func toAvailabilityDomain(m *UserWeekHours) *plan.Availability {
+	if m == nil {
+		return nil
+	}
+	return &plan.Availability{
+		ID:          m.ID,
+		WorkspaceID: m.WorkspaceID,
+		UserID:      m.UserID,
+		WeekStart:   m.WeekStart,
+		Hours:       m.Hours,
+		CreatedAt:   m.CreatedAt,
+		UpdatedAt:   m.UpdatedAt,
+	}
+}
+
+// Availability returns the stored overrides in a range.
+func (r *PlanRepository) Availability(ctx context.Context, filter plan.Filter) ([]plan.Availability, error) {
+	db := DBFrom(ctx, r.db)
+	q := db.Model(&UserWeekHours{}).
+		Where("week_start >= ? AND week_start < ?", filter.From, filter.To)
+	if len(filter.UserIDs) > 0 {
+		q = q.Where("user_id IN ?", filter.UserIDs)
+	}
+	if filter.UserID != 0 {
+		q = q.Where("user_id = ?", filter.UserID)
+	}
+
+	var rows []UserWeekHours
+	if err := q.Order("week_start ASC, user_id ASC").Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	if len(rows) == 0 {
+		return nil, nil
+	}
+	out := make([]plan.Availability, len(rows))
+	for i, row := range rows {
+		out[i] = *toAvailabilityDomain(&row)
+	}
+	return out, nil
+}
+
+// GetAvailability returns one week's override, or nil when none is stored.
+func (r *PlanRepository) GetAvailability(ctx context.Context, userID uint, weekStart time.Time) (*plan.Availability, error) {
+	db := DBFrom(ctx, r.db)
+	var m UserWeekHours
+	err := db.Where("user_id = ? AND week_start = ?", userID, weekStart).First(&m).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return toAvailabilityDomain(&m), nil
+}
+
+// UpsertAvailability writes an override, keeping the existing row when there is one.
+func (r *PlanRepository) UpsertAvailability(ctx context.Context, a *plan.Availability) error {
+	db := DBFrom(ctx, r.db)
+	res := db.Model(&UserWeekHours{}).
+		Where("user_id = ? AND week_start = ?", a.UserID, a.WeekStart).
+		Updates(map[string]any{"hours": a.Hours, "updated_at": a.UpdatedAt})
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected > 0 {
+		return nil
+	}
+	row := &UserWeekHours{
+		WorkspaceID: a.WorkspaceID,
+		UserID:      a.UserID,
+		WeekStart:   a.WeekStart,
+		Hours:       a.Hours,
+		CreatedAt:   a.CreatedAt,
+		UpdatedAt:   a.UpdatedAt,
+	}
+	if err := db.Create(row).Error; err != nil {
+		return err
+	}
+	a.ID = row.ID
+	return nil
+}
+
+// DeleteAvailability removes one week's override.
+func (r *PlanRepository) DeleteAvailability(ctx context.Context, userID uint, weekStart time.Time) error {
+	db := DBFrom(ctx, r.db)
+	return db.Where("user_id = ? AND week_start = ?", userID, weekStart).
+		Delete(&UserWeekHours{}).Error
+}

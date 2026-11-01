@@ -31,6 +31,7 @@ A plan cell is one `(user, project, week)` with `0–168` hours. Zero hours dele
 ## Consequences
 
 - New table `plans`, plus `users.weekly_hours` (default 40). Both are additive `AutoMigrate` changes.
+- `users.weekly_hours` is the default capacity; a per-week `user_week_hours` override is the exception, stored only when it differs.
 - Plan rows carry the same `workspace_id` tenancy as every other tenant row.
 - The API is `/plan` (read, write, seed, repeat), mirrored by `tstamps plan` and four MCP tools.
 - Archived projects keep their plan cells, visible and labelled, and cannot take new ones. Deactivated users lose their row unless they still have cells in the range.
