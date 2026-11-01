@@ -1,0 +1,100 @@
+# Sandbox policy for the agents sandbox built by openshell/Dockerfile.
+#
+# The sandbox has no egress except what is listed here: when an agent hits a
+# host that is missing, `openshell logs <sandbox> --tail` prints a DENIED line
+# naming it, and the host goes below.
+# Loopback dev ports (4096, 5173, 5174, 8080, 8098, 8099) need no rule: the
+# sandbox reaches its own services directly, and they are forwarded by run.sh.
+version: 1
+
+filesystem_policy:
+  include_workdir: true
+  read_only:
+    - /bin
+    - /usr
+    - /lib
+    - /lib64
+    - /proc
+    - /dev/urandom
+    - /etc
+    - /var/log
+  read_write:
+    - /tmp
+    - /dev/null
+    # $HOME is the workdir; this is uid 1000's passwd home for tools that ignore it.
+    - /home/ubuntu
+
+landlock:
+  compatibility: best_effort
+
+network_policies:
+  # Package installs (pnpm, npx, playwright browsers).
+  npm:
+    endpoints:
+      - host: registry.npmjs.org
+        port: 443
+        protocol: rest
+        enforcement: enforce
+        access: full
+        allow_encoded_slash: true
+    binaries:
+      - path: /**
+
+  apt_and_node:
+    endpoints:
+      - { host: archive.ubuntu.com, port: 80 }
+      - { host: security.ubuntu.com, port: 80 }
+      - { host: deb.nodesource.com, port: 443, protocol: rest, enforcement: enforce, access: full }
+      - { host: nodejs.org, port: 443, protocol: rest, enforcement: enforce, access: full }
+    binaries:
+      - path: /**
+
+  github:
+    endpoints:
+      - { host: github.com, port: 443, protocol: rest, enforcement: enforce, access: full }
+      - { host: api.github.com, port: 443, protocol: rest, enforcement: enforce, access: full }
+      - { host: codeload.github.com, port: 443 }
+      - { host: raw.githubusercontent.com, port: 443 }
+      - { host: objects.githubusercontent.com, port: 443 }
+    binaries:
+      - path: /**
+
+  go:
+    endpoints:
+      - { host: proxy.golang.org, port: 443 }
+      - { host: sum.golang.org, port: 443 }
+      - { host: storage.googleapis.com, port: 443 }
+      - { host: go.dev, port: 443 }
+    binaries:
+      - path: /**
+
+  # opencode's own endpoints (provider "opencode-go", updates, model catalog).
+  opencode:
+    endpoints:
+      - { host: opencode.ai, port: 443, protocol: rest, enforcement: enforce, access: full }
+      - { host: "**.opencode.ai", port: 443, protocol: rest, enforcement: enforce, access: full }
+      - { host: models.dev, port: 443, protocol: rest, enforcement: enforce, access: full }
+    binaries:
+      - path: /**
+
+  # agy (Antigravity CLI): Google sign-in and model calls.
+  antigravity:
+    endpoints:
+      - { host: accounts.google.com, port: 443, protocol: rest, enforcement: enforce, access: full }
+      - { host: oauth2.googleapis.com, port: 443, protocol: rest, enforcement: enforce, access: full }
+      - { host: www.googleapis.com, port: 443, protocol: rest, enforcement: enforce, access: full }
+      - { host: generativelanguage.googleapis.com, port: 443, protocol: rest, enforcement: enforce, access: full }
+      - { host: cloudcode-pa.googleapis.com, port: 443, protocol: rest, enforcement: enforce, access: full }
+      - { host: daily-cloudcode-pa.googleapis.com, port: 443, protocol: rest, enforcement: enforce, access: full }
+      - { host: aiplatform.googleapis.com, port: 443, protocol: rest, enforcement: enforce, access: full }
+      - { host: antigravity.google, port: 443, protocol: rest, enforcement: enforce, access: full }
+    binaries:
+      - path: /**
+
+  # `pnpm --dir web exec playwright install` for the e2e suite.
+  playwright:
+    endpoints:
+      - { host: cdn.playwright.dev, port: 443 }
+      - { host: playwright.azureedge.net, port: 443 }
+    binaries:
+      - path: /**
