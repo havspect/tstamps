@@ -20,6 +20,10 @@ The manual lives in [docs/guide](docs/guide) and ships inside the server at
 - **Leads read the hours without asking for a form.** Anyone may log on any
   project, and a lead reads every hour booked on their team's projects
   ([ADR-0002](docs/adr/0002-teams-own-projects.md)).
+- **The next month is a board, not a guess.** Leads plan hours per person,
+  project and week against capacity; vacations lower that capacity for the
+  working time they cover
+  ([ADR-0023](docs/adr/0023-vacation-is-not-an-entry.md)).
 - **Nothing disappears by accident.** Deleting hides, archiving keeps the
   hours, a leaver is deactivated; an admin restores any of it without a backup
   ([ADR-0004](docs/adr/0004-archive-projects-delete-entries.md)).
@@ -29,7 +33,7 @@ The manual lives in [docs/guide](docs/guide) and ships inside the server at
   one SQLite database, scoped by `workspace_id`, so backup stays one file
   ([ADR-0019](docs/adr/0019-workspaces-share-one-sqlite-file.md)).
 
-Not for you if you need approvals, leave, invoicing or rates; a managed
+Not for you if you need approvals, public holidays, invoicing or rates; a managed
 service, SSO or an audit log; per-user erasure; several companies inside one
 workspace; or realtime co-editing. The full scope is [docs/SPEC.md](docs/SPEC.md).
 

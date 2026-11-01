@@ -108,6 +108,7 @@ func New(deps Dependencies) http.Handler {
 	s.timerRoutes(api)
 	s.reportRoutes(api)
 	s.planRoutes(api)
+	s.vacationRoutes(api)
 	s.auditRoutes(api)
 	s.signupRoutes(api)
 
@@ -332,6 +333,7 @@ func (s *Server) sitemap(w http.ResponseWriter, r *http.Request) {
 		"/docs/timeline",
 		"/docs/reports",
 		"/docs/plan",
+		"/docs/vacations",
 		"/docs/cli",
 		"/docs/mcp",
 		"/docs/agents/",

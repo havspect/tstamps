@@ -669,14 +669,22 @@ type Report struct {
 	TotalSeconds int64       `json:"total_seconds"`
 }
 
+// PlanPersonWeek is one person's capacity in one ISO week after vacation.
+type PlanPersonWeek struct {
+	WeekStart     string  `json:"week_start"`
+	Capacity      int     `json:"capacity"`
+	VacationHours float64 `json:"vacation_hours"`
+}
+
 // PlanPerson is a person who can be planned, with their weekly capacity.
 type PlanPerson struct {
-	UserID      uint     `json:"user_id"`
-	User        string   `json:"user"`
-	Email       string   `json:"email"`
-	WeeklyHours int      `json:"weekly_hours"`
-	Teams       []string `json:"teams"`
-	Deactivated bool     `json:"deactivated,omitempty"`
+	UserID      uint             `json:"user_id"`
+	User        string           `json:"user"`
+	Email       string           `json:"email"`
+	WeeklyHours int              `json:"weekly_hours"`
+	Teams       []string         `json:"teams"`
+	Deactivated bool             `json:"deactivated,omitempty"`
+	Weeks       []PlanPersonWeek `json:"weeks"`
 }
 
 // PlanCell is one person, project and ISO week of planned hours.
@@ -742,6 +750,16 @@ func toPlanBoard(b *plan.Board) PlanBoard {
 		out.People[i] = PlanPerson{
 			UserID: person.UserID, User: person.Name, Email: person.Email,
 			WeeklyHours: person.WeeklyHours, Teams: teams, Deactivated: !person.Active,
+		}
+	}
+	for _, pw := range b.PersonWeeks {
+		for i := range out.People {
+			if out.People[i].UserID == pw.UserID {
+				out.People[i].Weeks = append(out.People[i].Weeks, PlanPersonWeek{
+					WeekStart: pw.WeekStart.Format("2006-01-02"), Capacity: pw.Capacity, VacationHours: pw.VacationHours,
+				})
+				break
+			}
 		}
 	}
 	out.Cells = make([]PlanCell, len(b.Cells))

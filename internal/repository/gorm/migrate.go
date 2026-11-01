@@ -26,6 +26,7 @@ var allModels = []any{
 	&Project{},
 	&Entry{},
 	&Plan{},
+	&Vacation{},
 	&AuditLog{},
 	&OAuthClient{},
 	&OAuthCode{},

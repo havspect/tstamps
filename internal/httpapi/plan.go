@@ -12,14 +12,21 @@ import (
 
 const dateLayout = "2006-01-02"
 
+type planPersonWeekResponse struct {
+	WeekStart     string  `json:"week_start"`
+	Capacity      int     `json:"capacity"`
+	VacationHours float64 `json:"vacation_hours"`
+}
+
 type planPersonResponse struct {
-	UserID      uint     `json:"user_id"`
-	User        string   `json:"user"`
-	Email       string   `json:"email"`
-	WeeklyHours int      `json:"weekly_hours"`
-	Teams       []string `json:"teams"`
-	TeamIDs     []uint   `json:"team_ids"`
-	Deactivated bool     `json:"deactivated"`
+	UserID      uint                     `json:"user_id"`
+	User        string                   `json:"user"`
+	Email       string                   `json:"email"`
+	WeeklyHours int                      `json:"weekly_hours"`
+	Teams       []string                 `json:"teams"`
+	TeamIDs     []uint                   `json:"team_ids"`
+	Deactivated bool                     `json:"deactivated"`
+	Weeks       []planPersonWeekResponse `json:"weeks"`
 }
 
 type planCellResponse struct {
@@ -208,6 +215,12 @@ func (s *Server) getPlan(ctx context.Context, in *planListInput) (*planListOutpu
 		out.Body.Weeks[i] = week.Format(dateLayout)
 	}
 	out.Body.People = make([]planPersonResponse, len(board.People))
+	weeksByUser := map[uint][]planPersonWeekResponse{}
+	for _, pw := range board.PersonWeeks {
+		weeksByUser[pw.UserID] = append(weeksByUser[pw.UserID], planPersonWeekResponse{
+			WeekStart: pw.WeekStart.Format(dateLayout), Capacity: pw.Capacity, VacationHours: pw.VacationHours,
+		})
+	}
 	for i, person := range board.People {
 		teams := make([]string, len(person.Teams))
 		teamIDs := make([]uint, len(person.Teams))
@@ -218,6 +231,7 @@ func (s *Server) getPlan(ctx context.Context, in *planListInput) (*planListOutpu
 		out.Body.People[i] = planPersonResponse{
 			UserID: person.UserID, User: person.Name, Email: person.Email,
 			WeeklyHours: person.WeeklyHours, Teams: teams, TeamIDs: teamIDs, Deactivated: !person.Active,
+			Weeks: weeksByUser[person.UserID],
 		}
 	}
 	out.Body.Cells = make([]planCellResponse, len(board.Cells))

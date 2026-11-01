@@ -131,6 +131,22 @@ type Plan struct {
 	UpdatedAt   time.Time
 }
 
+// Vacation is a user's time off, as inclusive calendar dates. StartHours and
+// EndHours are the hours off on the first and last date (zero on a weekend). It
+// lowers capacity on the plan board but is not an entry.
+type Vacation struct {
+	ID          uint      `gorm:"primarykey"`
+	WorkspaceID uint      `gorm:"not null;index"`
+	UserID      uint      `gorm:"not null;index"`
+	StartDate   time.Time `gorm:"not null;index"`
+	EndDate     time.Time `gorm:"not null"`
+	StartHours  float64   `gorm:"not null;default:0"`
+	EndHours    float64   `gorm:"not null;default:0"`
+	Note        string
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+}
+
 // AuditLog is one record in the workspace's tamper-evident audit log.
 type AuditLog struct {
 	ID            uint      `gorm:"primarykey"`

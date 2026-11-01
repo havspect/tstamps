@@ -14,14 +14,22 @@ type PlanQuery struct {
 	UserID uint
 }
 
+// PlanPersonWeek is one person's capacity in one ISO week after vacation.
+type PlanPersonWeek struct {
+	WeekStart     string  `json:"week_start"`
+	Capacity      int     `json:"capacity"`
+	VacationHours float64 `json:"vacation_hours"`
+}
+
 // PlanPerson is a person who can be planned, with their weekly capacity.
 type PlanPerson struct {
-	UserID      uint     `json:"user_id"`
-	User        string   `json:"user"`
-	Email       string   `json:"email"`
-	WeeklyHours int      `json:"weekly_hours"`
-	Teams       []string `json:"teams"`
-	Deactivated bool     `json:"deactivated"`
+	UserID      uint             `json:"user_id"`
+	User        string           `json:"user"`
+	Email       string           `json:"email"`
+	WeeklyHours int              `json:"weekly_hours"`
+	Teams       []string         `json:"teams"`
+	Deactivated bool             `json:"deactivated"`
+	Weeks       []PlanPersonWeek `json:"weeks"`
 }
 
 // PlanCell is one person, project and ISO week of planned hours.

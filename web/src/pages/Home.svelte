@@ -281,6 +281,7 @@ tstamps login --url https://time.example.com/w/example.com</code></pre>
             <ul class="ticks wa-stack wa-gap-xs">
               <li><wa-icon name="check"></wa-icon>Timeline logging, one running entry</li>
               <li><wa-icon name="check"></wa-icon>Plan by person, project and week</li>
+              <li><wa-icon name="check"></wa-icon>Vacations that lower plan capacity</li>
               <li><wa-icon name="check"></wa-icon>Reports with plan drift, and My hours</li>
               <li><wa-icon name="check"></wa-icon>CLI, remote MCP and an agent skill</li>
               <li><wa-icon name="check"></wa-icon>Entry timezones that decide the day</li>
@@ -291,7 +292,7 @@ tstamps login --url https://time.example.com/w/example.com</code></pre>
           <div>
             <h3>It leaves out</h3>
             <ul class="ticks no wa-stack wa-gap-xs">
-              <li><wa-icon name="minus"></wa-icon>Approvals, leave and holidays</li>
+              <li><wa-icon name="minus"></wa-icon>Approvals and public holidays</li>
               <li><wa-icon name="minus"></wa-icon>Invoicing and rates</li>
               <li><wa-icon name="minus"></wa-icon>SSO, billing and a mobile app</li>
               <li><wa-icon name="minus"></wa-icon>Reminders and notifications</li>

@@ -12,7 +12,7 @@ The order is a dependency, not a preference: the app's login is the OAuth flow f
 
 ## Non-goals for v2
 
-SAML, SCIM or directory sync, per-user erasure, automatic workspace deletion, plan tiers, seat metering or usage billing, operator impersonation, workspace deletion from the console, mobile admin screens, push notifications and background tracking, offline merge with conflict UI, i18n, approvals, leave and holidays, rates and invoicing, Jira/Linear sync, realtime co-editing, a team-wide timeline, screenshots, custom invoicing, and multi-region hosting.
+SAML, SCIM or directory sync, per-user erasure, automatic workspace deletion, plan tiers, seat metering or usage billing, operator impersonation, workspace deletion from the console, mobile admin screens, push notifications and background tracking, offline merge with conflict UI, i18n, approvals and public holidays, rates and invoicing, Jira/Linear sync, realtime co-editing, a team-wide timeline, screenshots, custom invoicing, and multi-region hosting.
 
 ## Slice 1 — Identity
 

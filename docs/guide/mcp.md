@@ -90,7 +90,7 @@ If `TSTAMPS_URL` and `TSTAMPS_TOKEN` are omitted, the MCP server falls back to t
 | `update_entry` | member | Move, retime, re-project, re-note or correct the timezone |
 | `delete_entry` | member | Soft-delete an entry; only an admin restores it |
 | `report` | member | Totals per person and project |
-| `get_plan` | member | Planned hours per person, project and week, with capacity; defaults to next month |
+| `get_plan` | member | Planned hours per person, project and week, with vacation-adjusted capacity; defaults to next month |
 | `set_plan` | lead | Set one person's hours on a project in one week; `0` clears it |
 | `seed_plan` | lead | Fill a month from the previous month's logged hours, empty cells only |
 | `repeat_plan` | lead | Copy one week's plan into the following weeks, empty cells only |
@@ -109,7 +109,7 @@ Tools that create an entry take an IANA `timezone`, defaulting to the machine's 
 
 `list_entries` and `report` take `from` and `to` as plain dates, `from` inclusive and `to` exclusive. Both default to the current ISO week. `report` accepts `by`: `week`, `day` or `none`.
 
-`get_plan` takes the same dates and defaults to next month. `set_plan` takes `week_start`, any date in the ISO week. `seed_plan` and `repeat_plan` accept `dry_run: true` to report what they would fill without writing.
+`get_plan` takes the same dates and defaults to next month. `set_plan` takes `week_start`, any date in the ISO week. `seed_plan` and `repeat_plan` accept `dry_run: true` to report what they would fill without writing. Vacations are added and read in the web UI or REST API; there are no vacation MCP tools yet.
 
 ## What the agent cannot do
 

@@ -141,8 +141,16 @@ Totals of logged time, grouped by project and by person, over days, weeks or mon
 _Avoid_: dashboard, stats, analytics
 
 **Capacity**:
-The hours a person can work in one week, defaulting to a full workweek and set per person.
+The hours a person can work in one week, defaulting to a full workweek and set per person. A vacation lowers it for the working days and partial days it covers.
 _Avoid_: availability, FTE, utilization, headcount
+
+**Working day**:
+Monday to Friday. A vacation removes capacity only on working days; Saturdays and Sundays never count.
+_Avoid_: business day, weekday, office day
+
+**Vacation**:
+A user's time off, written as an inclusive range of calendar dates, with the hours off on its first and last date. It lowers that person's capacity on the plan board; it is not an entry and never appears in reports or on the timeline. Leads read their teams' vacations; admins read every vacation; only the owner writes one.
+_Avoid_: leave, holiday, absence, time off
 
 **Plan**:
 The hours a lead or admin intends a person to spend on a project in one week, chosen in advance and distinct from hours logged.

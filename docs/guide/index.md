@@ -12,12 +12,15 @@ Tstamps is one `tstamps-server` process holding one SQLite database — every wo
 - **Member** — logs their own hours and reads their own totals.
 - **Admin** — manages users, teams, memberships, and restores archived projects or deleted entries, within one workspace. There is no server-wide admin.
 - **Entry** — one continuous stretch of work on one project, with a start, an end and an optional note. A **running entry** has a start but no end yet; there is at most one per user.
+- **Vacation** — time off over an inclusive date range, with hours on its first and last working day. It lowers the owner's capacity on the plan board; it is not an entry.
 
 | Action | Member | Lead | Admin |
 | --- | --- | --- | --- |
 | Log, edit and delete own entries | yes | yes | yes |
 | Read own hours | yes | yes | yes |
 | Read hours on their teams' projects | no | yes | yes |
+| Add and read own vacations | yes | yes | yes |
+| Read team members' vacations | no | their teams | all |
 | Create and archive projects | no | their teams | all |
 | Manage teams and memberships | no | no | yes |
 | Create and deactivate users, reset passwords | no | no | yes |
@@ -65,7 +68,7 @@ Or open the timeline in the browser after signing in and drag on a lane. The [ti
 
 ## What it deliberately leaves out
 
-Approvals, leave and holidays, invoicing and rates, reminders, a mobile app, screenshots, Jira/Linear sync, realtime co-editing, project budgets, a team-wide timeline, SSO, an audit log, and i18n. Drafting entries from coding-agent history is not in the server either; the [agent skill](./agents/index.md) does that on the client.
+Approvals and public holidays, invoicing and rates, reminders, a mobile app, screenshots, Jira/Linear sync, realtime co-editing, project budgets, a team-wide timeline, SSO, an audit log, and i18n. Drafting entries from coding-agent history is not in the server either; the [agent skill](./agents/index.md) does that on the client.
 
 If you need any of those, choose something else. [The spec](https://github.com/havspect/tstamps/blob/main/docs/SPEC.md) is the full list.
 

@@ -138,6 +138,29 @@ func TestSeedFillsTheDemoWorkspace(t *testing.T) {
 	if past == 0 || future == 0 {
 		t.Errorf("plans do not span past and future: past=%d future=%d", past, future)
 	}
+
+	// The plan board opens on the next month, so the seeded vacation sits in a
+	// Monday-to-Friday week there and takes Mia's whole 32-hour week.
+	var vacation gormrepo.Vacation
+	if err := db.WithContext(ctx).First(&vacation).Error; err != nil {
+		t.Fatalf("find vacation: %v", err)
+	}
+	var mia gormrepo.User
+	if err := db.WithContext(ctx).Where("email = ?", "mia@example.com").First(&mia).Error; err != nil {
+		t.Fatalf("find mia: %v", err)
+	}
+	if vacation.UserID != mia.ID {
+		t.Errorf("vacation belongs to user %d, want Mia %d", vacation.UserID, mia.ID)
+	}
+	if s, e := vacation.StartDate, vacation.EndDate; s.Month() != time.November || s.Weekday() != time.Monday || e.Sub(s) != 4*24*time.Hour {
+		t.Errorf("vacation = %s to %s, want one working week in the next month", s, e)
+	}
+	if vacation.StartHours != 6.4 || vacation.EndHours != 6.4 {
+		t.Errorf("vacation hours = %v/%v, want one 6.4-hour working day each", vacation.StartHours, vacation.EndHours)
+	}
+	if vacation.Note == "" {
+		t.Error("seeded vacation has no note")
+	}
 }
 
 func TestSeedIsIdempotent(t *testing.T) {
@@ -150,11 +173,18 @@ func TestSeedIsIdempotent(t *testing.T) {
 		db.WithContext(ctx).Model(model).Count(&n)
 		return n
 	}
-	before := [3]int64{count(&gormrepo.User{}), count(&gormrepo.Entry{}), count(&gormrepo.Plan{})}
+	before := [4]int64{count(&gormrepo.User{}), count(&gormrepo.Entry{}), count(&gormrepo.Plan{}), count(&gormrepo.Vacation{})}
 
 	junk := gormrepo.User{WorkspaceID: wsID, Email: "visitor@example.com", Name: "Visitor", PasswordHash: "x", Active: true}
 	if err := db.WithContext(ctx).Create(&junk).Error; err != nil {
 		t.Fatalf("create junk user: %v", err)
+	}
+	vacation := gormrepo.Vacation{
+		WorkspaceID: wsID, UserID: junk.ID,
+		StartDate: now, EndDate: now, CreatedAt: now, UpdatedAt: now,
+	}
+	if err := db.WithContext(ctx).Create(&vacation).Error; err != nil {
+		t.Fatalf("create junk vacation: %v", err)
 	}
 	// A visitor's admin action leaves an audit event, which the reset must clear
 	// despite the append-only trigger.
@@ -168,7 +198,7 @@ func TestSeedIsIdempotent(t *testing.T) {
 	if err := Seed(context.Background(), db, now); err != nil {
 		t.Fatalf("second seed: %v", err)
 	}
-	after := [3]int64{count(&gormrepo.User{}), count(&gormrepo.Entry{}), count(&gormrepo.Plan{})}
+	after := [4]int64{count(&gormrepo.User{}), count(&gormrepo.Entry{}), count(&gormrepo.Plan{}), count(&gormrepo.Vacation{})}
 	if before != after {
 		t.Errorf("counts changed across reset: before=%v after=%v", before, after)
 	}
