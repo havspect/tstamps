@@ -1,0 +1,92 @@
+---
+# Build with `just deploy-demo <host>`; this playbook only ships the binary that
+# already sits in the repository root. The demo database reseeds hourly and is
+# never backed up, so unlike deploy.yml this takes no snapshot.
+- name: Deploy the Tstamps demo
+  hosts: all
+  become: true
+  gather_facts: false
+
+  vars:
+    tstamps_bin: /usr/local/bin/tstamps-server
+    tstamps_unit: tstamps-demo
+    tstamps_health: http://127.0.0.1:8081/healthz
+    tstamps_local_bin: "{{ playbook_dir }}/../../tstamps-server"
+
+  tasks:
+    - name: Check the local build
+      ansible.builtin.stat:
+        path: "{{ tstamps_local_bin }}"
+      delegate_to: localhost
+      become: false
+      register: tstamps_local
+
+    - name: Require a local build
+      ansible.builtin.assert:
+        that: tstamps_local.stat.exists
+        fail_msg: "No tstamps-server in the repository root. Run `just build-prod linux amd64`."
+
+    - name: Check the demo unit
+      ansible.builtin.stat:
+        path: "/etc/systemd/system/{{ tstamps_unit }}.service"
+      register: tstamps_unit_file
+
+    - name: Require a first install
+      ansible.builtin.assert:
+        that: tstamps_unit_file.stat.exists
+        fail_msg: "No {{ tstamps_unit }}.service on the host. Run `just provision-demo <host>` first."
+
+    - name: Upload the new binary
+      ansible.builtin.copy:
+        src: "{{ tstamps_local_bin }}"
+        dest: "{{ tstamps_bin }}.new"
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Swap, restart and check health
+      block:
+        - name: Keep the previous binary
+          ansible.builtin.command:
+            argv: [mv, -f, "{{ tstamps_bin }}", "{{ tstamps_bin }}.prev"]
+          changed_when: true
+          failed_when: false
+
+        - name: Install the new binary
+          ansible.builtin.command:
+            argv: [mv, -f, "{{ tstamps_bin }}.new", "{{ tstamps_bin }}"]
+          changed_when: true
+
+        - name: Restart the demo server
+          ansible.builtin.systemd:
+            name: "{{ tstamps_unit }}"
+            state: restarted
+
+        - name: Wait for /healthz
+          ansible.builtin.uri:
+            url: "{{ tstamps_health }}"
+            status_code: 200
+            use_proxy: false
+          register: tstamps_health_result
+          until: tstamps_health_result.status == 200
+          retries: 30
+          delay: 1
+
+      rescue:
+        - name: Restore the previous binary
+          ansible.builtin.command:
+            argv: [mv, -f, "{{ tstamps_bin }}.prev", "{{ tstamps_bin }}"]
+          changed_when: true
+          failed_when: false
+
+        - name: Restart the previous binary
+          ansible.builtin.systemd:
+            name: "{{ tstamps_unit }}"
+            state: restarted
+          failed_when: false
+
+        - name: Report the rollback
+          ansible.builtin.fail:
+            msg: >-
+              Deploy failed at "{{ ansible_failed_task.name }}"; the previous
+              binary was restored if one existed.

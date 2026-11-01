@@ -1,12 +1,14 @@
 package httpapi
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -40,6 +42,37 @@ func randomUserCode() string {
 
 func issuerURL(r *http.Request) string {
 	return origin(r)
+}
+
+// writeOAuthError replies with an RFC 6749 error body.
+func writeOAuthError(w http.ResponseWriter, status int, code, description string) {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(map[string]string{
+		"error":             code,
+		"error_description": description,
+	})
+}
+
+// deviceWorkspace resolves the workspace for an unauthenticated device request:
+// the one bound to the request context, else the only workspace on the server.
+func (s *Server) deviceWorkspace(ctx context.Context) (*gormrepo.Workspace, bool) {
+	if s.deps.DB == nil {
+		return nil, false
+	}
+	var ws gormrepo.Workspace
+	if id, ok := gormrepo.WorkspaceIDFrom(ctx); ok {
+		if err := s.deps.DB.WithContext(ctx).First(&ws, id).Error; err != nil {
+			return nil, false
+		}
+		return &ws, true
+	}
+	var all []gormrepo.Workspace
+	if err := s.deps.DB.WithContext(ctx).Order("id ASC").Limit(2).Find(&all).Error; err != nil || len(all) != 1 {
+		return nil, false
+	}
+	return &all[0], true
 }
 
 func discoveryHandler(w http.ResponseWriter, r *http.Request) {
@@ -234,18 +267,30 @@ func (s *Server) registerOAuthRoutes(mux *http.ServeMux) {
 
 	// Token endpoint
 	mux.HandleFunc("POST "+apiPrefix+"/oauth/token", func(w http.ResponseWriter, r *http.Request) {
+		_ = r.ParseForm()
+
+		ctx := r.Context()
+		if _, ok := gormrepo.WorkspaceIDFrom(ctx); !ok && s.deps.DB != nil && r.PostForm.Get("grant_type") == "refresh_token" {
+			sig := s.deps.OAuthProvider.Strategy().RefreshTokenSignature(ctx, r.PostForm.Get("refresh_token"))
+			var rt gormrepo.OAuthRefreshToken
+			if err := s.deps.DB.WithContext(gormrepo.WithBypassTenancy(ctx)).Where("signature_hash = ?", sig).First(&rt).Error; err == nil && rt.WorkspaceID > 0 {
+				ctx = gormrepo.WithWorkspaceID(ctx, rt.WorkspaceID)
+				r = r.WithContext(ctx)
+			}
+		}
+
 		sess := oauth.NewSession(0, "", "")
-		accessReq, err := s.deps.OAuthProvider.NewAccessRequest(r.Context(), r, sess)
+		accessReq, err := s.deps.OAuthProvider.NewAccessRequest(ctx, r, sess)
 		if err != nil {
-			s.deps.OAuthProvider.WriteAccessError(r.Context(), w, accessReq, err)
+			s.deps.OAuthProvider.WriteAccessError(ctx, w, accessReq, err)
 			return
 		}
-		resp, err := s.deps.OAuthProvider.NewAccessResponse(r.Context(), accessReq)
+		resp, err := s.deps.OAuthProvider.NewAccessResponse(ctx, accessReq)
 		if err != nil {
-			s.deps.OAuthProvider.WriteAccessError(r.Context(), w, accessReq, err)
+			s.deps.OAuthProvider.WriteAccessError(ctx, w, accessReq, err)
 			return
 		}
-		s.deps.OAuthProvider.WriteAccessResponse(r.Context(), w, accessReq, resp)
+		s.deps.OAuthProvider.WriteAccessResponse(ctx, w, accessReq, resp)
 	})
 
 	// Revoke endpoint
@@ -274,6 +319,12 @@ func (s *Server) registerDeviceCodeRoutes(mux *http.ServeMux) {
 			return
 		}
 
+		ws, ok := s.deviceWorkspace(r.Context())
+		if !ok {
+			writeProblem(w, problem(http.StatusBadRequest, urnInvalidInput, "workspace required"))
+			return
+		}
+
 		userCode := randomUserCode()
 		deviceCode := "dc_" + randomHex(24)
 		devHash := auth.HashToken(deviceCode)
@@ -286,13 +337,8 @@ func (s *Server) registerDeviceCodeRoutes(mux *http.ServeMux) {
 		}
 		expires := now.Add(10 * time.Minute)
 
-		wsID := uint(1)
-		if id, ok := gormrepo.WorkspaceIDFrom(r.Context()); ok && id > 0 {
-			wsID = id
-		}
-
 		dc := gormrepo.OAuthDeviceCode{
-			WorkspaceID:    wsID,
+			WorkspaceID:    ws.ID,
 			ClientID:       clientID,
 			DeviceCodeHash: devHash,
 			UserCodeHash:   userCodeHash,
@@ -302,26 +348,128 @@ func (s *Server) registerDeviceCodeRoutes(mux *http.ServeMux) {
 			Status:         oauth.DeviceStatusPending,
 			CreatedAt:      now,
 		}
-		if err := s.deps.DB.Create(&dc).Error; err != nil {
+		if err := s.deps.DB.WithContext(gormrepo.WithWorkspaceID(r.Context(), ws.ID)).Create(&dc).Error; err != nil {
 			writeProblem(w, internal(err))
 			return
 		}
 
-		issuer := origin(r)
-		verificationURI := issuer + "/device"
+		verificationURI := origin(r) + "/w/" + ws.Slug + "/auth/device"
+		complete := url.Values{"user_code": {userCode}}.Encode()
 
 		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Cache-Control", "no-store")
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"device_code":               deviceCode,
 			"user_code":                 userCode,
 			"verification_uri":          verificationURI,
-			"verification_uri_complete": verificationURI + "?user_code=" + userCode,
+			"verification_uri_complete": verificationURI + "?" + complete,
 			"expires_in":                600,
 			"interval":                  5,
 		})
 	})
 
-	mux.HandleFunc("POST "+apiPrefix+"/auth/device/verify", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("POST "+apiPrefix+"/auth/device/token", func(w http.ResponseWriter, r *http.Request) {
+		if err := r.ParseForm(); err != nil {
+			writeOAuthError(w, http.StatusBadRequest, "invalid_request", "invalid form data")
+			return
+		}
+		deviceCode := r.FormValue("device_code")
+		if deviceCode == "" {
+			writeOAuthError(w, http.StatusBadRequest, "invalid_request", "device_code is required")
+			return
+		}
+
+		bypassCtx := gormrepo.WithBypassTenancy(r.Context())
+		var dc gormrepo.OAuthDeviceCode
+		if err := s.deps.DB.WithContext(bypassCtx).Where("device_code_hash = ?", auth.HashToken(deviceCode)).First(&dc).Error; err != nil {
+			writeOAuthError(w, http.StatusBadRequest, "invalid_grant", "unknown device_code")
+			return
+		}
+
+		now := time.Now()
+		if s.deps.Clock != nil {
+			now = s.deps.Clock.Now()
+		}
+		if !dc.ExpiresAt.After(now) {
+			writeOAuthError(w, http.StatusBadRequest, "expired_token", "device_code has expired")
+			return
+		}
+		switch dc.Status {
+		case oauth.DeviceStatusPending:
+			writeOAuthError(w, http.StatusBadRequest, "authorization_pending", "authorization is still pending")
+			return
+		case oauth.DeviceStatusDenied:
+			writeOAuthError(w, http.StatusBadRequest, "access_denied", "user denied the request")
+			return
+		case oauth.DeviceStatusConsumed:
+			writeOAuthError(w, http.StatusBadRequest, "invalid_grant", "device_code already used")
+			return
+		}
+
+		var u gormrepo.User
+		if err := s.deps.DB.WithContext(bypassCtx).First(&u, dc.UserID).Error; err != nil || !u.Active {
+			writeOAuthError(w, http.StatusBadRequest, "invalid_grant", "user not active")
+			return
+		}
+
+		ctx := gormrepo.WithWorkspaceID(r.Context(), dc.WorkspaceID)
+		if err := s.deps.DB.WithContext(ctx).Model(&gormrepo.OAuthDeviceCode{}).Where("id = ?", dc.ID).Update("status", oauth.DeviceStatusConsumed).Error; err != nil {
+			writeOAuthError(w, http.StatusInternalServerError, "server_error", err.Error())
+			return
+		}
+
+		var scopes []string
+		_ = json.Unmarshal([]byte(dc.Scopes), &scopes)
+		if len(scopes) == 0 {
+			scopes = []string{"tstamps.read", "tstamps.write"}
+		}
+
+		client, err := s.deps.OAuthProvider.Store().GetClient(ctx, dc.ClientID)
+		if err != nil {
+			writeOAuthError(w, http.StatusBadRequest, "invalid_client", "unknown client")
+			return
+		}
+
+		req := oauth.NewRequest()
+		req.ID = dc.RequestID
+		req.RequestedAt = now
+		req.Client = client
+		req.RequestedScope = oauth.Arguments(scopes)
+		req.GrantedScope = oauth.Arguments(scopes)
+		req.Session = oauth.NewSession(u.ID, u.Email, strconv.FormatUint(uint64(u.ID), 10))
+
+		accessToken, accessSig, err := s.deps.OAuthProvider.Strategy().GenerateAccessToken(ctx, req)
+		if err != nil {
+			writeOAuthError(w, http.StatusInternalServerError, "server_error", err.Error())
+			return
+		}
+		if err := s.deps.OAuthProvider.Store().CreateAccessTokenSession(ctx, accessSig, req); err != nil {
+			writeOAuthError(w, http.StatusInternalServerError, "server_error", err.Error())
+			return
+		}
+
+		refreshToken, refreshSig, err := s.deps.OAuthProvider.Strategy().GenerateRefreshToken(ctx, req)
+		if err != nil {
+			writeOAuthError(w, http.StatusInternalServerError, "server_error", err.Error())
+			return
+		}
+		if err := s.deps.OAuthProvider.Store().CreateRefreshTokenSession(ctx, refreshSig, accessSig, req); err != nil {
+			writeOAuthError(w, http.StatusInternalServerError, "server_error", err.Error())
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Cache-Control", "no-store")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"access_token":  accessToken,
+			"refresh_token": refreshToken,
+			"token_type":    "Bearer",
+			"expires_in":    3600,
+			"scope":         strings.Join(scopes, " "),
+		})
+	})
+
+	verify := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		p, ok := auth.PrincipalFrom(r.Context())
 		if !ok || p == nil {
 			writeProblem(w, problem(http.StatusUnauthorized, urnUnauthorized, "authentication required"))
@@ -341,7 +489,7 @@ func (s *Server) registerDeviceCodeRoutes(mux *http.ServeMux) {
 		hash := auth.HashToken(cleanCode)
 
 		var dc gormrepo.OAuthDeviceCode
-		if err := s.deps.DB.Where("user_code_hash = ?", hash).First(&dc).Error; err != nil {
+		if err := s.deps.DB.WithContext(r.Context()).Where("user_code_hash = ?", hash).First(&dc).Error; err != nil {
 			writeProblem(w, problem(http.StatusNotFound, urnNotFound, "invalid user code"))
 			return
 		}
@@ -351,7 +499,7 @@ func (s *Server) registerDeviceCodeRoutes(mux *http.ServeMux) {
 			status = oauth.DeviceStatusDenied
 		}
 
-		if err := s.deps.DB.Model(&dc).Updates(map[string]any{
+		if err := s.deps.DB.WithContext(r.Context()).Model(&dc).Updates(map[string]any{
 			"status":  status,
 			"user_id": p.UserID,
 		}).Error; err != nil {
@@ -361,4 +509,7 @@ func (s *Server) registerDeviceCodeRoutes(mux *http.ServeMux) {
 
 		w.WriteHeader(http.StatusNoContent)
 	})
+
+	// These exact routes shadow "/api/" in the top-level mux, so they carry their own auth.
+	mux.Handle("POST "+apiPrefix+"/auth/device/verify", s.withAuth(verify))
 }
