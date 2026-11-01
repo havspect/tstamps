@@ -14,19 +14,21 @@ import (
 )
 
 type fakeRepo struct {
-	cells     map[string]*Plan
-	people    map[uint]*Person
-	projects  map[uint]*Project
-	vacations []Vacation
-	nextID    uint
+	cells        map[string]*Plan
+	people       map[uint]*Person
+	projects     map[uint]*Project
+	vacations    []Vacation
+	availability map[string]*Availability
+	nextID       uint
 }
 
 func newFakeRepo() *fakeRepo {
 	return &fakeRepo{
-		cells:    map[string]*Plan{},
-		people:   map[uint]*Person{},
-		projects: map[uint]*Project{},
-		nextID:   1,
+		cells:        map[string]*Plan{},
+		people:       map[uint]*Person{},
+		projects:     map[uint]*Project{},
+		availability: map[string]*Availability{},
+		nextID:       1,
 	}
 }
 
@@ -159,14 +161,58 @@ func (r *fakeRepo) DeleteVacation(_ context.Context, id, userID uint) error {
 	return ErrNotFound
 }
 
+func availabilityKey(userID uint, week time.Time) string {
+	return fmt.Sprintf("%d-%s", userID, week.Format("2006-01-02"))
+}
+
+func (r *fakeRepo) Availability(_ context.Context, f Filter) ([]Availability, error) {
+	var out []Availability
+	for _, a := range r.availability {
+		if a.WeekStart.Before(f.From) || !a.WeekStart.Before(f.To) {
+			continue
+		}
+		if f.UserID != 0 && a.UserID != f.UserID {
+			continue
+		}
+		if len(f.UserIDs) > 0 && !contains(f.UserIDs, a.UserID) {
+			continue
+		}
+		out = append(out, *a)
+	}
+	return out, nil
+}
+
+func (r *fakeRepo) GetAvailability(_ context.Context, userID uint, week time.Time) (*Availability, error) {
+	return r.availability[availabilityKey(userID, week)], nil
+}
+
+func (r *fakeRepo) UpsertAvailability(_ context.Context, a *Availability) error {
+	if a.ID == 0 {
+		a.ID = r.nextID
+		r.nextID++
+	}
+	stored := *a
+	r.availability[availabilityKey(a.UserID, a.WeekStart)] = &stored
+	return nil
+}
+
+func (r *fakeRepo) DeleteAvailability(_ context.Context, userID uint, week time.Time) error {
+	delete(r.availability, availabilityKey(userID, week))
+	return nil
+}
+
 type fakeUOW struct{}
 
 func (fakeUOW) Run(ctx context.Context, fn func(context.Context) error) error { return fn(ctx) }
 
-type fakeAudit struct{ events int }
+type fakeAudit struct {
+	events  int
+	actions []string
+}
 
-func (a *fakeAudit) Record(context.Context, string, string, uint, any) error {
+func (a *fakeAudit) Record(_ context.Context, action, _ string, _ uint, _ any) error {
 	a.events++
+	a.actions = append(a.actions, action)
 	return nil
 }
 
@@ -857,5 +903,172 @@ func TestLeadReadsTeamVacationsOnly(t *testing.T) {
 	// Cid leads Design, not Platform.
 	if _, err := f.svc.ListVacations(leadCtx(3, 2), VacationQuery{UserID: 2}); !errors.Is(err, authz.ErrForbidden) {
 		t.Fatalf("foreign lead read: %v", err)
+	}
+}
+
+func TestListCombinesAvailabilityWithVacation(t *testing.T) {
+	now := time.Date(2026, 10, 29, 12, 0, 0, 0, time.UTC)
+	f := newFixture(now)
+	week := time.Date(2026, 11, 2, 0, 0, 0, 0, time.UTC)
+	f.repo.availability[availabilityKey(2, week)] = &Availability{UserID: 2, WeekStart: week, Hours: 20}
+	f.repo.vacations = []Vacation{{
+		UserID: 2, StartDate: week, EndDate: week.AddDate(0, 0, 1), StartHours: 4, EndHours: 4,
+	}}
+
+	board, err := f.svc.List(leadCtx(1, 1), Filter{From: week, To: week.AddDate(0, 0, 7)})
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(board.PersonWeeks) == 0 {
+		t.Fatal("no person weeks")
+	}
+	var got PersonWeek
+	for _, pw := range board.PersonWeeks {
+		if pw.UserID == 2 && pw.WeekStart.Equal(week) {
+			got = pw
+		}
+	}
+	// 20 available, then two half days at the override's 4-hour day.
+	if got.UserID != 2 || got.VacationHours != 8 || got.Capacity != 12 {
+		t.Fatalf("person week = %+v, want user 2 with 8 vacation hours and 12 capacity", got)
+	}
+}
+
+func TestSetAvailabilityStoresOnlyOverrides(t *testing.T) {
+	now := time.Date(2026, 10, 29, 12, 0, 0, 0, time.UTC)
+	f := newFixture(now)
+	ctx := leadCtx(1, 1)
+	week := time.Date(2026, 11, 2, 0, 0, 0, 0, time.UTC)
+
+	// The default is absent: the person's weekly hours already say it.
+	got, err := f.svc.SetAvailability(ctx, 2, week, 40)
+	if err != nil {
+		t.Fatalf("default: %v", err)
+	}
+	if got.Hours != 40 || got.ID != 0 {
+		t.Fatalf("default = %+v", got)
+	}
+	if len(f.repo.availability) != 0 || f.audit.events != 0 {
+		t.Fatalf("default wrote %d rows and %d events", len(f.repo.availability), f.audit.events)
+	}
+
+	if _, err := f.svc.SetAvailability(ctx, 2, week, 32); err != nil {
+		t.Fatalf("override: %v", err)
+	}
+	if stored := f.repo.availability[availabilityKey(2, week)]; stored == nil || stored.Hours != 32 {
+		t.Fatalf("stored = %+v", stored)
+	}
+	if f.audit.events != 1 {
+		t.Fatalf("audit events = %d, want 1", f.audit.events)
+	}
+
+	// Zero is a real stored value while the person's weekly hours are not zero.
+	if _, err := f.svc.SetAvailability(ctx, 2, week, 0); err != nil {
+		t.Fatalf("zero: %v", err)
+	}
+	if stored := f.repo.availability[availabilityKey(2, week)]; stored == nil || stored.Hours != 0 {
+		t.Fatalf("zero override = %+v", stored)
+	}
+
+	// Writing the default deletes the override and reports the effective value.
+	got, err = f.svc.SetAvailability(ctx, 2, week, 40)
+	if err != nil {
+		t.Fatalf("default again: %v", err)
+	}
+	if got.Hours != 40 {
+		t.Fatalf("effective hours = %d, want 40", got.Hours)
+	}
+	if stored := f.repo.availability[availabilityKey(2, week)]; stored != nil {
+		t.Fatalf("override survived the default: %+v", stored)
+	}
+	// Deleting a missing override is a no-op, so a retry is safe.
+	if _, err := f.svc.SetAvailability(ctx, 2, week, 40); err != nil {
+		t.Fatalf("default on missing: %v", err)
+	}
+	if f.audit.events != 3 {
+		t.Fatalf("audit events = %d, want 3", f.audit.events)
+	}
+}
+
+func TestAvailabilityAuditUsesItsOwnAction(t *testing.T) {
+	now := time.Date(2026, 10, 29, 12, 0, 0, 0, time.UTC)
+	f := newFixture(now)
+	week := time.Date(2026, 11, 2, 0, 0, 0, 0, time.UTC)
+
+	if _, err := f.svc.SetAvailability(leadCtx(1, 1), 2, week, 24); err != nil {
+		t.Fatalf("SetAvailability: %v", err)
+	}
+	if len(f.audit.actions) != 1 || f.audit.actions[0] != "plan.availability" {
+		t.Fatalf("audit actions = %v", f.audit.actions)
+	}
+}
+
+func TestSetAvailabilityRejectsFrozenWeeksAndForeignPeople(t *testing.T) {
+	now := time.Date(2026, 10, 29, 12, 0, 0, 0, time.UTC)
+	f := newFixture(now)
+	ctx := leadCtx(1, 1)
+	next := time.Date(2026, 11, 2, 0, 0, 0, 0, time.UTC)
+
+	past := time.Date(2026, 10, 19, 0, 0, 0, 0, time.UTC)
+	if _, err := f.svc.SetAvailability(ctx, 2, past, 20); !errors.Is(err, ErrFrozenWeek) {
+		t.Fatalf("past week: %v", err)
+	}
+	// Cid is on a team the lead does not lead.
+	if _, err := f.svc.SetAvailability(ctx, 3, next, 20); !errors.Is(err, authz.ErrForbidden) {
+		t.Fatalf("foreign person: %v", err)
+	}
+	// A plain member cannot write availability, not even their own.
+	member := auth.WithPrincipal(context.Background(), &auth.Principal{
+		WorkspaceID: 1, UserID: 2, Roles: []string{"member"},
+	})
+	if _, err := f.svc.SetAvailability(member, 2, next, 20); !errors.Is(err, authz.ErrForbidden) {
+		t.Fatalf("plain member: %v", err)
+	}
+	// A lead may set their own row even when they lead another team.
+	if _, err := f.svc.SetAvailability(leadCtx(2, 2), 2, next, 12); err != nil {
+		t.Fatalf("own row: %v", err)
+	}
+}
+
+func TestListReturnsOnlyVisibleExplicitAvailability(t *testing.T) {
+	now := time.Date(2026, 10, 29, 12, 0, 0, 0, time.UTC)
+	f := newFixture(now)
+	week := time.Date(2026, 11, 2, 0, 0, 0, 0, time.UTC)
+	next := week.AddDate(0, 0, 7)
+	for _, a := range []Availability{
+		{WorkspaceID: 1, UserID: 2, WeekStart: next, Hours: 35},
+		{WorkspaceID: 1, UserID: 2, WeekStart: week, Hours: 30},
+		{WorkspaceID: 1, UserID: 3, WeekStart: week, Hours: 10},
+		{WorkspaceID: 1, UserID: 4, WeekStart: week, Hours: 20},
+		{WorkspaceID: 1, UserID: 5, WeekStart: week, Hours: 5},
+		{WorkspaceID: 1, UserID: 2, WeekStart: week.AddDate(0, 0, 14), Hours: 12},
+	} {
+		if err := f.repo.UpsertAvailability(context.Background(), &a); err != nil {
+			t.Fatalf("seed availability: %v", err)
+		}
+	}
+	// Dee is only visible because she still has a cell in range.
+	if err := f.repo.Upsert(context.Background(), &Plan{
+		WorkspaceID: 1, UserID: 4, ProjectID: 10, WeekStart: week, Hours: 5,
+	}); err != nil {
+		t.Fatalf("seed cell: %v", err)
+	}
+
+	board, err := f.svc.List(leadCtx(1, 1), Filter{From: week, To: week.AddDate(0, 0, 14)})
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	want := []struct {
+		user uint
+		week time.Time
+	}{{2, week}, {2, next}, {4, week}}
+	if len(board.Availability) != len(want) {
+		t.Fatalf("availability = %+v", board.Availability)
+	}
+	for i, w := range want {
+		got := board.Availability[i]
+		if got.UserID != w.user || !got.WeekStart.Equal(w.week) {
+			t.Fatalf("availability[%d] = %+v, want user %d week %s", i, got, w.user, w.week.Format("2006-01-02"))
+		}
 	}
 }

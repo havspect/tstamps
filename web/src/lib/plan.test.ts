@@ -7,6 +7,7 @@ import {
   periodLabel,
   planRange,
   previousMonth,
+  scaleFor,
   summaryNotice,
   weekEnded,
   weekLabel,
@@ -66,6 +67,19 @@ describe('plan ranges', () => {
     expect(periodLabel('month', '2026-11-04')).toBe('November 2026')
     expect(periodLabel('quarter', '2026-11-04')).toBe('Q4 2026')
     expect(periodLabel('quarter', '2026-02-15')).toBe('Q1 2026')
+  })
+})
+
+describe('plan scale', () => {
+  it('rounds the largest availability up to the next 5 hours', () => {
+    expect(scaleFor([40, 45, 20])).toBe(45)
+    expect(scaleFor([32, 20])).toBe(35)
+    expect(scaleFor([40])).toBe(40)
+  })
+
+  it('has no scale when nobody is available', () => {
+    expect(scaleFor([])).toBe(0)
+    expect(scaleFor([0, 0])).toBe(0)
   })
 })
 

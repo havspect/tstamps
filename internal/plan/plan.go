@@ -89,6 +89,32 @@ type Vacation struct {
 	UpdatedAt   time.Time
 }
 
+// Availability is one person's capacity override for one ISO week. It exists
+// only when it differs from the person's WeeklyHours.
+type Availability struct {
+	ID          uint
+	WorkspaceID uint
+	UserID      uint
+	WeekStart   time.Time
+	Hours       int
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+}
+
+// AuditFields returns the override as a map for the audit log.
+func (a *Availability) AuditFields() map[string]any {
+	if a == nil {
+		return nil
+	}
+	return map[string]any{
+		"id":           a.ID,
+		"workspace_id": a.WorkspaceID,
+		"user_id":      a.UserID,
+		"week_start":   a.WeekStart.Format("2006-01-02"),
+		"hours":        a.Hours,
+	}
+}
+
 // TeamRef names one team a person belongs to.
 type TeamRef struct {
 	ID   uint
@@ -137,11 +163,12 @@ type PersonWeek struct {
 
 // Board is one range of planning data.
 type Board struct {
-	Weeks       []time.Time
-	People      []Person
-	Cells       []Cell
-	Other       []OtherHours
-	PersonWeeks []PersonWeek
+	Weeks        []time.Time
+	People       []Person
+	Cells        []Cell
+	Other        []OtherHours
+	PersonWeeks  []PersonWeek
+	Availability []Availability
 }
 
 // Skip is one cell a bulk action left alone, and why.

@@ -31,6 +31,12 @@ type Service struct {
 	clock      clock.Clock
 }
 
+// userWeek keys a person's capacity override by person and week.
+type userWeek struct {
+	user uint
+	week time.Time
+}
+
 // NewService builds a plan Service.
 func NewService(
 	repo Repository,
@@ -200,13 +206,41 @@ func (s *Service) List(ctx context.Context, filter Filter) (*Board, error) {
 		board.People = append(board.People, person)
 	}
 	sort.Slice(board.People, func(i, j int) bool { return board.People[i].Name < board.People[j].Name })
+
+	// Absent overrides are not filled in: the client falls back to WeeklyHours.
+	ids := make([]uint, 0, len(board.People))
+	for _, person := range board.People {
+		ids = append(ids, person.UserID)
+	}
+	overrides := map[userWeek]int{}
+	if len(ids) > 0 {
+		availability, err := s.repo.Availability(ctx, Filter{From: filter.From, To: filter.To, UserIDs: ids})
+		if err != nil {
+			return nil, err
+		}
+		sort.Slice(availability, func(i, j int) bool {
+			if availability[i].UserID != availability[j].UserID {
+				return availability[i].UserID < availability[j].UserID
+			}
+			return availability[i].WeekStart.Before(availability[j].WeekStart)
+		})
+		board.Availability = availability
+		for _, a := range availability {
+			overrides[userWeek{a.UserID, a.WeekStart}] = a.Hours
+		}
+	}
+
 	for _, person := range board.People {
 		for _, week := range board.Weeks {
-			hours := VacationHours(week, person.WeeklyHours, byUser[person.UserID])
+			base := person.WeeklyHours
+			if hours, ok := overrides[userWeek{person.UserID, week}]; ok && person.Active {
+				base = hours
+			}
+			hours := VacationHours(week, base, byUser[person.UserID])
 			board.PersonWeeks = append(board.PersonWeeks, PersonWeek{
 				UserID:        person.UserID,
 				WeekStart:     week,
-				Capacity:      WeeklyCapacity(person.WeeklyHours, hours),
+				Capacity:      WeeklyCapacity(base, hours),
 				VacationHours: hours,
 			})
 		}
@@ -444,6 +478,85 @@ func (s *Service) DeleteVacation(ctx context.Context, id uint) error {
 		return err
 	}
 	return s.repo.DeleteVacation(ctx, id, p.UserID)
+}
+
+// SetAvailability overrides one person's capacity for one ISO week. Writing
+// their weekly default deletes the override, and deleting a missing override is
+// a no-op so an agent can retry safely.
+func (s *Service) SetAvailability(ctx context.Context, userID uint, weekStart time.Time, hours int) (*Availability, error) {
+	p, err := principal(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if !ValidHours(hours) {
+		return nil, ErrInvalidHours
+	}
+	week := WeekStart(weekStart)
+
+	person, err := s.repo.GetPerson(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	// An override has no project or team of its own. ActionManagePlan needs a
+	// team, so it is checked against any team the caller leads; mayPlanPerson
+	// then narrows that to the caller's people and their own row.
+	if !mayPlanPerson(p, person) {
+		return nil, authz.ErrForbidden
+	}
+	teamID := uint(0)
+	if !p.IsAdmin() && len(p.LedTeamIDs) > 0 {
+		teamID = p.LedTeamIDs[0]
+	}
+	if err := s.authorizer.Check(ctx, p, authz.ActionManagePlan, authz.PlanResource{UserID: person.UserID, TeamID: teamID}); err != nil {
+		return nil, err
+	}
+	now := s.clock.Now()
+	if Ended(week, person.Timezone, now) {
+		return nil, ErrFrozenWeek
+	}
+
+	availability := &Availability{
+		WorkspaceID: p.WorkspaceID,
+		UserID:      userID,
+		WeekStart:   week,
+		Hours:       hours,
+		CreatedAt:   now,
+		UpdatedAt:   now,
+	}
+	err = s.uow.Run(ctx, func(txCtx context.Context) error {
+		before, err := s.repo.GetAvailability(txCtx, userID, week)
+		if err != nil {
+			return err
+		}
+		if before != nil {
+			availability.ID = before.ID
+			availability.CreatedAt = before.CreatedAt
+		}
+		switch {
+		case before == nil && hours == person.WeeklyHours:
+			return nil
+		case hours == person.WeeklyHours:
+			if err := s.repo.DeleteAvailability(txCtx, userID, week); err != nil {
+				return err
+			}
+			return s.record(txCtx, "plan.availability", before.ID, map[string]any{"before": before.AuditFields()})
+		default:
+			if err := s.repo.UpsertAvailability(txCtx, availability); err != nil {
+				return err
+			}
+			if before == nil {
+				return s.record(txCtx, "plan.availability", availability.ID, map[string]any{"after": availability.AuditFields()})
+			}
+			return s.record(txCtx, "plan.availability", availability.ID, map[string]any{
+				"before": before.AuditFields(),
+				"after":  availability.AuditFields(),
+			})
+		}
+	})
+	if err != nil {
+		return nil, err
+	}
+	return availability, nil
 }
 
 // Seed splits the previous month's logged hours per person and project evenly

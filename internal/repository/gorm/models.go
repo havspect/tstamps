@@ -147,6 +147,18 @@ type Vacation struct {
 	UpdatedAt   time.Time
 }
 
+// UserWeekHours is one person's availability override for one ISO week. A row
+// exists only when it differs from users.weekly_hours (issue #4).
+type UserWeekHours struct {
+	ID          uint      `gorm:"primarykey"`
+	WorkspaceID uint      `gorm:"not null;uniqueIndex:idx_user_week_hours,priority:1"`
+	UserID      uint      `gorm:"not null;uniqueIndex:idx_user_week_hours,priority:2"`
+	WeekStart   time.Time `gorm:"not null;uniqueIndex:idx_user_week_hours,priority:3;index"`
+	Hours       int       `gorm:"not null"`
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+}
+
 // AuditLog is one record in the workspace's tamper-evident audit log.
 type AuditLog struct {
 	ID            uint      `gorm:"primarykey"`

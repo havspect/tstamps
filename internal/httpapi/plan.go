@@ -45,11 +45,18 @@ type planOtherResponse struct {
 	Hours     int    `json:"hours"`
 }
 
+type planAvailabilityResponse struct {
+	UserID    uint   `json:"user_id"`
+	WeekStart string `json:"week_start"`
+	Hours     int    `json:"hours"`
+}
+
 type planBoardResponse struct {
-	Weeks  []string             `json:"weeks"`
-	People []planPersonResponse `json:"people"`
-	Cells  []planCellResponse   `json:"cells"`
-	Other  []planOtherResponse  `json:"other"`
+	Weeks        []string                   `json:"weeks"`
+	People       []planPersonResponse       `json:"people"`
+	Cells        []planCellResponse         `json:"cells"`
+	Other        []planOtherResponse        `json:"other"`
+	Availability []planAvailabilityResponse `json:"availability"`
 }
 
 type planListInput struct {
@@ -79,6 +86,18 @@ type planSetOutput struct {
 		WeekStart string `json:"week_start"`
 		Hours     int    `json:"hours"`
 	}
+}
+
+type planAvailabilityInput struct {
+	Body struct {
+		UserID    uint   `json:"user_id" required:"true"`
+		WeekStart string `json:"week_start" required:"true" doc:"Any date in the ISO week, YYYY-MM-DD."`
+		Hours     int    `json:"hours" required:"true" minimum:"0" maximum:"168" doc:"The person's availability for that week; writing their weekly default clears the override."`
+	}
+}
+
+type planAvailabilityOutput struct {
+	Body planAvailabilityResponse
 }
 
 type planSeedInput struct {
@@ -142,6 +161,14 @@ func (s *Server) planRoutes(api huma.API) {
 		Tags:        []string{"plan"},
 		Errors:      []int{http.StatusUnauthorized, http.StatusForbidden, http.StatusNotFound, http.StatusUnprocessableEntity, http.StatusInternalServerError},
 	}, s.setPlan)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "plan-availability-set",
+		Method:      http.MethodPut,
+		Path:        apiPrefix + "/plan/availability",
+		Tags:        []string{"plan"},
+		Errors:      []int{http.StatusUnauthorized, http.StatusForbidden, http.StatusNotFound, http.StatusUnprocessableEntity, http.StatusInternalServerError},
+	}, s.setAvailability)
 
 	huma.Register(api, huma.Operation{
 		OperationID: "plan-seed",
@@ -257,6 +284,12 @@ func (s *Server) getPlan(ctx context.Context, in *planListInput) (*planListOutpu
 			UserID: other.UserID, WeekStart: other.WeekStart.Format(dateLayout), Hours: other.Hours,
 		}
 	}
+	out.Body.Availability = make([]planAvailabilityResponse, len(board.Availability))
+	for i, avail := range board.Availability {
+		out.Body.Availability[i] = planAvailabilityResponse{
+			UserID: avail.UserID, WeekStart: avail.WeekStart.Format(dateLayout), Hours: avail.Hours,
+		}
+	}
 	return out, nil
 }
 
@@ -278,6 +311,23 @@ func (s *Server) setPlan(ctx context.Context, in *planSetInput) (*planSetOutput,
 	out.Body.WeekStart = cell.WeekStart.Format(dateLayout)
 	out.Body.Hours = cell.Hours
 	return out, nil
+}
+
+func (s *Server) setAvailability(ctx context.Context, in *planAvailabilityInput) (*planAvailabilityOutput, error) {
+	if s.deps.PlanService == nil {
+		return nil, problem(http.StatusServiceUnavailable, urnUnavailable, "plan service not available")
+	}
+	week, err := time.Parse(dateLayout, in.Body.WeekStart)
+	if err != nil {
+		return nil, problem(http.StatusUnprocessableEntity, urnInvalidInput, "invalid week_start date format")
+	}
+	avail, err := s.deps.PlanService.SetAvailability(ctx, in.Body.UserID, week, in.Body.Hours)
+	if err != nil {
+		return nil, fail(err)
+	}
+	return &planAvailabilityOutput{Body: planAvailabilityResponse{
+		UserID: avail.UserID, WeekStart: avail.WeekStart.Format(dateLayout), Hours: avail.Hours,
+	}}, nil
 }
 
 func (s *Server) seedPlan(ctx context.Context, in *planSeedInput) (*planSummaryOutput, error) {
