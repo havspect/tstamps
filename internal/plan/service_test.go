@@ -188,6 +188,12 @@ func leadCtx(userID uint, teams ...uint) context.Context {
 	})
 }
 
+func adminCtx(userID uint) context.Context {
+	return auth.WithPrincipal(context.Background(), &auth.Principal{
+		WorkspaceID: 1, UserID: userID, Roles: []string{"admin"},
+	})
+}
+
 type fixture struct {
 	repo  *fakeRepo
 	svc   *Service
@@ -281,6 +287,42 @@ func TestSetRejectsBoundsFrozenWeeksAndForeignTeams(t *testing.T) {
 	// Cid is not in a team the lead leads, and the lead is not planning herself.
 	if _, err := f.svc.Set(ctx, 3, 10, next, 4); !errors.Is(err, authz.ErrForbidden) {
 		t.Fatalf("foreign person: %v", err)
+	}
+}
+
+// A cell may only name a project of the planned person's teams (ADR-0023).
+func TestSetKeepsCellsInsideThePersonsTeams(t *testing.T) {
+	now := time.Date(2026, 10, 29, 12, 0, 0, 0, time.UTC)
+	f := newFixture(now)
+	week := time.Date(2026, 11, 2, 0, 0, 0, 0, time.UTC)
+	admin := adminCtx(9)
+
+	// Cid is in Design only, so even an admin cannot plan her onto Platform work.
+	if _, err := f.svc.Set(admin, 3, 10, week, 4); !errors.Is(err, ErrProjectNotInPersonTeams) {
+		t.Fatalf("cross-team project: %v", err)
+	}
+	if len(f.repo.cells) != 0 {
+		t.Fatalf("refused write stored %d cells", len(f.repo.cells))
+	}
+	if _, err := f.svc.Set(admin, 3, 20, week, 4); err != nil {
+		t.Fatalf("own team's project: %v", err)
+	}
+
+	// Permission still comes first: a lead naming a foreign project is refused by
+	// the authorizer, not by the team rule.
+	if _, err := f.svc.Set(leadCtx(1, 1), 2, 20, week, 4); !errors.Is(err, authz.ErrForbidden) {
+		t.Fatalf("lead on a foreign project: %v", err)
+	}
+
+	// Zero hours still clears a cross-team cell written before this rule.
+	if err := f.repo.Upsert(context.Background(), &Plan{WorkspaceID: 1, UserID: 2, ProjectID: 20, WeekStart: week, Hours: 5}); err != nil {
+		t.Fatalf("seed legacy cell: %v", err)
+	}
+	if _, err := f.svc.Set(admin, 2, 20, week, 0); err != nil {
+		t.Fatalf("delete cross-team cell: %v", err)
+	}
+	if stored, _ := f.repo.Get(context.Background(), 2, 20, week); stored != nil {
+		t.Fatalf("cross-team cell survived zero hours: %+v", stored)
 	}
 }
 
@@ -427,6 +469,32 @@ func TestBulkSkipsArchivedProjectsAndImpossibleHours(t *testing.T) {
 			},
 			run: func(f *fixture, ctx context.Context) (*Summary, error) {
 				return f.svc.Repeat(ctx, RepeatInput{WeekStart: week, Weeks: 2})
+			},
+			wantFilled: 0, wantSkipped: 2, wantCells: 1,
+		},
+		{
+			name: "seed onto a project outside the person's teams",
+			setup: func(f *fixture, _ context.Context) {
+				// Cid is in Design only; project 10 is Platform.
+				f.svc.reports = fakeReports{rows: []report.Row{{UserID: 3, ProjectID: 10, Seconds: 40 * 3600}}}
+			},
+			run: func(f *fixture, _ context.Context) (*Summary, error) {
+				return f.svc.Seed(adminCtx(9), SeedInput{FromMonth: "2026-10", IntoMonth: "2026-11"})
+			},
+			wantFilled: 0, wantSkipped: 5, wantCells: 0,
+		},
+		{
+			name: "repeat from a cross-team source cell",
+			setup: func(f *fixture, _ context.Context) {
+				// Written before the rule existed, so set it behind the service.
+				if err := f.repo.Upsert(context.Background(), &Plan{
+					WorkspaceID: 1, UserID: 3, ProjectID: 10, WeekStart: week, Hours: 6,
+				}); err != nil {
+					t.Fatalf("seed source: %v", err)
+				}
+			},
+			run: func(f *fixture, _ context.Context) (*Summary, error) {
+				return f.svc.Repeat(adminCtx(9), RepeatInput{WeekStart: week, Weeks: 2})
 			},
 			wantFilled: 0, wantSkipped: 2, wantCells: 1,
 		},

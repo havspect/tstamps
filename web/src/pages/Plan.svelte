@@ -55,7 +55,9 @@
   const cells = $derived(board?.cells ?? [])
   const other = $derived(board?.other ?? [])
   const colors = $derived(new Map(projects.map((project) => [project.id, project.color])))
-  const choices = $derived(assignableProjects(projects))
+  const choices = $derived(
+    assignableProjects(projects, people.find((person) => person.user_id === editing?.userID)),
+  )
   const rangeLabel = $derived(periodLabel(period, day))
 
   const planned = $derived(cells.reduce((sum, cell) => sum + cell.hours, 0) + other.reduce((sum, row) => sum + row.hours, 0))

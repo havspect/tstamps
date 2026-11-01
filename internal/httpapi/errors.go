@@ -145,6 +145,8 @@ func fail(err error) *huma.ErrorModel {
 		return problem(http.StatusUnprocessableEntity, urnInvalidInput, "from and to must form a range of weeks, and months are YYYY-MM")
 	case errors.Is(err, plan.ErrProjectNotPlannable):
 		return problem(http.StatusUnprocessableEntity, urnInvalidInput, "an archived project cannot take new plan hours")
+	case errors.Is(err, plan.ErrProjectNotInPersonTeams):
+		return problem(http.StatusUnprocessableEntity, urnInvalidInput, "the project is not in this person's teams")
 	case errors.Is(err, plan.ErrFrozenWeek):
 		return problem(http.StatusUnprocessableEntity, urnPlanWeekFrozen, "the week has ended")
 	case errors.Is(err, plan.ErrInvalidVacation):

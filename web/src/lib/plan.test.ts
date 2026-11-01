@@ -1,13 +1,24 @@
 import { describe, expect, it } from 'vitest'
 import { assignableProjects, monthRange, nextMonth, periodLabel, planRange, previousMonth, weekLabel } from './plan'
-import type { Project } from './plan'
+import type { Person, Project } from './plan'
 
-const project = (id: number, archived_at: string | null): Project => ({
+const project = (id: number, archived_at: string | null, team_id = 1): Project => ({
   id,
-  team_id: 1,
+  team_id,
   name: `Project ${id}`,
   color: '#4f46e5',
   archived_at,
+})
+
+const person = (team_ids: number[] | null): Person => ({
+  deactivated: false,
+  email: 'ana@example.com',
+  team_ids,
+  teams: null,
+  user: 'Ana',
+  user_id: 1,
+  weekly_hours: 40,
+  weeks: [],
 })
 
 describe('plan months', () => {
@@ -49,15 +60,25 @@ describe('plan ranges', () => {
 describe('assignable projects', () => {
   it('drops archived projects, which cannot take plan hours', () => {
     const projects = [project(1, null), project(2, '2026-11-01T14:00:00+01:00'), project(3, null)]
-    expect(assignableProjects(projects).map((p) => p.id)).toEqual([1, 3])
+    expect(assignableProjects(projects, person([1])).map((p) => p.id)).toEqual([1, 3])
   })
 
   it('keeps every project when none is archived', () => {
     const projects = [project(1, null), project(2, null)]
-    expect(assignableProjects(projects).map((p) => p.id)).toEqual([1, 2])
+    expect(assignableProjects(projects, person([1])).map((p) => p.id)).toEqual([1, 2])
+  })
+
+  it('drops projects of teams the person is not in', () => {
+    const projects = [project(1, null, 1), project(2, null, 2), project(3, null, 1)]
+    expect(assignableProjects(projects, person([1])).map((p) => p.id)).toEqual([1, 3])
+  })
+
+  it('offers nothing to a person with no teams', () => {
+    expect(assignableProjects([project(1, null)], person(null))).toEqual([])
+    expect(assignableProjects([project(1, null)], undefined)).toEqual([])
   })
 
   it('has nothing to offer when there are no projects', () => {
-    expect(assignableProjects([])).toEqual([])
+    expect(assignableProjects([], person([1]))).toEqual([])
   })
 })

@@ -17,6 +17,10 @@ import (
 // ErrInvalidWeeks is returned when a repeat asks for a number of weeks outside 1–MaxRepeatWeeks.
 var ErrInvalidWeeks = errors.New("weeks must be between 1 and 52")
 
+// ErrProjectNotInPersonTeams is returned when a cell names a project whose team
+// the planned person does not belong to (ADR-0023).
+var ErrProjectNotInPersonTeams = errors.New("the project is not in this person's teams")
+
 // Service enforces the planning rules over the repository.
 type Service struct {
 	repo       Repository
@@ -223,7 +227,8 @@ func (s *Service) List(ctx context.Context, filter Filter) (*Board, error) {
 }
 
 // Set writes one cell. Zero hours deletes it, and deleting a missing cell is a
-// no-op so an agent can retry safely.
+// no-op so an agent can retry safely. The project must be one of the person's
+// teams (ADR-0023).
 func (s *Service) Set(ctx context.Context, userID, projectID uint, weekStart time.Time, hours int) (*Plan, error) {
 	p, err := principal(ctx)
 	if err != nil {
@@ -250,6 +255,11 @@ func (s *Service) Set(ctx context.Context, userID, projectID uint, weekStart tim
 	}
 	if !mayPlanPerson(p, person) {
 		return nil, authz.ErrForbidden
+	}
+	// The project must be one of the person's teams, or their lead cannot read
+	// the cell. Zero hours still clears a cell written before this rule (ADR-0023).
+	if hours != 0 && !hasTeam(*person, project.TeamID) {
+		return nil, ErrProjectNotInPersonTeams
 	}
 	now := s.clock.Now()
 	if Ended(week, person.Timezone, now) {
@@ -574,7 +584,8 @@ func (s *Service) Repeat(ctx context.Context, in RepeatInput) (*Summary, error) 
 }
 
 // fill writes one cell of a bulk, skipping frozen weeks, archived projects,
-// impossible hours, existing cells and cells the caller may not write.
+// projects outside the person's teams, impossible hours, existing cells and
+// cells the caller may not write.
 func (s *Service) fill(
 	ctx context.Context,
 	p *auth.Principal,
@@ -602,6 +613,10 @@ func (s *Service) fill(
 		return err
 	}
 	if project.ArchivedAt != nil {
+		sum.Skipped++
+		return nil
+	}
+	if !hasTeam(*person, project.TeamID) {
 		sum.Skipped++
 		return nil
 	}

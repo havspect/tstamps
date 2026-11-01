@@ -338,6 +338,14 @@ func TestFullDomainOperations(t *testing.T) {
 	var teamResp teamResponse
 	_ = json.NewDecoder(rec.Body).Decode(&teamResp)
 
+	// A cell may only name a project of the planned person's teams, so the admin
+	// joins the team she plans herself onto (ADR-0023).
+	if err := deps.DB.WithContext(ctxWs).Create(&gormrepo.TeamMembership{
+		WorkspaceID: ws.ID, TeamID: teamResp.ID, UserID: admin.ID, Role: "member", CreatedAt: time.Now(),
+	}).Error; err != nil {
+		t.Fatalf("join team: %v", err)
+	}
+
 	// 2. Projects: Create & List
 	createProjJSON := `{"team_id":` + jsonNum(teamResp.ID) + `,"name":"API Service","color":"#00ff00"}`
 	rec = httptest.NewRecorder()
@@ -371,6 +379,41 @@ func TestFullDomainOperations(t *testing.T) {
 	handler.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"hours":12`) {
 		t.Fatalf("get plan status=%d: %s", rec.Code, rec.Body.String())
+	}
+
+	// 3b. Plan: a project of a team the person is not in is refused, admin too.
+	rec = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodPost, "/api/v1/teams", strings.NewReader(`{"name":"Design"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", authHeader)
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("create design team status=%d: %s", rec.Code, rec.Body.String())
+	}
+	var designTeam teamResponse
+	_ = json.NewDecoder(rec.Body).Decode(&designTeam)
+
+	rec = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodPost, "/api/v1/projects",
+		strings.NewReader(`{"team_id":`+jsonNum(designTeam.ID)+`,"name":"Billing","color":"#ff0000"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", authHeader)
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("create billing project status=%d: %s", rec.Code, rec.Body.String())
+	}
+	var billing projectResponse
+	_ = json.NewDecoder(rec.Body).Decode(&billing)
+
+	rec = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodPut, "/api/v1/plan", strings.NewReader(
+		`{"user_id":`+jsonNum(admin.ID)+`,"project_id":`+jsonNum(billing.ID)+
+			`,"week_start":"`+week.Format("2006-01-02")+`","hours":4}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", authHeader)
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnprocessableEntity || !strings.Contains(rec.Body.String(), "the project is not in this person's teams") {
+		t.Fatalf("cross-team plan status=%d: %s", rec.Code, rec.Body.String())
 	}
 
 	// 4. Timer: Start, GetRunning, Stop

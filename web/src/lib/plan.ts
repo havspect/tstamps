@@ -6,11 +6,14 @@ import type { components } from './api/schema'
 export type PlanPeriod = 'week' | 'month' | 'quarter'
 
 export type Project = components['schemas']['ProjectResponse']
+export type Person = components['schemas']['PlanPersonResponse']
 
-// assignableProjects is the plan editor's picker: an archived project can never
+// assignableProjects is the plan editor's picker: a cell may only name a project
+// of the planned person's teams (ADR-0023), and an archived project can never
 // take new plan hours, so the server refuses every cell written against it.
-export function assignableProjects(projects: Project[]): Project[] {
-  return projects.filter((project) => project.archived_at == null)
+export function assignableProjects(projects: Project[], person: Person | undefined): Project[] {
+  const teams = person?.team_ids ?? []
+  return projects.filter((project) => project.archived_at == null && teams.includes(project.team_id))
 }
 
 export function nextMonth(day: string): string {
