@@ -83,6 +83,7 @@ type Vacation struct {
 	EndDate     time.Time
 	StartHours  float64
 	EndHours    float64
+	TotalHours  float64 // computed from the range, not stored
 	Note        string
 	CreatedAt   time.Time
 	UpdatedAt   time.Time
@@ -181,7 +182,9 @@ func DailyHours(weeklyHours int) float64 {
 // VacationHours counts the hours off in the Monday-to-Friday week that start one
 // of the vacations. The first and last dates use their own hours when they are
 // working days; the working days between them take a full day. Weekends never
-// count, and a vacation outside the week contributes nothing.
+// count, and a vacation outside the week contributes nothing. A stored edge
+// longer than the current working day is clamped, so lowering a person's weekly
+// hours cannot over-remove capacity.
 func VacationHours(weekStart time.Time, weeklyHours int, vacations []Vacation) float64 {
 	daily := DailyHours(weeklyHours)
 	total := 0.0
@@ -194,13 +197,35 @@ func VacationHours(weekStart time.Time, weeklyHours int, vacations []Vacation) f
 			}
 			switch {
 			case start.Equal(end), day.Equal(start):
-				total += v.StartHours
+				total += math.Min(v.StartHours, daily)
 			case day.Equal(end):
-				total += v.EndHours
+				total += math.Min(v.EndHours, daily)
 			default:
 				total += daily
 			}
 			break
+		}
+	}
+	return total
+}
+
+// VacationTotalHours sums every hour off in a vacation's range: the clamped
+// first and last dates plus a full working day for each working day between
+// them. A weekend day counts nothing. At most 366 days, so a day loop is fine.
+func VacationTotalHours(v Vacation, weeklyHours int) float64 {
+	daily := DailyHours(weeklyHours)
+	start, end := Date(v.StartDate), Date(v.EndDate)
+	total := 0.0
+	for day := start; !day.After(end); day = day.AddDate(0, 0, 1) {
+		switch {
+		case start.Equal(end), day.Equal(start):
+			total += math.Min(v.StartHours, daily)
+		case day.Equal(end):
+			total += math.Min(v.EndHours, daily)
+		default:
+			if IsWorkingDay(day) {
+				total += daily
+			}
 		}
 	}
 	return total

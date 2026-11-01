@@ -19,6 +19,7 @@ type vacationResponse struct {
 	EndDate    string  `json:"end_date"`
 	StartHours float64 `json:"start_hours"`
 	EndHours   float64 `json:"end_hours"`
+	TotalHours float64 `json:"total_hours" doc:"Total hours off across the whole range, weekends excluded."`
 	Note       string  `json:"note"`
 }
 
@@ -32,6 +33,7 @@ func toVacationResponse(v *plan.Vacation) vacationResponse {
 		EndDate:    v.EndDate.Format(dateLayout),
 		StartHours: v.StartHours,
 		EndHours:   v.EndHours,
+		TotalHours: v.TotalHours,
 		Note:       v.Note,
 	}
 }

@@ -11,6 +11,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/havspect/tstamps/internal/auth"
+	"github.com/havspect/tstamps/internal/plan"
 	gormrepo "github.com/havspect/tstamps/internal/repository/gorm"
 )
 
@@ -259,6 +260,30 @@ func fill(db *gorm.DB, workspaceID uint, now time.Time) error {
 	plans := buildPlans(now, workspaceID, userIDs, projectIDs)
 	if err := db.CreateInBatches(&plans, 100).Error; err != nil {
 		return fmt.Errorf("create plans: %w", err)
+	}
+
+	// One full working week off for Mia, a member of the first team, in the
+	// month the plan board opens on, so the demo shows vacations lowering
+	// capacity without a visitor adding one first.
+	mia := people[2]
+	first := time.Date(now.UTC().Year(), now.UTC().Month()+1, 1, 0, 0, 0, 0, time.UTC)
+	for first.Weekday() != time.Monday {
+		first = first.AddDate(0, 0, 1)
+	}
+	day := plan.DailyHours(mia.weeklyHours)
+	vacation := gormrepo.Vacation{
+		WorkspaceID: workspaceID,
+		UserID:      userIDs[mia.email],
+		StartDate:   first,
+		EndDate:     first.AddDate(0, 0, 4),
+		StartHours:  day,
+		EndHours:    day,
+		Note:        "Family trip",
+		CreatedAt:   now,
+		UpdatedAt:   now,
+	}
+	if err := db.Create(&vacation).Error; err != nil {
+		return fmt.Errorf("create vacation: %w", err)
 	}
 	return nil
 }

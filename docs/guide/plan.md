@@ -29,12 +29,12 @@ Bulk actions fill empty cells only and tell you how many they skipped. Nothing i
 - A week that has ended, measured in the planned person's timezone, is frozen and refuses writes. Current and future weeks accept them.
 - Archived projects keep their existing plan hours, labelled as archived, but cannot take new ones.
 - A deactivated person keeps their row only while they still have plan hours in the range.
-- Capacity is a number per person on **Admin → Users**, defaulting to 40 hours. A [vacation](./vacations.md) lowers it by the working time it covers, so the unallocated row accounts for time off.
+- Capacity is a number per person on **Admin → Users**, defaulting to 40 hours. A [vacation](./vacations.md) lowers it by the working time it covers, so the unallocated row already excludes it.
 - Every cell a lead or admin writes is an audit event, one per cell, including the cells a seed or repeat fills.
 
 ## Vacations
 
-Every user records their own time off under **Vacations** in the top bar. A vacation is an inclusive range of dates with hours on its first and last date; the working days between them are full days. Only Monday-to-Friday time counts, so a range across a weekend does not change the board. A week cell whose person is away is marked `vac` and shows the reduced capacity, and planning over it is allowed but flagged like any other crunch.
+Every user records their own vacations under **Vacations** in the top bar. A vacation is an inclusive range of dates with hours on its first and last date; the working days between them are full days. Only Monday-to-Friday time counts, so a range across a weekend does not change the board. A week cell whose person is away is marked `vac` and shows the reduced capacity, and planning over it is allowed but flagged like any other crunch.
 
 A lead can switch the **Vacations** page to a person in a team they lead and read the dates, hours and note. That view is read-only: only the owner writes a vacation.
 

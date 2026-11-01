@@ -507,6 +507,13 @@ func TestAddAndDeleteOwnVacation(t *testing.T) {
 	}); !errors.Is(err, ErrInvalidVacation) {
 		t.Fatalf("more than one decimal: %v", err)
 	}
+	if _, err := f.svc.AddVacation(ctx, VacationInput{
+		StartDate:  time.Date(2026, 11, 2, 0, 0, 0, 0, time.UTC),
+		EndDate:    time.Date(2027, 11, 3, 0, 0, 0, 0, time.UTC),
+		StartHours: 8, EndHours: 8,
+	}); !errors.Is(err, ErrInvalidVacation) {
+		t.Fatalf("longer than the cap: %v", err)
+	}
 
 	if err := f.svc.DeleteVacation(leadCtx(1, 1), v.ID); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("deleted another user's vacation: %v", err)
@@ -517,6 +524,38 @@ func TestAddAndDeleteOwnVacation(t *testing.T) {
 	vacations, err := f.svc.ListVacations(ctx, VacationQuery{})
 	if err != nil || len(vacations) != 0 {
 		t.Fatalf("after delete: %v, %+v", err, vacations)
+	}
+
+	// 2026-11-07 is a Saturday: a weekend edge is stored as zero hours.
+	weekend, err := f.svc.AddVacation(ctx, VacationInput{
+		StartDate:  time.Date(2026, 11, 7, 0, 0, 0, 0, time.UTC),
+		EndDate:    time.Date(2026, 11, 10, 0, 0, 0, 0, time.UTC),
+		StartHours: 8,
+		EndHours:   8,
+	})
+	if err != nil {
+		t.Fatalf("weekend start: %v", err)
+	}
+	if weekend.StartHours != 0 || weekend.EndHours != 8 {
+		t.Fatalf("weekend start edges = %+v, want 0 and 8", weekend)
+	}
+}
+
+func TestVacationHoursClampsStoredEdgesAndTotalHoursSumsTheRange(t *testing.T) {
+	week := time.Date(2026, 11, 2, 0, 0, 0, 0, time.UTC) // Monday
+	// A vacation stored as 8 hours on a day that is now 4 hours (a 20-hour
+	// week) removes 4, so lowering someone's hours cannot over-remove.
+	got := VacationHours(week, 20, []Vacation{{
+		StartDate: week.AddDate(0, 0, 2), EndDate: week.AddDate(0, 0, 2), StartHours: 8,
+	}})
+	if got != 4 {
+		t.Fatalf("clamped VacationHours = %v, want 4", got)
+	}
+	// Wednesday to the next Tuesday is six working days, weekends excluded.
+	if got := VacationTotalHours(Vacation{
+		StartDate: week.AddDate(0, 0, 2), EndDate: week.AddDate(0, 0, 8), StartHours: 8, EndHours: 8,
+	}, 40); got != 40 {
+		t.Fatalf("VacationTotalHours = %v, want 40", got)
 	}
 }
 

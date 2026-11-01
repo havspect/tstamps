@@ -144,8 +144,13 @@
       error = problemMessage(problem, response)
       return
     }
+    const added = start === end ? start : `${start} to ${end}`
     note = ''
-    notice = `Added ${start === end ? start : `${start} to ${end}`}.`
+    start = today
+    end = today
+    startHours = formatHours(defaultDaily)
+    endHours = formatHours(defaultDaily)
+    notice = `Added ${added}.`
     await load()
   }
 
@@ -167,16 +172,16 @@
     await load()
   }
 
-  function hoursLabel(vacation: Vacation): string {
-    if (vacation.start_date === vacation.end_date) return `${vacation.start_hours}h`
-    return `${vacation.start_hours}h first · ${vacation.end_hours}h last`
+  function edgeTitle(vacation: Vacation): string | undefined {
+    if (vacation.start_date === vacation.end_date) return undefined
+    return `${formatHours(vacation.start_hours)}h on the first day, ${formatHours(vacation.end_hours)}h on the last`
   }
 </script>
 
 <h1>Vacations</h1>
 
 <p class="hint">
-  Time off lowers the capacity the plan board shows for you. It is not logged time, so it never appears in
+  A vacation lowers the capacity the plan board shows for you. It is not logged time, so it never appears in
   reports or on the timeline.
 </p>
 
@@ -242,7 +247,7 @@
     <p class="hint">Weekends never count, so their hours are fixed at 0.</p>
   {/if}
 {:else}
-  <p class="hint">Read-only: {selectedName}'s vacations. Only the owner adds or deletes time off.</p>
+  <p class="hint">Read-only: {selectedName}'s vacations. Only the owner adds or deletes a vacation.</p>
 {/if}
 
 {#if loading}
@@ -260,7 +265,7 @@
           {/if}
           <th scope="col">First day</th>
           <th scope="col">Last day</th>
-          <th scope="col">Time off</th>
+          <th scope="col">Hours off</th>
           <th scope="col">Note</th>
           {#if selectedUserID === 0}
             <th scope="col">Actions</th>
@@ -275,7 +280,7 @@
             {/if}
             <td>{vacation.start_date}</td>
             <td>{vacation.end_date}</td>
-            <td>{hoursLabel(vacation)}</td>
+            <td title={edgeTitle(vacation)}>{formatHours(vacation.total_hours)}h</td>
             <td>{vacation.note}</td>
             {#if selectedUserID === 0}
               <td><Button variant="danger" onclick={() => void remove(vacation)}>Delete</Button></td>

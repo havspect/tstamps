@@ -57,6 +57,9 @@
 
   const planned = $derived(cells.reduce((sum, cell) => sum + cell.hours, 0) + other.reduce((sum, row) => sum + row.hours, 0))
   const capacity = $derived(people.reduce((sum, person) => sum + totalCapacity(person.user_id), 0))
+  const onVacation = $derived(
+    weeks.some((week) => people.some((person) => vacationHoursOf(person.user_id, week) > 0)),
+  )
 
   const projectRows = $derived.by(() => {
     const rows = new Map<number, ProjectRow>()
@@ -145,6 +148,12 @@
     return weeks.reduce((sum, week) => sum + capacityOf(personID, week), 0)
   }
 
+  // 0 weekly hours means no capacity configured, not zero hours available; only
+  // a configured person can be over capacity.
+  function hasCapacity(personID: number): boolean {
+    return (people.find((person) => person.user_id === personID)?.weekly_hours ?? 0) > 0
+  }
+
   function weekPlanned(week: string): number {
     const named = cells.filter((cell) => cell.week_start === week).reduce((sum, cell) => sum + cell.hours, 0)
     const elsewhere = other.filter((row) => row.week_start === week).reduce((sum, row) => sum + row.hours, 0)
@@ -156,11 +165,11 @@
   }
 
   function over(person: Person): boolean {
-    return personTotal(person.user_id) > totalCapacity(person.user_id)
+    return person.weekly_hours > 0 && personTotal(person.user_id) > totalCapacity(person.user_id)
   }
 
   function overWeek(personID: number, week: string): boolean {
-    return personWeek(personID, week) > capacityOf(personID, week)
+    return hasCapacity(personID) && personWeek(personID, week) > capacityOf(personID, week)
   }
 
   function toggle(projectID: number) {
@@ -404,7 +413,7 @@
                 <button
                   type="button"
                   class="cell"
-                  class:over={plannedHours + elsewhere > weekHours}
+                  class:over={hasCapacity(person.user_id) && plannedHours + elsewhere > weekHours}
                   disabled={!canEdit}
                   aria-label={`${person.user}, week of ${weekLabel(week)}: ${plannedHours} of ${weekHours} hours planned${vacationHours > 0 ? `, ${vacationHours}h vacation` : ''}`}
                   onclick={() => select(person.user_id, week)}
@@ -432,7 +441,7 @@
               </td>
             {/each}
             <td class="num total" class:over={over(person)}>
-              {total}{personCapacity > 0 ? ` / ${personCapacity}h` : ''}
+              {total}{person.weekly_hours > 0 ? ` / ${personCapacity}h` : ''}
             </td>
           </tr>
         {/each}
@@ -513,6 +522,10 @@
     </table>
   </wa-scroller>
   {#if projectRows.length === 0}<p>Nothing planned in {rangeLabel}.</p>{/if}
+{/if}
+
+{#if onVacation}
+  <p class="hint">vac = a vacation week, capacity reduced</p>
 {/if}
 
 {#if editing && editedPerson}

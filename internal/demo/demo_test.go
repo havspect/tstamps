@@ -138,6 +138,29 @@ func TestSeedFillsTheDemoWorkspace(t *testing.T) {
 	if past == 0 || future == 0 {
 		t.Errorf("plans do not span past and future: past=%d future=%d", past, future)
 	}
+
+	// The plan board opens on the next month, so the seeded vacation sits in a
+	// Monday-to-Friday week there and takes Mia's whole 32-hour week.
+	var vacation gormrepo.Vacation
+	if err := db.WithContext(ctx).First(&vacation).Error; err != nil {
+		t.Fatalf("find vacation: %v", err)
+	}
+	var mia gormrepo.User
+	if err := db.WithContext(ctx).Where("email = ?", "mia@example.com").First(&mia).Error; err != nil {
+		t.Fatalf("find mia: %v", err)
+	}
+	if vacation.UserID != mia.ID {
+		t.Errorf("vacation belongs to user %d, want Mia %d", vacation.UserID, mia.ID)
+	}
+	if s, e := vacation.StartDate, vacation.EndDate; s.Month() != time.November || s.Weekday() != time.Monday || e.Sub(s) != 4*24*time.Hour {
+		t.Errorf("vacation = %s to %s, want one working week in the next month", s, e)
+	}
+	if vacation.StartHours != 6.4 || vacation.EndHours != 6.4 {
+		t.Errorf("vacation hours = %v/%v, want one 6.4-hour working day each", vacation.StartHours, vacation.EndHours)
+	}
+	if vacation.Note == "" {
+		t.Error("seeded vacation has no note")
+	}
 }
 
 func TestSeedIsIdempotent(t *testing.T) {

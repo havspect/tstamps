@@ -1,6 +1,6 @@
 # Vacations
 
-Open **Vacations** in the top bar. Every user records their own time off; nobody records leave for someone else. A lead can switch the person filter to a member of a team they lead, and an admin can read anyone, but those views are read-only.
+Open **Vacations** in the top bar. Every user records their own vacations; nobody records a vacation for someone else. A lead can switch the person filter to a member of a team they lead, and an admin can read anyone, but those views are read-only.
 
 A vacation is an inclusive range of dates. Pick the first day and the last day, enter the hours off on each edge, add an optional note and press **Add vacation**.
 

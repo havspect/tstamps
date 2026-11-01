@@ -339,6 +339,7 @@ func (s *Service) ListVacations(ctx context.Context, q VacationQuery) ([]Vacatio
 	for i := range vacations {
 		vacations[i].User = person.Name
 		vacations[i].Email = person.Email
+		vacations[i].TotalHours = VacationTotalHours(vacations[i], person.WeeklyHours)
 	}
 	return vacations, nil
 }
@@ -400,6 +401,7 @@ func (s *Service) AddVacation(ctx context.Context, in VacationInput) (*Vacation,
 		CreatedAt:   now,
 		UpdatedAt:   now,
 	}
+	v.TotalHours = VacationTotalHours(*v, person.WeeklyHours)
 	err = s.uow.Run(ctx, func(txCtx context.Context) error {
 		existing, err := s.repo.ListVacations(txCtx, VacationFilter{
 			UserID: p.UserID, From: start, To: end.AddDate(0, 0, 1),
