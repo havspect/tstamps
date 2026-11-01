@@ -3,7 +3,7 @@
   import { api, problemMessage } from '../lib/api'
   import type { components } from '../lib/api/schema'
   import { deviceTimezone, todayIn } from '../lib/format'
-  import { assignableProjects, monthLabel, nextMonth, periodLabel, planRange, previousMonth, summaryNotice, weekLabel } from '../lib/plan'
+  import { assignableProjects, monthLabel, nextMonth, periodLabel, planRange, previousMonth, summaryNotice, weekEnded, weekLabel } from '../lib/plan'
   import type { PlanPeriod, Project } from '../lib/plan'
   import { session } from '../lib/session.svelte'
   import { notifyError } from '../lib/toast'
@@ -47,6 +47,9 @@
   let notice = $state('')
   // jumpMonth is a month a bulk wrote into, out of sight; the notice offers it.
   let jumpMonth = $state('')
+  // now dates the board, so a week that ends while it is open is judged again on
+  // the next load instead of on every render.
+  let now = $state(new Date())
 
   let editing = $state<{ userID: number; projectID: number | null; week: string } | null>(null)
   let formProject = $state('')
@@ -179,6 +182,15 @@
     return hasCapacity(personID) && personWeek(personID, week) > capacityOf(personID, week)
   }
 
+  // A week that has ended where the planned person lives is history: the server
+  // refuses it, so the cell does not open an editor.
+  function endedWeek(personID: number, week: string): boolean {
+    const person = people.find((row) => row.user_id === personID)
+    return person ? weekEnded(week, person.timezone, now) : false
+  }
+
+  const hasHistory = $derived(weeks.some((week) => people.some((person) => weekEnded(week, person.timezone, now))))
+
   function toggle(projectID: number) {
     open = open.includes(projectID) ? open.filter((id) => id !== projectID) : [...open, projectID]
   }
@@ -192,6 +204,7 @@
   async function load(keepEditor = false) {
     loading = true
     error = ''
+    now = new Date()
     const { from, to } = planRange(period, day)
     const [planRes, projectRes] = await Promise.all([
       api.GET('/api/v1/plan', { params: { query: { from, to } } }),
@@ -212,6 +225,8 @@
 
   function select(personID: number, week: string, projectID: number | null = null) {
     if (!canEdit) return
+    // A week that has ended is refused by the server; do not open it at all.
+    if (endedWeek(personID, week)) return
     editing = { userID: personID, projectID, week }
     formProject = projectID ? String(projectID) : ''
     const existing = projectID ? cellHours(personID, projectID, week) : 0
@@ -375,6 +390,11 @@
     <Button variant="secondary" onclick={showJump}>Show {monthLabel(jumpMonth)}</Button>
   {/if}
 {/snippet}
+{#snippet history()}
+  {#if hasHistory}
+    <span class="history">Weeks before this one are history and cannot be planned.</span>
+  {/if}
+{/snippet}
 {#if notice && !editing}
   <p class="notice" role="status">{notice} {@render jump()}</p>
 {/if}
@@ -409,7 +429,7 @@
 {:else if view === 'person'}
   <wa-scroller class="board-scroller">
     <table class="board wa-tabular-nums">
-      <caption class="range">{rangeLabel}</caption>
+      <caption class="range">{rangeLabel} {@render history()}</caption>
       <thead>
         <tr>
           <th scope="col">Person</th>
@@ -435,13 +455,17 @@
               {@const elsewhere = otherOf(person.user_id, week)}
               {@const weekHours = capacityOf(person.user_id, week)}
               {@const vacationHours = vacationHoursOf(person.user_id, week)}
+              {@const ended = endedWeek(person.user_id, week)}
               <td class="num">
                 <button
                   type="button"
                   class="cell"
                   class:over={hasCapacity(person.user_id) && plannedHours + elsewhere > weekHours}
+                  class:ended
                   disabled={!canEdit}
-                  aria-label={`${person.user}, week of ${weekLabel(week)}: ${plannedHours} of ${weekHours} hours planned${vacationHours > 0 ? `, ${vacationHours}h vacation` : ''}`}
+                  aria-disabled={(canEdit && ended) || undefined}
+                  title={ended ? `Week of ${weekLabel(week)} has ended and cannot be planned` : undefined}
+                  aria-label={`${person.user}, week of ${weekLabel(week)}: ${plannedHours} of ${weekHours} hours planned${vacationHours > 0 ? `, ${vacationHours}h vacation` : ''}${ended ? ', the week has ended and cannot be planned' : ''}`}
                   onclick={() => select(person.user_id, week)}
                 >
                   <span class="bar">
@@ -486,7 +510,7 @@
 {:else}
   <wa-scroller class="board-scroller">
     <table class="board wa-tabular-nums">
-      <caption class="range">{rangeLabel}</caption>
+      <caption class="range">{rangeLabel} {@render history()}</caption>
       <thead>
         <tr>
           <th scope="col">Project</th>
@@ -523,13 +547,17 @@
                 <th scope="row">{member.user}</th>
                 {#each weeks as week (week)}
                   {@const vacationHours = vacationHoursOf(member.userID, week)}
+                  {@const ended = endedWeek(member.userID, week)}
                   <td class="num">
                     <button
                       type="button"
                       class="cell"
                       class:over={overWeek(member.userID, week)}
+                      class:ended
                       disabled={!canEdit || row.archived}
-                      aria-label={`${member.user}, ${row.project}, week of ${weekLabel(week)}: ${member.weeks[week] ?? 0} hours planned${vacationHours > 0 ? `, ${vacationHours}h vacation` : ''}`}
+                      aria-disabled={(canEdit && !row.archived && ended) || undefined}
+                      title={ended ? `Week of ${weekLabel(week)} has ended and cannot be planned` : undefined}
+                      aria-label={`${member.user}, ${row.project}, week of ${weekLabel(week)}: ${member.weeks[week] ?? 0} hours planned${vacationHours > 0 ? `, ${vacationHours}h vacation` : ''}${ended ? ', the week has ended and cannot be planned' : ''}`}
                       onclick={() => select(member.userID, week, row.projectID)}
                     >
                       <span class="value">{member.weeks[week] ?? ''}</span>
@@ -667,6 +695,12 @@
     color: var(--muted);
   }
 
+  /* The line under the board header says why some weeks cannot be opened. */
+  .history {
+    margin-left: var(--space-2);
+    font-weight: 400;
+  }
+
   .board th,
   .board td {
     padding: var(--space-2);
@@ -768,6 +802,12 @@
   }
 
   .cell:disabled {
+    cursor: default;
+  }
+
+  /* A week that has ended reads as history, not as a cell with room to plan. */
+  .cell.ended {
+    color: var(--muted);
     cursor: default;
   }
 

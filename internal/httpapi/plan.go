@@ -22,6 +22,7 @@ type planPersonResponse struct {
 	UserID      uint                     `json:"user_id"`
 	User        string                   `json:"user"`
 	Email       string                   `json:"email"`
+	Timezone    string                   `json:"timezone" doc:"The zone the server judges this person's weeks in."`
 	WeeklyHours int                      `json:"weekly_hours"`
 	Teams       []string                 `json:"teams"`
 	TeamIDs     []uint                   `json:"team_ids"`
@@ -238,6 +239,7 @@ func (s *Server) getPlan(ctx context.Context, in *planListInput) (*planListOutpu
 		}
 		out.Body.People[i] = planPersonResponse{
 			UserID: person.UserID, User: person.Name, Email: person.Email,
+			Timezone:    person.Timezone,
 			WeeklyHours: person.WeeklyHours, Teams: teams, TeamIDs: teamIDs, Deactivated: !person.Active,
 			Weeks: weeksByUser[person.UserID],
 		}

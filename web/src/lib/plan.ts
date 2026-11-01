@@ -98,6 +98,40 @@ export function monthRange(value: string): { from: string; to: string } {
   return planRange('month', `${value}-01`)
 }
 
+// weekEnded mirrors plan.Ended: the week that starts on the Monday weekStart is
+// history from the following Monday's midnight in the planned person's own
+// timezone, so the current week stays editable. A timezone Intl cannot read is
+// UTC, the same fallback the server makes.
+export function weekEnded(weekStart: string, timezone: string, now: Date): boolean {
+  const end = iso(new Date(Date.parse(`${weekStart}T00:00:00Z`) + 7 * 86_400_000))
+  return zoneDay(now, timezone) >= end
+}
+
+// zoneDay is now's calendar date where the planned person lives. Its date turns
+// over at their midnight, which is exactly where a week ends.
+function zoneDay(now: Date, timezone: string): string {
+  const parts = zoneFormatter(timezone).formatToParts(now)
+  const part = (type: string) => parts.find((entry) => entry.type === type)?.value ?? '00'
+  return `${part('year')}-${part('month')}-${part('day')}`
+}
+
+const zoneFormatters = new Map<string, Intl.DateTimeFormat>()
+
+function zoneFormatter(timezone: string): Intl.DateTimeFormat {
+  const key = timezone === '' ? 'UTC' : timezone
+  const cached = zoneFormatters.get(key)
+  if (cached) return cached
+  const options: Intl.DateTimeFormatOptions = { year: 'numeric', month: '2-digit', day: '2-digit' }
+  let format: Intl.DateTimeFormat
+  try {
+    format = new Intl.DateTimeFormat('en-US', { ...options, timeZone: key })
+  } catch {
+    format = new Intl.DateTimeFormat('en-US', { ...options, timeZone: 'UTC' })
+  }
+  zoneFormatters.set(key, format)
+  return format
+}
+
 export function monthLabel(value: string): string {
   return new Intl.DateTimeFormat('en-GB', { month: 'long', year: 'numeric', timeZone: 'UTC' }).format(
     new Date(`${value}-01T00:00:00Z`),

@@ -796,3 +796,35 @@ func TestPlanSummaryCarriesSkipReasons(t *testing.T) {
 		t.Fatalf("summary = %s, want %s", body, want)
 	}
 }
+
+// The board names the timezone it judges each person's weeks in, so the UI can
+// tell a week that has ended from one that is still planable (issue #9).
+func TestPlanBoardCarriesPersonTimezone(t *testing.T) {
+	handler, deps := setupTestServer(t)
+
+	ws := &gormrepo.Workspace{Slug: "acme"}
+	if err := deps.DB.Create(ws).Error; err != nil {
+		t.Fatalf("create workspace: %v", err)
+	}
+	planner, plannerAuth := seedToken(t, deps, ws.ID, "planner@acme.com", true)
+	ctxWs := gormrepo.WithWorkspaceID(context.Background(), ws.ID)
+	if err := deps.DB.WithContext(ctxWs).Model(&gormrepo.User{}).Where("id = ?", planner.ID).
+		Update("timezone", "Pacific/Kiritimati").Error; err != nil {
+		t.Fatalf("set timezone: %v", err)
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/plan?from=2026-11-02&to=2026-11-09", nil)
+	req.Header.Set("Authorization", plannerAuth)
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("get plan status=%d: %s", rec.Code, rec.Body.String())
+	}
+	var board planBoardResponse
+	if err := json.NewDecoder(rec.Body).Decode(&board); err != nil {
+		t.Fatalf("decode plan: %v", err)
+	}
+	if len(board.People) != 1 || board.People[0].Timezone != "Pacific/Kiritimati" {
+		t.Fatalf("board people = %+v, want the planner's own timezone", board.People)
+	}
+}

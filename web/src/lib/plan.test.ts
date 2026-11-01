@@ -7,6 +7,7 @@ import {
   planRange,
   previousMonth,
   summaryNotice,
+  weekEnded,
   weekLabel,
 } from './plan'
 import type { Person, PlanSummary, Project } from './plan'
@@ -24,6 +25,7 @@ const person = (team_ids: number[] | null): Person => ({
   email: 'ana@example.com',
   team_ids,
   teams: null,
+  timezone: 'UTC',
   user: 'Ana',
   user_id: 1,
   weekly_hours: 40,
@@ -120,6 +122,31 @@ describe('bulk summaries', () => {
     expect(summaryNotice('Filled', { cells: [], filled: 1, skipped: 0, skipped_detail: [] })).toBe(
       'Filled 1 cell, skipped 0.',
     )
+  })
+})
+
+describe('ended weeks', () => {
+  it('judges the week in the planned person timezone, not the viewer one', () => {
+    const now = new Date('2026-11-09T00:30:00Z')
+    expect(weekEnded('2026-11-02', 'Pacific/Kiritimati', now)).toBe(true)
+    expect(weekEnded('2026-11-02', 'Pacific/Midway', now)).toBe(false)
+  })
+
+  it('keeps the current week editable on both sides of the boundary', () => {
+    const now = new Date('2026-11-10T12:00:00Z')
+    expect(weekEnded('2026-11-09', 'Pacific/Kiritimati', now)).toBe(false)
+    expect(weekEnded('2026-11-09', 'Pacific/Midway', now)).toBe(false)
+  })
+
+  it('turns over exactly at midnight Monday in that zone', () => {
+    const at = (instant: string) => weekEnded('2026-11-02', 'Pacific/Kiritimati', new Date(instant))
+    expect(at('2026-11-08T09:59:00Z')).toBe(false)
+    expect(at('2026-11-08T10:00:00Z')).toBe(true)
+  })
+
+  it('falls back to UTC for a timezone it cannot read, like the server', () => {
+    expect(weekEnded('2026-11-02', 'Not/AZone', new Date('2026-11-09T00:00:00Z'))).toBe(true)
+    expect(weekEnded('2026-11-02', '', new Date('2026-11-08T23:59:00Z'))).toBe(false)
   })
 })
 
