@@ -22,6 +22,7 @@ type planPersonResponse struct {
 	UserID      uint                     `json:"user_id"`
 	User        string                   `json:"user"`
 	Email       string                   `json:"email"`
+	Timezone    string                   `json:"timezone" doc:"The zone the server judges this person's weeks in."`
 	WeeklyHours int                      `json:"weekly_hours"`
 	Teams       []string                 `json:"teams"`
 	TeamIDs     []uint                   `json:"team_ids"`
@@ -107,10 +108,18 @@ type planSummaryCell struct {
 	Hours     int    `json:"hours"`
 }
 
+type planSummarySkip struct {
+	WeekStart string `json:"week_start"`
+	UserID    uint   `json:"user_id"`
+	ProjectID uint   `json:"project_id"`
+	Reason    string `json:"reason" doc:"One of occupied, frozen, forbidden, archived, inactive, hours, other-team."`
+}
+
 type planSummaryResponse struct {
-	Filled  int               `json:"filled"`
-	Skipped int               `json:"skipped"`
-	Cells   []planSummaryCell `json:"cells"`
+	Filled        int               `json:"filled"`
+	Skipped       int               `json:"skipped"`
+	Cells         []planSummaryCell `json:"cells"`
+	SkippedDetail []planSummarySkip `json:"skipped_detail"`
 }
 
 type planSummaryOutput struct {
@@ -230,6 +239,7 @@ func (s *Server) getPlan(ctx context.Context, in *planListInput) (*planListOutpu
 		}
 		out.Body.People[i] = planPersonResponse{
 			UserID: person.UserID, User: person.Name, Email: person.Email,
+			Timezone:    person.Timezone,
 			WeeklyHours: person.WeeklyHours, Teams: teams, TeamIDs: teamIDs, Deactivated: !person.Active,
 			Weeks: weeksByUser[person.UserID],
 		}
@@ -309,6 +319,13 @@ func toPlanSummary(sum *plan.Summary) planSummaryResponse {
 		out.Cells[i] = planSummaryCell{
 			UserID: cell.UserID, ProjectID: cell.ProjectID,
 			WeekStart: cell.WeekStart.Format(dateLayout), Hours: cell.Hours,
+		}
+	}
+	out.SkippedDetail = make([]planSummarySkip, len(sum.Skips))
+	for i, skip := range sum.Skips {
+		out.SkippedDetail[i] = planSummarySkip{
+			UserID: skip.UserID, ProjectID: skip.ProjectID,
+			WeekStart: skip.WeekStart.Format(dateLayout), Reason: skip.Reason,
 		}
 	}
 	return out

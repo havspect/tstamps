@@ -144,11 +144,38 @@ type Board struct {
 	PersonWeeks []PersonWeek
 }
 
-// Summary reports what a bulk write did.
+// Skip is one cell a bulk action left alone, and why.
+type Skip struct {
+	UserID    uint
+	ProjectID uint
+	WeekStart time.Time
+	Reason    string
+}
+
+// Skip reasons say why a bulk action left a cell alone.
+const (
+	SkipOccupied  = "occupied"   // the cell already has hours
+	SkipFrozen    = "frozen"     // the week has ended
+	SkipForbidden = "forbidden"  // the caller may not plan this cell
+	SkipArchived  = "archived"   // the project is archived
+	SkipInactive  = "inactive"   // the person is deactivated
+	SkipHours     = "hours"      // the hours are outside 0–168
+	SkipOtherTeam = "other-team" // the project is not in the person's teams
+)
+
+// Summary reports what a bulk write did. Skips names every cell behind the
+// Skipped count, so a caller can say why nothing was written.
 type Summary struct {
 	Filled  int
 	Skipped int
 	Cells   []Cell
+	Skips   []Skip
+}
+
+// skip counts one cell the bulk left alone and records why.
+func (s *Summary) skip(userID, projectID uint, week time.Time, reason string) {
+	s.Skipped++
+	s.Skips = append(s.Skips, Skip{UserID: userID, ProjectID: projectID, WeekStart: week, Reason: reason})
 }
 
 // WeekStart returns the Monday of t's ISO week, as a UTC date.

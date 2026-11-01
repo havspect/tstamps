@@ -1,7 +1,84 @@
+import type { components } from './api/schema'
+
 // Calendar arithmetic for the plan board. All dates are plain YYYY-MM or
 // YYYY-MM-DD strings computed in UTC, so a browser west of Greenwich cannot see
 // last month's first day as two months ago.
 export type PlanPeriod = 'week' | 'month' | 'quarter'
+
+export type Project = components['schemas']['ProjectResponse']
+export type Person = components['schemas']['PlanPersonResponse']
+export type PlanSummary = components['schemas']['PlanSummaryResponse']
+export type PlanSkip = components['schemas']['PlanSummarySkip']
+
+// skipReasons is how the server's reason codes read to a user.
+const skipReasons: Record<string, string> = {
+  occupied: 'already planned',
+  frozen: 'week has ended',
+  inactive: 'person is deactivated',
+  archived: 'project is archived',
+  'other-team': 'project is outside their teams',
+  forbidden: 'not yours to plan',
+  hours: 'hours outside 0–168',
+}
+
+// skippedDetails names one entry per week and reason, so a week that was
+// skipped for several people is not repeated.
+function skippedDetails(skips: PlanSkip[]): string {
+  const groups = new Map<string, { week: string; reason: string; count: number }>()
+  for (const skip of skips) {
+    const key = `${skip.week_start} ${skip.reason}`
+    const group = groups.get(key)
+    if (group) group.count += 1
+    else groups.set(key, { week: skip.week_start, reason: skip.reason, count: 1 })
+  }
+  return [...groups.values()]
+    .map(({ week, reason, count }) => {
+      const clause = skipReasons[reason] ?? reason
+      return count > 1 ? `${weekLabel(week)} ${clause} (${count} cells)` : `${weekLabel(week)} ${clause}`
+    })
+    .join(', ')
+}
+
+// summaryNotice says what a bulk action did and why it left the rest alone, so
+// a run that wrote nothing explains itself instead of guessing.
+export function summaryNotice(verb: string, sum: PlanSummary | undefined): string {
+  const filled = sum?.filled ?? 0
+  const skipped = sum?.skipped ?? 0
+  const message = `${verb} ${filled} ${filled === 1 ? 'cell' : 'cells'}, skipped ${skipped}`
+  const detail = skippedDetails(sum?.skipped_detail ?? [])
+  return detail ? `${message} — ${detail}.` : `${message}.`
+}
+
+// BulkPreview is a dry run read back to the user: what would be written where,
+// and why the rest would be left alone. A run that can only skip has nothing to
+// confirm, so the reason is the whole answer.
+export type BulkPreview = { notice: string; canConfirm: boolean }
+
+// bulkPreview says what a bulk write would do before it does it, in the same
+// vocabulary as the notice that follows the write.
+export function bulkPreview(verb: string, sum: PlanSummary | undefined): BulkPreview {
+  const filled = sum?.filled ?? 0
+  const skipped = sum?.skipped ?? 0
+  const detail = skippedDetails(sum?.skipped_detail ?? [])
+  if (filled === 0) {
+    return {
+      notice: detail ? `Nothing to ${verb} — ${detail}.` : `Nothing to ${verb}: no cell would change.`,
+      canConfirm: false,
+    }
+  }
+  const weeks = [...new Set((sum?.cells ?? []).map((cell) => cell.week_start))].sort().map(weekLabel)
+  const into = weeks.length > 0 ? ` into ${weeks.join(', ')}` : ''
+  const message = `Would ${verb} ${filled} ${filled === 1 ? 'cell' : 'cells'}${into}`
+  return { notice: detail ? `${message}, skipping ${skipped} — ${detail}.` : `${message}.`, canConfirm: true }
+}
+
+// assignableProjects is the plan editor's picker: a cell may only name a project
+// of the planned person's teams (ADR-0023), and an archived project can never
+// take new plan hours, so the server refuses every cell written against it.
+export function assignableProjects(projects: Project[], person: Person | undefined): Project[] {
+  const teams = person?.team_ids ?? []
+  return projects.filter((project) => project.archived_at == null && teams.includes(project.team_id))
+}
 
 export function nextMonth(day: string): string {
   const [year, month] = day.split('-').map(Number)
@@ -42,6 +119,40 @@ export function periodLabel(period: PlanPeriod, day: string): string {
 
 export function monthRange(value: string): { from: string; to: string } {
   return planRange('month', `${value}-01`)
+}
+
+// weekEnded mirrors plan.Ended: the week that starts on the Monday weekStart is
+// history from the following Monday's midnight in the planned person's own
+// timezone, so the current week stays editable. A timezone Intl cannot read is
+// UTC, the same fallback the server makes.
+export function weekEnded(weekStart: string, timezone: string, now: Date): boolean {
+  const end = iso(new Date(Date.parse(`${weekStart}T00:00:00Z`) + 7 * 86_400_000))
+  return zoneDay(now, timezone) >= end
+}
+
+// zoneDay is now's calendar date where the planned person lives. Its date turns
+// over at their midnight, which is exactly where a week ends.
+function zoneDay(now: Date, timezone: string): string {
+  const parts = zoneFormatter(timezone).formatToParts(now)
+  const part = (type: string) => parts.find((entry) => entry.type === type)?.value ?? '00'
+  return `${part('year')}-${part('month')}-${part('day')}`
+}
+
+const zoneFormatters = new Map<string, Intl.DateTimeFormat>()
+
+function zoneFormatter(timezone: string): Intl.DateTimeFormat {
+  const key = timezone === '' ? 'UTC' : timezone
+  const cached = zoneFormatters.get(key)
+  if (cached) return cached
+  const options: Intl.DateTimeFormatOptions = { year: 'numeric', month: '2-digit', day: '2-digit' }
+  let format: Intl.DateTimeFormat
+  try {
+    format = new Intl.DateTimeFormat('en-US', { ...options, timeZone: key })
+  } catch {
+    format = new Intl.DateTimeFormat('en-US', { ...options, timeZone: 'UTC' })
+  }
+  zoneFormatters.set(key, format)
+  return format
 }
 
 export function monthLabel(value: string): string {

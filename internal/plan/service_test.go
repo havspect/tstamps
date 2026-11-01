@@ -188,6 +188,12 @@ func leadCtx(userID uint, teams ...uint) context.Context {
 	})
 }
 
+func adminCtx(userID uint) context.Context {
+	return auth.WithPrincipal(context.Background(), &auth.Principal{
+		WorkspaceID: 1, UserID: userID, Roles: []string{"admin"},
+	})
+}
+
 type fixture struct {
 	repo  *fakeRepo
 	svc   *Service
@@ -284,6 +290,42 @@ func TestSetRejectsBoundsFrozenWeeksAndForeignTeams(t *testing.T) {
 	}
 }
 
+// A cell may only name a project of the planned person's teams (ADR-0023).
+func TestSetKeepsCellsInsideThePersonsTeams(t *testing.T) {
+	now := time.Date(2026, 10, 29, 12, 0, 0, 0, time.UTC)
+	f := newFixture(now)
+	week := time.Date(2026, 11, 2, 0, 0, 0, 0, time.UTC)
+	admin := adminCtx(9)
+
+	// Cid is in Design only, so even an admin cannot plan her onto Platform work.
+	if _, err := f.svc.Set(admin, 3, 10, week, 4); !errors.Is(err, ErrProjectNotInPersonTeams) {
+		t.Fatalf("cross-team project: %v", err)
+	}
+	if len(f.repo.cells) != 0 {
+		t.Fatalf("refused write stored %d cells", len(f.repo.cells))
+	}
+	if _, err := f.svc.Set(admin, 3, 20, week, 4); err != nil {
+		t.Fatalf("own team's project: %v", err)
+	}
+
+	// Permission still comes first: a lead naming a foreign project is refused by
+	// the authorizer, not by the team rule.
+	if _, err := f.svc.Set(leadCtx(1, 1), 2, 20, week, 4); !errors.Is(err, authz.ErrForbidden) {
+		t.Fatalf("lead on a foreign project: %v", err)
+	}
+
+	// Zero hours still clears a cross-team cell written before this rule.
+	if err := f.repo.Upsert(context.Background(), &Plan{WorkspaceID: 1, UserID: 2, ProjectID: 20, WeekStart: week, Hours: 5}); err != nil {
+		t.Fatalf("seed legacy cell: %v", err)
+	}
+	if _, err := f.svc.Set(admin, 2, 20, week, 0); err != nil {
+		t.Fatalf("delete cross-team cell: %v", err)
+	}
+	if stored, _ := f.repo.Get(context.Background(), 2, 20, week); stored != nil {
+		t.Fatalf("cross-team cell survived zero hours: %+v", stored)
+	}
+}
+
 func TestSeedSplitsEvenlyAndFillsOnlyEmptyCells(t *testing.T) {
 	now := time.Date(2026, 10, 29, 12, 0, 0, 0, time.UTC)
 	f := newFixture(now)
@@ -354,11 +396,247 @@ func TestRepeatNeverOverwrites(t *testing.T) {
 	if sum.Filled != 1 || sum.Skipped != 1 {
 		t.Fatalf("summary = %+v", sum)
 	}
+	if len(sum.Skips) != 1 || sum.Skips[0].Reason != SkipOccupied {
+		t.Fatalf("skips = %+v, want one occupied", sum.Skips)
+	}
+	if !sum.Skips[0].WeekStart.Equal(week.AddDate(0, 0, 7)) {
+		t.Fatalf("occupied week = %s", sum.Skips[0].WeekStart.Format("2006-01-02"))
+	}
 	if stored, _ := f.repo.Get(ctx, 2, 10, week.AddDate(0, 0, 7)); stored.Hours != 10 {
 		t.Fatalf("existing cell overwritten with %d", stored.Hours)
 	}
 	if stored, _ := f.repo.Get(ctx, 2, 10, week.AddDate(0, 0, 14)); stored.Hours != 6 {
 		t.Fatalf("third week = %+v", stored)
+	}
+}
+
+func TestRepeatRejectsWeekBounds(t *testing.T) {
+	now := time.Date(2026, 10, 29, 12, 0, 0, 0, time.UTC)
+	f := newFixture(now)
+	ctx := leadCtx(1, 1)
+	week := time.Date(2026, 11, 2, 0, 0, 0, 0, time.UTC)
+	if _, err := f.svc.Set(ctx, 2, 10, week, 6); err != nil {
+		t.Fatalf("set source: %v", err)
+	}
+
+	for _, weeks := range []int{0, -1, MaxRepeatWeeks + 1} {
+		if _, err := f.svc.Repeat(ctx, RepeatInput{WeekStart: week, Weeks: weeks}); !errors.Is(err, ErrInvalidWeeks) {
+			t.Fatalf("%d weeks: %v", weeks, err)
+		}
+	}
+	if len(f.repo.cells) != 1 {
+		t.Fatalf("rejected repeats wrote %d cells", len(f.repo.cells))
+	}
+}
+
+func TestBulkSkipsArchivedProjectsAndImpossibleHours(t *testing.T) {
+	now := time.Date(2026, 10, 29, 12, 0, 0, 0, time.UTC)
+	week := time.Date(2026, 11, 2, 0, 0, 0, 0, time.UTC)
+
+	tests := []struct {
+		name        string
+		setup       func(f *fixture, ctx context.Context)
+		run         func(f *fixture, ctx context.Context) (*Summary, error)
+		wantFilled  int
+		wantSkipped int
+		wantReason  string
+		wantCells   int
+	}{
+		{
+			name: "seed onto an archived project",
+			setup: func(f *fixture, _ context.Context) {
+				archived := now
+				f.repo.projects[10].ArchivedAt = &archived
+				f.svc.reports = fakeReports{rows: []report.Row{{UserID: 2, ProjectID: 10, Seconds: 40 * 3600}}}
+			},
+			run: func(f *fixture, ctx context.Context) (*Summary, error) {
+				return f.svc.Seed(ctx, SeedInput{FromMonth: "2026-10", IntoMonth: "2026-11"})
+			},
+			wantFilled: 0, wantSkipped: 5, wantReason: SkipArchived, wantCells: 0,
+		},
+		{
+			// 900 hours over five November weeks is 180 a week, past MaxHours.
+			name: "seed whose even split exceeds a week",
+			setup: func(f *fixture, _ context.Context) {
+				f.svc.reports = fakeReports{rows: []report.Row{{UserID: 2, ProjectID: 10, Seconds: 900 * 3600}}}
+			},
+			run: func(f *fixture, ctx context.Context) (*Summary, error) {
+				return f.svc.Seed(ctx, SeedInput{FromMonth: "2026-10", IntoMonth: "2026-11"})
+			},
+			wantFilled: 0, wantSkipped: 5, wantReason: SkipHours, wantCells: 0,
+		},
+		{
+			name: "repeat from an archived source cell",
+			setup: func(f *fixture, ctx context.Context) {
+				if _, err := f.svc.Set(ctx, 2, 10, week, 6); err != nil {
+					t.Fatalf("set source: %v", err)
+				}
+				archived := now
+				f.repo.projects[10].ArchivedAt = &archived
+			},
+			run: func(f *fixture, ctx context.Context) (*Summary, error) {
+				return f.svc.Repeat(ctx, RepeatInput{WeekStart: week, Weeks: 2})
+			},
+			wantFilled: 0, wantSkipped: 2, wantReason: SkipArchived, wantCells: 1,
+		},
+		{
+			name: "seed onto a project outside the person's teams",
+			setup: func(f *fixture, _ context.Context) {
+				// Cid is in Design only; project 10 is Platform.
+				f.svc.reports = fakeReports{rows: []report.Row{{UserID: 3, ProjectID: 10, Seconds: 40 * 3600}}}
+			},
+			run: func(f *fixture, _ context.Context) (*Summary, error) {
+				return f.svc.Seed(adminCtx(9), SeedInput{FromMonth: "2026-10", IntoMonth: "2026-11"})
+			},
+			wantFilled: 0, wantSkipped: 5, wantReason: SkipOtherTeam, wantCells: 0,
+		},
+		{
+			name: "repeat from a cross-team source cell",
+			setup: func(f *fixture, _ context.Context) {
+				// Written before the rule existed, so set it behind the service.
+				if err := f.repo.Upsert(context.Background(), &Plan{
+					WorkspaceID: 1, UserID: 3, ProjectID: 10, WeekStart: week, Hours: 6,
+				}); err != nil {
+					t.Fatalf("seed source: %v", err)
+				}
+			},
+			run: func(f *fixture, _ context.Context) (*Summary, error) {
+				return f.svc.Repeat(adminCtx(9), RepeatInput{WeekStart: week, Weeks: 2})
+			},
+			wantFilled: 0, wantSkipped: 2, wantReason: SkipOtherTeam, wantCells: 1,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newFixture(now)
+			ctx := leadCtx(1, 1)
+			tc.setup(f, ctx)
+			events := f.audit.events
+
+			sum, err := tc.run(f, ctx)
+			if err != nil {
+				t.Fatalf("run: %v", err)
+			}
+			if sum.Filled != tc.wantFilled || sum.Skipped != tc.wantSkipped {
+				t.Fatalf("summary = %+v, want filled %d skipped %d", sum, tc.wantFilled, tc.wantSkipped)
+			}
+			if len(sum.Skips) != tc.wantSkipped {
+				t.Fatalf("skips = %+v, want %d", sum.Skips, tc.wantSkipped)
+			}
+			for _, skip := range sum.Skips {
+				if skip.Reason != tc.wantReason {
+					t.Fatalf("skip %s = %q, want %q", skip.WeekStart.Format("2006-01-02"), skip.Reason, tc.wantReason)
+				}
+			}
+			if len(sum.Cells) != 0 {
+				t.Fatalf("reported cells = %+v", sum.Cells)
+			}
+			if len(f.repo.cells) != tc.wantCells {
+				t.Fatalf("stored %d cells, want %d", len(f.repo.cells), tc.wantCells)
+			}
+			if f.audit.events != events {
+				t.Fatalf("bulk writes audited %d events", f.audit.events-events)
+			}
+		})
+	}
+}
+
+// Every skip of a bulk says why, so a caller can explain a zero-fill run.
+func TestBulkSkipsSayWhy(t *testing.T) {
+	now := time.Date(2026, 10, 29, 12, 0, 0, 0, time.UTC)
+	week := time.Date(2026, 11, 2, 0, 0, 0, 0, time.UTC)
+	past := time.Date(2026, 10, 5, 0, 0, 0, 0, time.UTC)
+
+	tests := []struct {
+		name        string
+		as          func() context.Context
+		setup       func(f *fixture, ctx context.Context)
+		run         func(f *fixture, ctx context.Context) (*Summary, error)
+		wantFilled  int
+		wantSkipped int
+		wantReason  string
+	}{
+		{
+			name: "repeat onto a week that already has hours",
+			setup: func(f *fixture, ctx context.Context) {
+				for _, w := range []time.Time{week, week.AddDate(0, 0, 7)} {
+					if _, err := f.svc.Set(ctx, 2, 10, w, 6); err != nil {
+						t.Fatalf("set %s: %v", w.Format("2006-01-02"), err)
+					}
+				}
+			},
+			run: func(f *fixture, ctx context.Context) (*Summary, error) {
+				return f.svc.Repeat(ctx, RepeatInput{WeekStart: week, Weeks: 2})
+			},
+			wantFilled: 1, wantSkipped: 1, wantReason: SkipOccupied,
+		},
+		{
+			name: "repeat into weeks that have ended",
+			setup: func(f *fixture, _ context.Context) {
+				if err := f.repo.Upsert(context.Background(), &Plan{
+					WorkspaceID: 1, UserID: 2, ProjectID: 10, WeekStart: past, Hours: 6,
+				}); err != nil {
+					t.Fatalf("seed source: %v", err)
+				}
+			},
+			run: func(f *fixture, ctx context.Context) (*Summary, error) {
+				return f.svc.Repeat(ctx, RepeatInput{WeekStart: past, Weeks: 2})
+			},
+			wantFilled: 0, wantSkipped: 2, wantReason: SkipFrozen,
+		},
+		{
+			name: "seed for a deactivated person",
+			setup: func(f *fixture, _ context.Context) {
+				f.svc.reports = fakeReports{rows: []report.Row{{UserID: 4, ProjectID: 10, Seconds: 40 * 3600}}}
+			},
+			run: func(f *fixture, ctx context.Context) (*Summary, error) {
+				return f.svc.Seed(ctx, SeedInput{FromMonth: "2026-10", IntoMonth: "2026-11"})
+			},
+			wantFilled: 0, wantSkipped: 5, wantReason: SkipInactive,
+		},
+		{
+			name: "seed planned by a lead of another team",
+			// Ana leads Design only; Bo is in Platform.
+			as: func() context.Context { return leadCtx(1, 2) },
+			setup: func(f *fixture, _ context.Context) {
+				f.svc.reports = fakeReports{rows: []report.Row{{UserID: 2, ProjectID: 10, Seconds: 40 * 3600}}}
+			},
+			run: func(f *fixture, ctx context.Context) (*Summary, error) {
+				return f.svc.Seed(ctx, SeedInput{FromMonth: "2026-10", IntoMonth: "2026-11"})
+			},
+			wantFilled: 0, wantSkipped: 5, wantReason: SkipForbidden,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newFixture(now)
+			ctx := leadCtx(1, 1)
+			if tc.as != nil {
+				ctx = tc.as()
+			}
+			tc.setup(f, ctx)
+
+			sum, err := tc.run(f, ctx)
+			if err != nil {
+				t.Fatalf("run: %v", err)
+			}
+			if sum.Filled != tc.wantFilled || sum.Skipped != tc.wantSkipped {
+				t.Fatalf("summary = %+v, want filled %d skipped %d", sum, tc.wantFilled, tc.wantSkipped)
+			}
+			if len(sum.Skips) != tc.wantSkipped {
+				t.Fatalf("skips = %+v, want %d", sum.Skips, tc.wantSkipped)
+			}
+			for _, skip := range sum.Skips {
+				if skip.Reason != tc.wantReason {
+					t.Fatalf("skip %s = %q, want %q", skip.WeekStart.Format("2006-01-02"), skip.Reason, tc.wantReason)
+				}
+				if skip.UserID == 0 || skip.ProjectID == 0 || skip.WeekStart.IsZero() {
+					t.Fatalf("skip %+v is missing the cell it names", skip)
+				}
+			}
+		})
 	}
 }
 

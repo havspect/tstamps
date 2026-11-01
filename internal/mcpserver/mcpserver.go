@@ -386,6 +386,9 @@ func register(s *sdk.Server, cfg Config) {
 			if cfg.PlanService == nil {
 				return nil, PlanSummary{}, nil
 			}
+			if in.Weeks < 1 || in.Weeks > plan.MaxRepeatWeeks {
+				return nil, PlanSummary{}, plan.ErrInvalidWeeks
+			}
 			week, err := time.Parse("2006-01-02", in.WeekStart)
 			if err != nil {
 				return nil, PlanSummary{}, err

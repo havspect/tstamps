@@ -1,7 +1,9 @@
 import createClient from 'openapi-fetch'
 import type { paths } from './api/schema'
 
-const workspace = /^\/w\/([^/]+)/.exec(location.pathname)
+// location is absent under Vitest's node environment.
+const pathname = typeof location === 'undefined' ? '/' : location.pathname
+const workspace = /^\/w\/([^/]+)/.exec(pathname)
 export const workspaceBase = workspace ? `/w/${workspace[1]}` : ''
 
 export const api = createClient<paths>({ baseUrl: workspaceBase })
@@ -24,12 +26,13 @@ const urnMessages: Record<string, string> = {
 
 type Problem = { type?: string; title?: string; detail?: string }
 
-// problemMessage turns an RFC 9457 body into prose. Detail wins; the URN map is
-// the fallback when a proxy or an old server sends a bare problem.
+// problemMessage turns an RFC 9457 body into prose. Detail wins unless it only
+// repeats the URN slug ("forbidden"), which explains nothing; the URN map is the
+// fallback when a proxy or an old server sends a bare problem.
 export function problemMessage(error: unknown, response?: Response): string {
   const problem = (error ?? {}) as Problem
-  if (problem.detail) return problem.detail
   const urn = problem.type?.replace(/^urn:tstamps:error:/, '')
+  if (problem.detail && problem.detail !== urn) return problem.detail
   if (urn && urnMessages[urn]) return urnMessages[urn]
   return problem.title ?? (response ? `Request failed (${response.status}).` : 'Something went wrong.')
 }

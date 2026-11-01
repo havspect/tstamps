@@ -5,6 +5,7 @@ Open `/w/{slug}/plan` after signing in. It is the forward-looking twin of Report
 ![The plan board: one row per person, one column per ISO week, stacked project bars against capacity](/screenshots/plan.webp)
 
 - A **lead** sees their own teams' people and reads and writes plans on their teams' projects. Load a person carries on another team's project appears as grey "other" hours, so the row does not lie, without naming the project.
+- A cell may only name a project of the planned person's teams, so nobody is planned onto work their lead cannot see. An admin included: adding the person to the team comes first (ADR-0023).
 - An **admin** sees and plans everything.
 - A **member** sees their own row read-only.
 

@@ -338,6 +338,14 @@ func TestFullDomainOperations(t *testing.T) {
 	var teamResp teamResponse
 	_ = json.NewDecoder(rec.Body).Decode(&teamResp)
 
+	// A cell may only name a project of the planned person's teams, so the admin
+	// joins the team she plans herself onto (ADR-0023).
+	if err := deps.DB.WithContext(ctxWs).Create(&gormrepo.TeamMembership{
+		WorkspaceID: ws.ID, TeamID: teamResp.ID, UserID: admin.ID, Role: "member", CreatedAt: time.Now(),
+	}).Error; err != nil {
+		t.Fatalf("join team: %v", err)
+	}
+
 	// 2. Projects: Create & List
 	createProjJSON := `{"team_id":` + jsonNum(teamResp.ID) + `,"name":"API Service","color":"#00ff00"}`
 	rec = httptest.NewRecorder()
@@ -371,6 +379,41 @@ func TestFullDomainOperations(t *testing.T) {
 	handler.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"hours":12`) {
 		t.Fatalf("get plan status=%d: %s", rec.Code, rec.Body.String())
+	}
+
+	// 3b. Plan: a project of a team the person is not in is refused, admin too.
+	rec = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodPost, "/api/v1/teams", strings.NewReader(`{"name":"Design"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", authHeader)
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("create design team status=%d: %s", rec.Code, rec.Body.String())
+	}
+	var designTeam teamResponse
+	_ = json.NewDecoder(rec.Body).Decode(&designTeam)
+
+	rec = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodPost, "/api/v1/projects",
+		strings.NewReader(`{"team_id":`+jsonNum(designTeam.ID)+`,"name":"Billing","color":"#ff0000"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", authHeader)
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("create billing project status=%d: %s", rec.Code, rec.Body.String())
+	}
+	var billing projectResponse
+	_ = json.NewDecoder(rec.Body).Decode(&billing)
+
+	rec = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodPut, "/api/v1/plan", strings.NewReader(
+		`{"user_id":`+jsonNum(admin.ID)+`,"project_id":`+jsonNum(billing.ID)+
+			`,"week_start":"`+week.Format("2006-01-02")+`","hours":4}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", authHeader)
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnprocessableEntity || !strings.Contains(rec.Body.String(), "the project is not in this person's teams") {
+		t.Fatalf("cross-team plan status=%d: %s", rec.Code, rec.Body.String())
 	}
 
 	// 4. Timer: Start, GetRunning, Stop
@@ -727,5 +770,61 @@ func TestMeReportsWeeklyHours(t *testing.T) {
 	}
 	if me.WeeklyHours != 32 {
 		t.Fatalf("me weekly_hours = %d, want 32", me.WeeklyHours)
+	}
+}
+
+// A bulk summary says why each cell was skipped, so a run that wrote nothing can
+// explain itself. The filled and skipped counters stay for the CLI and MCP.
+func TestPlanSummaryCarriesSkipReasons(t *testing.T) {
+	week := time.Date(2026, 12, 28, 0, 0, 0, 0, time.UTC)
+	out := toPlanSummary(&plan.Summary{
+		Filled:  2,
+		Skipped: 2,
+		Skips: []plan.Skip{
+			{UserID: 5, ProjectID: 10, WeekStart: week, Reason: plan.SkipOccupied},
+			{UserID: 5, ProjectID: 10, WeekStart: week.AddDate(0, 0, 7), Reason: plan.SkipFrozen},
+		},
+	})
+	body, err := json.Marshal(out)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	want := `"filled":2,"skipped":2,"cells":[],"skipped_detail":[{` +
+		`"week_start":"2026-12-28","user_id":5,"project_id":10,"reason":"occupied"},{` +
+		`"week_start":"2027-01-04","user_id":5,"project_id":10,"reason":"frozen"}]`
+	if !strings.Contains(string(body), want) {
+		t.Fatalf("summary = %s, want %s", body, want)
+	}
+}
+
+// The board names the timezone it judges each person's weeks in, so the UI can
+// tell a week that has ended from one that is still planable (issue #9).
+func TestPlanBoardCarriesPersonTimezone(t *testing.T) {
+	handler, deps := setupTestServer(t)
+
+	ws := &gormrepo.Workspace{Slug: "acme"}
+	if err := deps.DB.Create(ws).Error; err != nil {
+		t.Fatalf("create workspace: %v", err)
+	}
+	planner, plannerAuth := seedToken(t, deps, ws.ID, "planner@acme.com", true)
+	ctxWs := gormrepo.WithWorkspaceID(context.Background(), ws.ID)
+	if err := deps.DB.WithContext(ctxWs).Model(&gormrepo.User{}).Where("id = ?", planner.ID).
+		Update("timezone", "Pacific/Kiritimati").Error; err != nil {
+		t.Fatalf("set timezone: %v", err)
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/plan?from=2026-11-02&to=2026-11-09", nil)
+	req.Header.Set("Authorization", plannerAuth)
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("get plan status=%d: %s", rec.Code, rec.Body.String())
+	}
+	var board planBoardResponse
+	if err := json.NewDecoder(rec.Body).Decode(&board); err != nil {
+		t.Fatalf("decode plan: %v", err)
+	}
+	if len(board.People) != 1 || board.People[0].Timezone != "Pacific/Kiritimati" {
+		t.Fatalf("board people = %+v, want the planner's own timezone", board.People)
 	}
 }

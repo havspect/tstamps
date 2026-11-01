@@ -2,6 +2,7 @@ package plan
 
 import (
 	"context"
+	"errors"
 	"math"
 	"sort"
 	"strings"
@@ -12,6 +13,13 @@ import (
 	"github.com/havspect/tstamps/internal/clock"
 	"github.com/havspect/tstamps/internal/report"
 )
+
+// ErrInvalidWeeks is returned when a repeat asks for a number of weeks outside 1–MaxRepeatWeeks.
+var ErrInvalidWeeks = errors.New("weeks must be between 1 and 52")
+
+// ErrProjectNotInPersonTeams is returned when a cell names a project whose team
+// the planned person does not belong to (ADR-0023).
+var ErrProjectNotInPersonTeams = errors.New("the project is not in this person's teams")
 
 // Service enforces the planning rules over the repository.
 type Service struct {
@@ -219,7 +227,8 @@ func (s *Service) List(ctx context.Context, filter Filter) (*Board, error) {
 }
 
 // Set writes one cell. Zero hours deletes it, and deleting a missing cell is a
-// no-op so an agent can retry safely.
+// no-op so an agent can retry safely. The project must be one of the person's
+// teams (ADR-0023).
 func (s *Service) Set(ctx context.Context, userID, projectID uint, weekStart time.Time, hours int) (*Plan, error) {
 	p, err := principal(ctx)
 	if err != nil {
@@ -246,6 +255,11 @@ func (s *Service) Set(ctx context.Context, userID, projectID uint, weekStart tim
 	}
 	if !mayPlanPerson(p, person) {
 		return nil, authz.ErrForbidden
+	}
+	// The project must be one of the person's teams, or their lead cannot read
+	// the cell. Zero hours still clears a cell written before this rule (ADR-0023).
+	if hours != 0 && !hasTeam(*person, project.TeamID) {
+		return nil, ErrProjectNotInPersonTeams
 	}
 	now := s.clock.Now()
 	if Ended(week, person.Timezone, now) {
@@ -481,7 +495,9 @@ func (s *Service) Seed(ctx context.Context, in SeedInput) (*Summary, error) {
 		for _, k := range keys {
 			hours := int(math.Round(float64(totals[k]) / 3600 / float64(len(weeks))))
 			if hours < 1 {
-				sum.Skipped += len(weeks)
+				for _, week := range weeks {
+					sum.skip(k.user, k.project, week, SkipHours)
+				}
 				continue
 			}
 			person := people[k.user]
@@ -517,7 +533,7 @@ func (s *Service) Repeat(ctx context.Context, in RepeatInput) (*Summary, error) 
 		return nil, err
 	}
 	if in.Weeks < 1 || in.Weeks > MaxRepeatWeeks {
-		return nil, ErrInvalidHours
+		return nil, ErrInvalidWeeks
 	}
 	week := WeekStart(in.WeekStart)
 
@@ -569,8 +585,10 @@ func (s *Service) Repeat(ctx context.Context, in RepeatInput) (*Summary, error) 
 	return sum, nil
 }
 
-// fill writes one cell of a bulk, skipping frozen weeks, existing cells and
-// cells the caller may not write.
+// fill writes one cell of a bulk, skipping frozen weeks, deactivated people,
+// archived projects, projects outside the person's teams, impossible hours,
+// existing cells and cells the caller may not write. Every skip is recorded
+// with its reason.
 func (s *Service) fill(
 	ctx context.Context,
 	p *auth.Principal,
@@ -581,17 +599,37 @@ func (s *Service) fill(
 	dryRun bool,
 	sum *Summary,
 ) error {
+	if !person.Active {
+		sum.skip(userID, projectID, week, SkipInactive)
+		return nil
+	}
+	if !ValidHours(hours) || hours <= 0 {
+		sum.skip(userID, projectID, week, SkipHours)
+		return nil
+	}
 	if Ended(week, person.Timezone, s.clock.Now()) {
-		sum.Skipped++
+		sum.skip(userID, projectID, week, SkipFrozen)
 		return nil
 	}
 	if !mayPlanPerson(p, person) {
-		sum.Skipped++
+		sum.skip(userID, projectID, week, SkipForbidden)
+		return nil
+	}
+	project, err := s.repo.GetProject(ctx, projectID)
+	if err != nil {
+		return err
+	}
+	if project.ArchivedAt != nil {
+		sum.skip(userID, projectID, week, SkipArchived)
+		return nil
+	}
+	if !hasTeam(*person, project.TeamID) {
+		sum.skip(userID, projectID, week, SkipOtherTeam)
 		return nil
 	}
 	if err := s.authorizer.Check(ctx, p, authz.ActionManagePlan, authz.PlanResource{UserID: userID, TeamID: teamID}); err != nil {
 		if err == authz.ErrForbidden {
-			sum.Skipped++
+			sum.skip(userID, projectID, week, SkipForbidden)
 			return nil
 		}
 		return err
@@ -600,8 +638,8 @@ func (s *Service) fill(
 	if err != nil {
 		return err
 	}
-	if before != nil || hours <= 0 {
-		sum.Skipped++
+	if before != nil {
+		sum.skip(userID, projectID, week, SkipOccupied)
 		return nil
 	}
 

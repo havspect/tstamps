@@ -3,9 +3,10 @@
   import { api, problemMessage } from '../lib/api'
   import type { components } from '../lib/api/schema'
   import { deviceTimezone, todayIn } from '../lib/format'
-  import { monthLabel, nextMonth, periodLabel, planRange, previousMonth, weekLabel } from '../lib/plan'
-  import type { PlanPeriod } from '../lib/plan'
+  import { assignableProjects, bulkPreview, monthLabel, nextMonth, periodLabel, planRange, previousMonth, summaryNotice, weekEnded, weekLabel } from '../lib/plan'
+  import type { PlanPeriod, Project } from '../lib/plan'
   import { session } from '../lib/session.svelte'
+  import { notifyError } from '../lib/toast'
   import Button from '../lib/ui/Button.svelte'
   import Input from '../lib/ui/Input.svelte'
   import Select from '../lib/ui/Select.svelte'
@@ -14,7 +15,6 @@
   type Cell = components['schemas']['PlanCellResponse']
   type Person = components['schemas']['PlanPersonResponse']
   type PersonWeek = components['schemas']['PlanPersonWeekResponse']
-  type Project = components['schemas']['ProjectResponse']
   type MemberRow = { userID: number; user: string; total: number; weeks: Record<string, number> }
   type ProjectRow = {
     projectID: number
@@ -40,19 +40,36 @@
   let projects = $state<Project[]>([])
   let open = $state<number[]>([])
   let loading = $state(true)
+  // error is the board's; a failed write or field check reports at the editor.
   let error = $state('')
+  let actionError = $state('')
+  let fieldError = $state('')
   let notice = $state('')
+  // jumpMonth is a month a bulk wrote into, out of sight; the notice offers it.
+  let jumpMonth = $state('')
+  // now dates the board, so a week that ends while it is open is judged again on
+  // the next load instead of on every render.
+  let now = $state(new Date())
 
   let editing = $state<{ userID: number; projectID: number | null; week: string } | null>(null)
   let formProject = $state('')
   let formHours = $state('')
+
+  // A bulk write whose dry run has been shown and not yet run. The confirm sends
+  // the same request without dry_run, so it writes exactly what was previewed.
+  type Pending =
+    | { kind: 'repeat'; label: string; body: components['schemas']['PlanRepeatInputBody']; notice: string; canConfirm: boolean }
+    | { kind: 'seed'; label: string; body: components['schemas']['PlanSeedInputBody']; notice: string; canConfirm: boolean }
+  let pending = $state<Pending | null>(null)
 
   const weeks = $derived(board?.weeks ?? [])
   const people = $derived(board?.people ?? [])
   const cells = $derived(board?.cells ?? [])
   const other = $derived(board?.other ?? [])
   const colors = $derived(new Map(projects.map((project) => [project.id, project.color])))
-  const archived = $derived(new Set(cells.filter((cell) => cell.archived).map((cell) => cell.project_id)))
+  const choices = $derived(
+    assignableProjects(projects, people.find((person) => person.user_id === editing?.userID)),
+  )
   const rangeLabel = $derived(periodLabel(period, day))
 
   const planned = $derived(cells.reduce((sum, cell) => sum + cell.hours, 0) + other.reduce((sum, row) => sum + row.hours, 0))
@@ -172,6 +189,15 @@
     return hasCapacity(personID) && personWeek(personID, week) > capacityOf(personID, week)
   }
 
+  // A week that has ended where the planned person lives is history: the server
+  // refuses it, so the cell does not open an editor.
+  function endedWeek(personID: number, week: string): boolean {
+    const person = people.find((row) => row.user_id === personID)
+    return person ? weekEnded(week, person.timezone, now) : false
+  }
+
+  const hasHistory = $derived(weeks.some((week) => people.some((person) => weekEnded(week, person.timezone, now))))
+
   function toggle(projectID: number) {
     open = open.includes(projectID) ? open.filter((id) => id !== projectID) : [...open, projectID]
   }
@@ -185,16 +211,21 @@
   async function load(keepEditor = false) {
     loading = true
     error = ''
+    // A preview describes the board it was run against; a new load makes it stale.
+    pending = null
+    now = new Date()
     const { from, to } = planRange(period, day)
     const [planRes, projectRes] = await Promise.all([
       api.GET('/api/v1/plan', { params: { query: { from, to } } }),
-      api.GET('/api/v1/projects', { params: { query: isAdmin ? { all: true } : {} } }),
+      api.GET('/api/v1/projects'),
     ])
     if (planRes.error) {
       error = problemMessage(planRes.error, planRes.response)
       board = null
     } else {
       board = planRes.data ?? null
+      // Without projects the board loses its names and colours; say why.
+      if (projectRes.error) error = problemMessage(projectRes.error, projectRes.response)
     }
     projects = projectRes.data ?? []
     if (!keepEditor) editing = null
@@ -203,11 +234,17 @@
 
   function select(personID: number, week: string, projectID: number | null = null) {
     if (!canEdit) return
+    // A week that has ended is refused by the server; do not open it at all.
+    if (endedWeek(personID, week)) return
     editing = { userID: personID, projectID, week }
     formProject = projectID ? String(projectID) : ''
     const existing = projectID ? cellHours(personID, projectID, week) : 0
     formHours = existing > 0 ? String(existing) : ''
     notice = ''
+    jumpMonth = ''
+    actionError = ''
+    fieldError = ''
+    pending = null
   }
 
   function currentHours(projectID: number): number {
@@ -222,22 +259,30 @@
     if (id && formHours === '') formHours = String(currentHours(Number(id)))
   }
 
+  // A failed write reports where the write was made: a toast for sighted users,
+  // and actionError for the editor's alert region, which a missed toast is not.
+  function actionFailed(problem: unknown, response?: Response) {
+    actionError = problemMessage(problem, response)
+    notifyError(problem, response)
+  }
+
   async function save() {
     if (!editing) return
     const projectID = editing.projectID ?? Number(formProject)
     if (!projectID) {
-      error = 'Choose a project first.'
+      fieldError = 'Choose a project first.'
       return
     }
     if (formHours.trim() === '') {
-      error = 'Enter the hours, or 0 to clear this project from the week.'
+      fieldError = 'Enter the hours, or 0 to clear this project from the week.'
       return
     }
     const hours = Number(formHours)
     if (!Number.isInteger(hours) || hours < 0 || hours > 168) {
-      error = 'Hours must be a whole number from 0 to 168.'
+      fieldError = 'Hours must be a whole number from 0 to 168.'
       return
     }
+    fieldError = ''
     const { error: problem, response } = await api.PUT('/api/v1/plan', {
       body: {
         user_id: editing.userID,
@@ -247,71 +292,96 @@
       },
     })
     if (problem) {
-      error = problemMessage(problem, response)
+      actionFailed(problem, response)
       return
     }
-    error = ''
+    actionError = ''
+    jumpMonth = ''
     notice = `Saved ${hours}h.`
     await load(true)
   }
 
-  async function seed() {
-    error = ''
+  // The seed runs as a dry run first: nothing is written until the confirm.
+  async function previewSeed() {
+    actionError = ''
+    notice = ''
+    jumpMonth = ''
     const month = day.slice(0, 7)
+    const body = { from_month: previousMonth(month), into_month: month }
     const { data, error: problem, response } = await api.POST('/api/v1/plan/seed', {
-      body: { from_month: previousMonth(month), into_month: month },
+      body: { ...body, dry_run: true },
     })
     if (problem) {
-      error = problemMessage(problem, response)
+      actionFailed(problem, response)
       return
     }
-    notice = `Seeded ${data?.filled ?? 0} cells and skipped ${data?.skipped ?? 0}.`
-    await load()
+    pending = { kind: 'seed', label: `Seed ${monthLabel(month)}`, body, ...bulkPreview('seed', data) }
   }
 
-  async function repeat() {
+  // firstOutside names the month of the first written cell when it is off the
+  // board, so the notice can offer it without moving the range itself.
+  function firstOutside(written: string[]): string {
+    const { from, to } = planRange(period, day)
+    const first = [...written].sort()[0]
+    return first && (first < from || first >= to) ? first.slice(0, 7) : ''
+  }
+
+  function showJump() {
+    period = 'month'
+    day = `${jumpMonth}-01`
+    jumpMonth = ''
+    notice = ''
+    void load(true)
+  }
+
+  // The copy runs as a dry run first and keeps the editor open, so the user sees
+  // which weeks fill and which skip before anything is written.
+  async function previewCopy() {
     if (!editing) return
+    actionError = ''
+    notice = ''
+    jumpMonth = ''
     const mine = cellsOf(editing.userID, editing.week).filter(
       (cell) => !editing?.projectID || cell.project_id === editing.projectID,
     )
     if (mine.length === 0) {
-      notice = 'Nothing is planned in this week, so there is nothing to repeat.'
+      notice = 'Nothing is planned in this week, so there is nothing to copy.'
       return
+    }
+    const body = {
+      week_start: editing.week,
+      weeks: 4,
+      user_id: editing.userID,
+      ...(editing.projectID ? { project_id: editing.projectID } : {}),
     }
     const { data, error: problem, response } = await api.POST('/api/v1/plan/repeat', {
-      body: {
-        week_start: editing.week,
-        weeks: 4,
-        user_id: editing.userID,
-        ...(editing.projectID ? { project_id: editing.projectID } : {}),
-      },
+      body: { ...body, dry_run: true },
     })
     if (problem) {
-      error = problemMessage(problem, response)
+      actionFailed(problem, response)
       return
     }
-    error = ''
-    const filled = data?.filled ?? 0
-    const skipped = data?.skipped ?? 0
+    pending = { kind: 'repeat', label: 'Copy 4 weeks', body, ...bulkPreview('copy', data) }
+  }
+
+  // commitBulk is the only writer: it repeats the previewed request without
+  // dry_run. Cancelling drops it, so nothing was written.
+  async function commitBulk() {
+    if (!pending) return
+    const { kind, body } = pending
+    const { data, error: problem, response } =
+      kind === 'repeat'
+        ? await api.POST('/api/v1/plan/repeat', { body })
+        : await api.POST('/api/v1/plan/seed', { body })
+    pending = null
+    if (problem) {
+      actionFailed(problem, response)
+      return
+    }
+    actionError = ''
     const written = [...new Set((data?.cells ?? []).map((cell) => cell.week_start))]
-    if (filled === 0) {
-      notice = `Filled 0 cells, skipped ${skipped}: the following weeks are already planned.`
-      await load(true)
-      return
-    }
-    // If every filled week is outside the range on screen, show where the cells
-    // landed; otherwise the button looks like it did nothing.
-    const { from, to } = planRange(period, day)
-    if (!written.some((week) => week >= from && week < to)) {
-      day = written[0]
-      notice = `Filled ${filled} cells, skipped ${skipped}. Showing ${periodLabel(period, day)}.`
-      await load()
-      return
-    }
-    const later = [...new Set(written.filter((week) => week < from || week >= to).map((week) => week.slice(0, 7)))]
-      .map(monthLabel)
-    notice = `Filled ${filled} cells, skipped ${skipped}.`
-    if (later.length > 0) notice += ` Later weeks are in ${later.join(', ')}.`
+    jumpMonth = firstOutside(written)
+    notice = summaryNotice(kind === 'repeat' ? 'Copied' : 'Seeded', data)
     await load(true)
   }
 
@@ -349,8 +419,29 @@
 {#if error}
   <p class="error" role="alert">{error}</p>
 {/if}
+{#snippet jump()}
+  {#if jumpMonth}
+    <Button variant="secondary" onclick={showJump}>Show {monthLabel(jumpMonth)}</Button>
+  {/if}
+{/snippet}
+{#snippet history()}
+  {#if hasHistory}
+    <span class="history">Weeks before this one are history and cannot be planned.</span>
+  {/if}
+{/snippet}
+{#snippet bulkConfirm()}
+  {#if pending}
+    <p class="notice" role="status">{pending.notice}</p>
+    <div class="preview-actions">
+      {#if pending.canConfirm}
+        <Button onclick={() => void commitBulk()}>{pending.label}</Button>
+      {/if}
+      <Button variant="secondary" onclick={() => (pending = null)}>Cancel</Button>
+    </div>
+  {/if}
+{/snippet}
 {#if notice && !editing}
-  <p class="notice" role="status">{notice}</p>
+  <p class="notice" role="status">{notice} {@render jump()}</p>
 {/if}
 
 <form class="toolbar" onsubmit={(event) => { event.preventDefault(); void load() }}>
@@ -372,9 +463,10 @@
   <Input id="plan-day" label="Any day in range" type="date" bind:value={day} />
   <Button type="submit" disabled={loading}>Show</Button>
   {#if canEdit && view === 'person' && period === 'month'}
-    <Button variant="secondary" onclick={() => void seed()}>Seed from last month</Button>
+    <Button variant="secondary" onclick={() => void previewSeed()}>Seed from last month</Button>
   {/if}
 </form>
+{#if pending?.kind === 'seed'}{@render bulkConfirm()}{/if}
 
 {#if loading}
   <p>Loading plan…</p>
@@ -383,7 +475,7 @@
 {:else if view === 'person'}
   <wa-scroller class="board-scroller">
     <table class="board wa-tabular-nums">
-      <caption class="range">{rangeLabel}</caption>
+      <caption class="range">{rangeLabel} {@render history()}</caption>
       <thead>
         <tr>
           <th scope="col">Person</th>
@@ -409,13 +501,17 @@
               {@const elsewhere = otherOf(person.user_id, week)}
               {@const weekHours = capacityOf(person.user_id, week)}
               {@const vacationHours = vacationHoursOf(person.user_id, week)}
+              {@const ended = endedWeek(person.user_id, week)}
               <td class="num">
                 <button
                   type="button"
                   class="cell"
                   class:over={hasCapacity(person.user_id) && plannedHours + elsewhere > weekHours}
+                  class:ended
                   disabled={!canEdit}
-                  aria-label={`${person.user}, week of ${weekLabel(week)}: ${plannedHours} of ${weekHours} hours planned${vacationHours > 0 ? `, ${vacationHours}h vacation` : ''}`}
+                  aria-disabled={(canEdit && ended) || undefined}
+                  title={ended ? `Week of ${weekLabel(week)} has ended and cannot be planned` : undefined}
+                  aria-label={`${person.user}, week of ${weekLabel(week)}: ${plannedHours} of ${weekHours} hours planned${vacationHours > 0 ? `, ${vacationHours}h vacation` : ''}${ended ? ', the week has ended and cannot be planned' : ''}`}
                   onclick={() => select(person.user_id, week)}
                 >
                   <span class="bar">
@@ -460,7 +556,7 @@
 {:else}
   <wa-scroller class="board-scroller">
     <table class="board wa-tabular-nums">
-      <caption class="range">{rangeLabel}</caption>
+      <caption class="range">{rangeLabel} {@render history()}</caption>
       <thead>
         <tr>
           <th scope="col">Project</th>
@@ -497,13 +593,17 @@
                 <th scope="row">{member.user}</th>
                 {#each weeks as week (week)}
                   {@const vacationHours = vacationHoursOf(member.userID, week)}
+                  {@const ended = endedWeek(member.userID, week)}
                   <td class="num">
                     <button
                       type="button"
                       class="cell"
                       class:over={overWeek(member.userID, week)}
+                      class:ended
                       disabled={!canEdit || row.archived}
-                      aria-label={`${member.user}, ${row.project}, week of ${weekLabel(week)}: ${member.weeks[week] ?? 0} hours planned${vacationHours > 0 ? `, ${vacationHours}h vacation` : ''}`}
+                      aria-disabled={(canEdit && !row.archived && ended) || undefined}
+                      title={ended ? `Week of ${weekLabel(week)} has ended and cannot be planned` : undefined}
+                      aria-label={`${member.user}, ${row.project}, week of ${weekLabel(week)}: ${member.weeks[week] ?? 0} hours planned${vacationHours > 0 ? `, ${vacationHours}h vacation` : ''}${ended ? ', the week has ended and cannot be planned' : ''}`}
                       onclick={() => select(member.userID, week, row.projectID)}
                     >
                       <span class="value">{member.weeks[week] ?? ''}</span>
@@ -535,15 +635,19 @@
       {#if !editing.projectID}
         <Select id="plan-project" label="Project" bind:value={formProject} onchange={(event) => chooseProject(event.currentTarget.value)}>
           <wa-option value="">Choose a project</wa-option>
-          {#each projects as project (project.id)}
-            <wa-option value={String(project.id)}>{project.name}{archived.has(project.id) ? ' (archived)' : ''}</wa-option>
+          {#each choices as project (project.id)}
+            <wa-option value={String(project.id)}>{project.name}</wa-option>
           {/each}
         </Select>
       {/if}
       <Input id="plan-hours" label="Hours per week" type="number" min="0" max="168" bind:value={formHours} />
       <Button onclick={() => void save()}>Set</Button>
-      <Button variant="secondary" onclick={() => void repeat()}>Repeat 4 weeks</Button>
+      <Button variant="secondary" onclick={() => void previewCopy()}>Copy to next 4 weeks</Button>
     </div>
+    <p class="hint">Copy week of {weekLabel(editing.week)} into the 4 weeks after it.</p>
+    {#if pending?.kind === 'repeat'}{@render bulkConfirm()}{/if}
+    {#if fieldError}<p class="error" role="alert">{fieldError}</p>{/if}
+    <p class="wa-visually-hidden" role="alert">{actionError}</p>
     {#if !editing.projectID}
       <p class="hint">Set 0 to clear a project from this week.</p>
       <ul class="current">
@@ -558,7 +662,7 @@
         {capacityOf(editing.userID, editing.week)}h.
       </p>
     {/if}
-    {#if notice}<p class="notice" role="status">{notice}</p>{/if}
+    {#if notice}<p class="notice" role="status">{notice} {@render jump()}</p>{/if}
   </section>
 {/if}
 
@@ -637,6 +741,12 @@
     font-size: 0.875rem;
     font-weight: 600;
     color: var(--muted);
+  }
+
+  /* The line under the board header says why some weeks cannot be opened. */
+  .history {
+    margin-left: var(--space-2);
+    font-weight: 400;
   }
 
   .board th,
@@ -743,6 +853,12 @@
     cursor: default;
   }
 
+  /* A week that has ended reads as history, not as a cell with room to plan. */
+  .cell.ended {
+    color: var(--muted);
+    cursor: default;
+  }
+
   .bar {
     display: flex;
     flex: 1 1 auto;
@@ -838,6 +954,13 @@
     flex-wrap: wrap;
     align-items: end;
     gap: var(--space-3);
+  }
+
+  .preview-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+    margin-top: var(--space-2);
   }
 
   .current {
