@@ -3,8 +3,8 @@
   import { api, problemMessage } from '../lib/api'
   import type { components } from '../lib/api/schema'
   import { deviceTimezone, todayIn } from '../lib/format'
-  import { monthLabel, nextMonth, periodLabel, planRange, previousMonth, weekLabel } from '../lib/plan'
-  import type { PlanPeriod } from '../lib/plan'
+  import { assignableProjects, monthLabel, nextMonth, periodLabel, planRange, previousMonth, weekLabel } from '../lib/plan'
+  import type { PlanPeriod, Project } from '../lib/plan'
   import { session } from '../lib/session.svelte'
   import Button from '../lib/ui/Button.svelte'
   import Input from '../lib/ui/Input.svelte'
@@ -14,7 +14,6 @@
   type Cell = components['schemas']['PlanCellResponse']
   type Person = components['schemas']['PlanPersonResponse']
   type PersonWeek = components['schemas']['PlanPersonWeekResponse']
-  type Project = components['schemas']['ProjectResponse']
   type MemberRow = { userID: number; user: string; total: number; weeks: Record<string, number> }
   type ProjectRow = {
     projectID: number
@@ -52,7 +51,7 @@
   const cells = $derived(board?.cells ?? [])
   const other = $derived(board?.other ?? [])
   const colors = $derived(new Map(projects.map((project) => [project.id, project.color])))
-  const archived = $derived(new Set(cells.filter((cell) => cell.archived).map((cell) => cell.project_id)))
+  const choices = $derived(assignableProjects(projects))
   const rangeLabel = $derived(periodLabel(period, day))
 
   const planned = $derived(cells.reduce((sum, cell) => sum + cell.hours, 0) + other.reduce((sum, row) => sum + row.hours, 0))
@@ -188,7 +187,7 @@
     const { from, to } = planRange(period, day)
     const [planRes, projectRes] = await Promise.all([
       api.GET('/api/v1/plan', { params: { query: { from, to } } }),
-      api.GET('/api/v1/projects', { params: { query: isAdmin ? { all: true } : {} } }),
+      api.GET('/api/v1/projects'),
     ])
     if (planRes.error) {
       error = problemMessage(planRes.error, planRes.response)
@@ -535,8 +534,8 @@
       {#if !editing.projectID}
         <Select id="plan-project" label="Project" bind:value={formProject} onchange={(event) => chooseProject(event.currentTarget.value)}>
           <wa-option value="">Choose a project</wa-option>
-          {#each projects as project (project.id)}
-            <wa-option value={String(project.id)}>{project.name}{archived.has(project.id) ? ' (archived)' : ''}</wa-option>
+          {#each choices as project (project.id)}
+            <wa-option value={String(project.id)}>{project.name}</wa-option>
           {/each}
         </Select>
       {/if}

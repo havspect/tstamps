@@ -1,7 +1,17 @@
+import type { components } from './api/schema'
+
 // Calendar arithmetic for the plan board. All dates are plain YYYY-MM or
 // YYYY-MM-DD strings computed in UTC, so a browser west of Greenwich cannot see
 // last month's first day as two months ago.
 export type PlanPeriod = 'week' | 'month' | 'quarter'
+
+export type Project = components['schemas']['ProjectResponse']
+
+// assignableProjects is the plan editor's picker: an archived project can never
+// take new plan hours, so the server refuses every cell written against it.
+export function assignableProjects(projects: Project[]): Project[] {
+  return projects.filter((project) => project.archived_at == null)
+}
 
 export function nextMonth(day: string): string {
   const [year, month] = day.split('-').map(Number)

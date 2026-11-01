@@ -1,5 +1,14 @@
 import { describe, expect, it } from 'vitest'
-import { monthRange, nextMonth, periodLabel, planRange, previousMonth, weekLabel } from './plan'
+import { assignableProjects, monthRange, nextMonth, periodLabel, planRange, previousMonth, weekLabel } from './plan'
+import type { Project } from './plan'
+
+const project = (id: number, archived_at: string | null): Project => ({
+  id,
+  team_id: 1,
+  name: `Project ${id}`,
+  color: '#4f46e5',
+  archived_at,
+})
 
 describe('plan months', () => {
   it('steps around December and January', () => {
@@ -34,5 +43,21 @@ describe('plan ranges', () => {
     expect(periodLabel('month', '2026-11-04')).toBe('November 2026')
     expect(periodLabel('quarter', '2026-11-04')).toBe('Q4 2026')
     expect(periodLabel('quarter', '2026-02-15')).toBe('Q1 2026')
+  })
+})
+
+describe('assignable projects', () => {
+  it('drops archived projects, which cannot take plan hours', () => {
+    const projects = [project(1, null), project(2, '2026-11-01T14:00:00+01:00'), project(3, null)]
+    expect(assignableProjects(projects).map((p) => p.id)).toEqual([1, 3])
+  })
+
+  it('keeps every project when none is archived', () => {
+    const projects = [project(1, null), project(2, null)]
+    expect(assignableProjects(projects).map((p) => p.id)).toEqual([1, 2])
+  })
+
+  it('has nothing to offer when there are no projects', () => {
+    expect(assignableProjects([])).toEqual([])
   })
 })
