@@ -697,3 +697,35 @@ func TestLeadReadsTeamVacationsOnly(t *testing.T) {
 		t.Fatalf("own list status=%d: %s", rec.Code, rec.Body.String())
 	}
 }
+
+func TestMeReportsWeeklyHours(t *testing.T) {
+	handler, deps := setupTestServer(t)
+
+	ws := &gormrepo.Workspace{Slug: "acme"}
+	if err := deps.DB.Create(ws).Error; err != nil {
+		t.Fatalf("create workspace: %v", err)
+	}
+	ctxWs := gormrepo.WithWorkspaceID(context.Background(), ws.ID)
+	user, token := seedToken(t, deps, ws.ID, "part@acme.com", false)
+	// The vacation form caps an edge at one working day, so a part-time week
+	// must not come back as the 40-hour default.
+	if err := deps.DB.WithContext(ctxWs).Model(&gormrepo.User{}).
+		Where("id = ?", user.ID).Update("weekly_hours", 32).Error; err != nil {
+		t.Fatalf("set weekly hours: %v", err)
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/me", nil)
+	req.Header.Set("Authorization", token)
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("me status=%d: %s", rec.Code, rec.Body.String())
+	}
+	var me MeResponse
+	if err := json.NewDecoder(rec.Body).Decode(&me); err != nil {
+		t.Fatalf("decode me: %v", err)
+	}
+	if me.WeeklyHours != 32 {
+		t.Fatalf("me weekly_hours = %d, want 32", me.WeeklyHours)
+	}
+}

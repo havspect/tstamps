@@ -190,6 +190,7 @@ func (s *Server) me(ctx context.Context, _ *struct{}) (*MeOutput, error) {
 	u.Email = prof.User.Email
 	u.Name = prof.User.Name
 	u.Timezone = prof.User.Timezone
+	u.WeeklyHours = prof.User.WeeklyHours
 	u.IsAdmin = prof.User.IsAdmin
 	u.MustChangePassword = prof.User.MustChangePassword
 
