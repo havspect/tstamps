@@ -1,7 +1,9 @@
 import createClient from 'openapi-fetch'
 import type { paths } from './api/schema'
 
-const workspace = /^\/w\/([^/]+)/.exec(location.pathname)
+// location is absent under Vitest's node environment.
+const pathname = typeof location === 'undefined' ? '/' : location.pathname
+const workspace = /^\/w\/([^/]+)/.exec(pathname)
 export const workspaceBase = workspace ? `/w/${workspace[1]}` : ''
 
 export const api = createClient<paths>({ baseUrl: workspaceBase })

@@ -1,11 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { notify, notifyError } from './toast'
 
-// api.ts reads location while loading; vi.hoisted runs before that import.
-vi.hoisted(() => {
-  Object.defineProperty(globalThis, 'location', { value: { pathname: '/' }, configurable: true })
-})
-
 // Vitest runs in node, which has no document: stand one in to record the call.
 function stubToast(found = true) {
   const create = vi.fn()
