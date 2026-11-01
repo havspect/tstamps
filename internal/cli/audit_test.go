@@ -41,8 +41,11 @@ func TestAuditPassesFiltersAndResolvesActor(t *testing.T) {
 	if len(lines) != 3 {
 		t.Fatalf("stdout %q, want a header and one row per event", out.String())
 	}
+	// The AT column prints in the machine's zone, not a fixed one, so derive the
+	// expected stamp instead of hardcoding one zone's clock.
+	at := f.audit[0].At.Local().Format(dateLayout + " 15:04")
 	for _, want := range []string{"AT", "ACTOR", "ROLE", "ACTION", "TARGET",
-		"2026-10-20 11:30", "lead@example.com", "admin", "project.archive", "project/4"} {
+		at, "lead@example.com", "admin", "project.archive", "project/4"} {
 		if !strings.Contains(out.String(), want) {
 			t.Fatalf("stdout %q does not contain %q", out.String(), want)
 		}
