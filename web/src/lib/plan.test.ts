@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   assignableProjects,
+  bulkPreview,
   monthRange,
   nextMonth,
   periodLabel,
@@ -122,6 +123,64 @@ describe('bulk summaries', () => {
     expect(summaryNotice('Filled', { cells: [], filled: 1, skipped: 0, skipped_detail: [] })).toBe(
       'Filled 1 cell, skipped 0.',
     )
+  })
+})
+
+describe('bulk previews', () => {
+  const filled = (week_start: string) => ({ week_start, user_id: 5, project_id: 10, hours: 8 })
+  const skip = (week_start: string, reason: string) => ({ week_start, reason, user_id: 5, project_id: 10 })
+
+  it('names the weeks it would fill and why the rest would not', () => {
+    const sum: PlanSummary = {
+      cells: [filled('2026-12-28'), filled('2027-01-04')],
+      filled: 2,
+      skipped: 1,
+      skipped_detail: [skip('2027-01-11', 'occupied')],
+    }
+    expect(bulkPreview('copy', sum)).toEqual({
+      notice: 'Would copy 2 cells into 28 Dec, 4 Jan, skipping 1 — 11 Jan already planned.',
+      canConfirm: true,
+    })
+  })
+
+  it('states one week once when several cells land there', () => {
+    const sum: PlanSummary = {
+      cells: [filled('2026-12-28'), filled('2026-12-28')],
+      filled: 2,
+      skipped: 0,
+      skipped_detail: [],
+    }
+    expect(bulkPreview('seed', sum).notice).toBe('Would seed 2 cells into 28 Dec.')
+  })
+
+  it('says one cell, not one cells', () => {
+    const sum: PlanSummary = { cells: [filled('2026-12-28')], filled: 1, skipped: 0, skipped_detail: [] }
+    expect(bulkPreview('copy', sum).notice).toBe('Would copy 1 cell into 28 Dec.')
+  })
+
+  it('offers no confirm when every week would be skipped, and says why', () => {
+    const sum: PlanSummary = {
+      cells: [],
+      filled: 0,
+      skipped: 2,
+      skipped_detail: [skip('2027-01-04', 'frozen'), skip('2027-01-11', 'archived')],
+    }
+    expect(bulkPreview('copy', sum)).toEqual({
+      notice: 'Nothing to copy — 4 Jan week has ended, 11 Jan project is archived.',
+      canConfirm: false,
+    })
+  })
+
+  it('offers no confirm when a run would change nothing at all', () => {
+    expect(bulkPreview('seed', undefined)).toEqual({
+      notice: 'Nothing to seed: no cell would change.',
+      canConfirm: false,
+    })
+  })
+
+  it('keeps the cells count when the server listed no target weeks', () => {
+    const sum: PlanSummary = { cells: null, filled: 3, skipped: 0, skipped_detail: null }
+    expect(bulkPreview('copy', sum).notice).toBe('Would copy 3 cells.')
   })
 })
 

@@ -49,6 +49,29 @@ export function summaryNotice(verb: string, sum: PlanSummary | undefined): strin
   return detail ? `${message} — ${detail}.` : `${message}.`
 }
 
+// BulkPreview is a dry run read back to the user: what would be written where,
+// and why the rest would be left alone. A run that can only skip has nothing to
+// confirm, so the reason is the whole answer.
+export type BulkPreview = { notice: string; canConfirm: boolean }
+
+// bulkPreview says what a bulk write would do before it does it, in the same
+// vocabulary as the notice that follows the write.
+export function bulkPreview(verb: string, sum: PlanSummary | undefined): BulkPreview {
+  const filled = sum?.filled ?? 0
+  const skipped = sum?.skipped ?? 0
+  const detail = skippedDetails(sum?.skipped_detail ?? [])
+  if (filled === 0) {
+    return {
+      notice: detail ? `Nothing to ${verb} — ${detail}.` : `Nothing to ${verb}: no cell would change.`,
+      canConfirm: false,
+    }
+  }
+  const weeks = [...new Set((sum?.cells ?? []).map((cell) => cell.week_start))].sort().map(weekLabel)
+  const into = weeks.length > 0 ? ` into ${weeks.join(', ')}` : ''
+  const message = `Would ${verb} ${filled} ${filled === 1 ? 'cell' : 'cells'}${into}`
+  return { notice: detail ? `${message}, skipping ${skipped} — ${detail}.` : `${message}.`, canConfirm: true }
+}
+
 // assignableProjects is the plan editor's picker: a cell may only name a project
 // of the planned person's teams (ADR-0023), and an archived project can never
 // take new plan hours, so the server refuses every cell written against it.

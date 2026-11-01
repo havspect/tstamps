@@ -3,7 +3,7 @@
   import { api, problemMessage } from '../lib/api'
   import type { components } from '../lib/api/schema'
   import { deviceTimezone, todayIn } from '../lib/format'
-  import { assignableProjects, monthLabel, nextMonth, periodLabel, planRange, previousMonth, summaryNotice, weekEnded, weekLabel } from '../lib/plan'
+  import { assignableProjects, bulkPreview, monthLabel, nextMonth, periodLabel, planRange, previousMonth, summaryNotice, weekEnded, weekLabel } from '../lib/plan'
   import type { PlanPeriod, Project } from '../lib/plan'
   import { session } from '../lib/session.svelte'
   import { notifyError } from '../lib/toast'
@@ -54,6 +54,13 @@
   let editing = $state<{ userID: number; projectID: number | null; week: string } | null>(null)
   let formProject = $state('')
   let formHours = $state('')
+
+  // A bulk write whose dry run has been shown and not yet run. The confirm sends
+  // the same request without dry_run, so it writes exactly what was previewed.
+  type Pending =
+    | { kind: 'repeat'; label: string; body: components['schemas']['PlanRepeatInputBody']; notice: string; canConfirm: boolean }
+    | { kind: 'seed'; label: string; body: components['schemas']['PlanSeedInputBody']; notice: string; canConfirm: boolean }
+  let pending = $state<Pending | null>(null)
 
   const weeks = $derived(board?.weeks ?? [])
   const people = $derived(board?.people ?? [])
@@ -204,6 +211,8 @@
   async function load(keepEditor = false) {
     loading = true
     error = ''
+    // A preview describes the board it was run against; a new load makes it stale.
+    pending = null
     now = new Date()
     const { from, to } = planRange(period, day)
     const [planRes, projectRes] = await Promise.all([
@@ -235,6 +244,7 @@
     jumpMonth = ''
     actionError = ''
     fieldError = ''
+    pending = null
   }
 
   function currentHours(projectID: number): number {
@@ -291,19 +301,21 @@
     await load(true)
   }
 
-  async function seed() {
+  // The seed runs as a dry run first: nothing is written until the confirm.
+  async function previewSeed() {
     actionError = ''
+    notice = ''
+    jumpMonth = ''
     const month = day.slice(0, 7)
+    const body = { from_month: previousMonth(month), into_month: month }
     const { data, error: problem, response } = await api.POST('/api/v1/plan/seed', {
-      body: { from_month: previousMonth(month), into_month: month },
+      body: { ...body, dry_run: true },
     })
     if (problem) {
       actionFailed(problem, response)
       return
     }
-    jumpMonth = ''
-    notice = summaryNotice('Seeded', data)
-    await load(true)
+    pending = { kind: 'seed', label: `Seed ${monthLabel(month)}`, body, ...bulkPreview('seed', data) }
   }
 
   // firstOutside names the month of the first written cell when it is off the
@@ -322,24 +334,46 @@
     void load(true)
   }
 
-  async function repeat() {
+  // The copy runs as a dry run first and keeps the editor open, so the user sees
+  // which weeks fill and which skip before anything is written.
+  async function previewCopy() {
     if (!editing) return
+    actionError = ''
+    notice = ''
+    jumpMonth = ''
     const mine = cellsOf(editing.userID, editing.week).filter(
       (cell) => !editing?.projectID || cell.project_id === editing.projectID,
     )
     if (mine.length === 0) {
-      jumpMonth = ''
-      notice = 'Nothing is planned in this week, so there is nothing to repeat.'
+      notice = 'Nothing is planned in this week, so there is nothing to copy.'
       return
     }
+    const body = {
+      week_start: editing.week,
+      weeks: 4,
+      user_id: editing.userID,
+      ...(editing.projectID ? { project_id: editing.projectID } : {}),
+    }
     const { data, error: problem, response } = await api.POST('/api/v1/plan/repeat', {
-      body: {
-        week_start: editing.week,
-        weeks: 4,
-        user_id: editing.userID,
-        ...(editing.projectID ? { project_id: editing.projectID } : {}),
-      },
+      body: { ...body, dry_run: true },
     })
+    if (problem) {
+      actionFailed(problem, response)
+      return
+    }
+    pending = { kind: 'repeat', label: 'Copy 4 weeks', body, ...bulkPreview('copy', data) }
+  }
+
+  // commitBulk is the only writer: it repeats the previewed request without
+  // dry_run. Cancelling drops it, so nothing was written.
+  async function commitBulk() {
+    if (!pending) return
+    const { kind, body } = pending
+    const { data, error: problem, response } =
+      kind === 'repeat'
+        ? await api.POST('/api/v1/plan/repeat', { body })
+        : await api.POST('/api/v1/plan/seed', { body })
+    pending = null
     if (problem) {
       actionFailed(problem, response)
       return
@@ -347,7 +381,7 @@
     actionError = ''
     const written = [...new Set((data?.cells ?? []).map((cell) => cell.week_start))]
     jumpMonth = firstOutside(written)
-    notice = summaryNotice('Filled', data)
+    notice = summaryNotice(kind === 'repeat' ? 'Copied' : 'Seeded', data)
     await load(true)
   }
 
@@ -395,6 +429,17 @@
     <span class="history">Weeks before this one are history and cannot be planned.</span>
   {/if}
 {/snippet}
+{#snippet bulkConfirm()}
+  {#if pending}
+    <p class="notice" role="status">{pending.notice}</p>
+    <div class="preview-actions">
+      {#if pending.canConfirm}
+        <Button onclick={() => void commitBulk()}>{pending.label}</Button>
+      {/if}
+      <Button variant="secondary" onclick={() => (pending = null)}>Cancel</Button>
+    </div>
+  {/if}
+{/snippet}
 {#if notice && !editing}
   <p class="notice" role="status">{notice} {@render jump()}</p>
 {/if}
@@ -418,9 +463,10 @@
   <Input id="plan-day" label="Any day in range" type="date" bind:value={day} />
   <Button type="submit" disabled={loading}>Show</Button>
   {#if canEdit && view === 'person' && period === 'month'}
-    <Button variant="secondary" onclick={() => void seed()}>Seed from last month</Button>
+    <Button variant="secondary" onclick={() => void previewSeed()}>Seed from last month</Button>
   {/if}
 </form>
+{#if pending?.kind === 'seed'}{@render bulkConfirm()}{/if}
 
 {#if loading}
   <p>Loading plan…</p>
@@ -596,8 +642,10 @@
       {/if}
       <Input id="plan-hours" label="Hours per week" type="number" min="0" max="168" bind:value={formHours} />
       <Button onclick={() => void save()}>Set</Button>
-      <Button variant="secondary" onclick={() => void repeat()}>Repeat 4 weeks</Button>
+      <Button variant="secondary" onclick={() => void previewCopy()}>Copy to next 4 weeks</Button>
     </div>
+    <p class="hint">Copy week of {weekLabel(editing.week)} into the 4 weeks after it.</p>
+    {#if pending?.kind === 'repeat'}{@render bulkConfirm()}{/if}
     {#if fieldError}<p class="error" role="alert">{fieldError}</p>{/if}
     <p class="wa-visually-hidden" role="alert">{actionError}</p>
     {#if !editing.projectID}
@@ -906,6 +954,13 @@
     flex-wrap: wrap;
     align-items: end;
     gap: var(--space-3);
+  }
+
+  .preview-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+    margin-top: var(--space-2);
   }
 
   .current {
