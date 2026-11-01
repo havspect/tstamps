@@ -772,3 +772,27 @@ func TestMeReportsWeeklyHours(t *testing.T) {
 		t.Fatalf("me weekly_hours = %d, want 32", me.WeeklyHours)
 	}
 }
+
+// A bulk summary says why each cell was skipped, so a run that wrote nothing can
+// explain itself. The filled and skipped counters stay for the CLI and MCP.
+func TestPlanSummaryCarriesSkipReasons(t *testing.T) {
+	week := time.Date(2026, 12, 28, 0, 0, 0, 0, time.UTC)
+	out := toPlanSummary(&plan.Summary{
+		Filled:  2,
+		Skipped: 2,
+		Skips: []plan.Skip{
+			{UserID: 5, ProjectID: 10, WeekStart: week, Reason: plan.SkipOccupied},
+			{UserID: 5, ProjectID: 10, WeekStart: week.AddDate(0, 0, 7), Reason: plan.SkipFrozen},
+		},
+	})
+	body, err := json.Marshal(out)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	want := `"filled":2,"skipped":2,"cells":[],"skipped_detail":[{` +
+		`"week_start":"2026-12-28","user_id":5,"project_id":10,"reason":"occupied"},{` +
+		`"week_start":"2027-01-04","user_id":5,"project_id":10,"reason":"frozen"}]`
+	if !strings.Contains(string(body), want) {
+		t.Fatalf("summary = %s, want %s", body, want)
+	}
+}

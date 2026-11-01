@@ -1,6 +1,15 @@
 import { describe, expect, it } from 'vitest'
-import { assignableProjects, monthRange, nextMonth, periodLabel, planRange, previousMonth, weekLabel } from './plan'
-import type { Person, Project } from './plan'
+import {
+  assignableProjects,
+  monthRange,
+  nextMonth,
+  periodLabel,
+  planRange,
+  previousMonth,
+  summaryNotice,
+  weekLabel,
+} from './plan'
+import type { Person, PlanSummary, Project } from './plan'
 
 const project = (id: number, archived_at: string | null, team_id = 1): Project => ({
   id,
@@ -54,6 +63,63 @@ describe('plan ranges', () => {
     expect(periodLabel('month', '2026-11-04')).toBe('November 2026')
     expect(periodLabel('quarter', '2026-11-04')).toBe('Q4 2026')
     expect(periodLabel('quarter', '2026-02-15')).toBe('Q1 2026')
+  })
+})
+
+describe('bulk summaries', () => {
+  const skip = (week_start: string, reason: string) => ({ week_start, reason, user_id: 5, project_id: 10 })
+
+  it('names every skipped week with its reason', () => {
+    const sum: PlanSummary = {
+      cells: [],
+      filled: 2,
+      skipped: 2,
+      skipped_detail: [skip('2026-12-28', 'occupied'), skip('2027-01-04', 'occupied')],
+    }
+    expect(summaryNotice('Filled', sum)).toBe(
+      'Filled 2 cells, skipped 2 — 28 Dec already planned, 4 Jan already planned.',
+    )
+  })
+
+  it('says why a run that wrote nothing was skipped, even for other reasons', () => {
+    const sum: PlanSummary = {
+      cells: [],
+      filled: 0,
+      skipped: 2,
+      skipped_detail: [skip('2027-01-04', 'frozen'), skip('2027-01-11', 'archived')],
+    }
+    expect(summaryNotice('Seeded', sum)).toBe(
+      'Seeded 0 cells, skipped 2 — 4 Jan week has ended, 11 Jan project is archived.',
+    )
+  })
+
+  it('states one week once when several cells were skipped there', () => {
+    const sum: PlanSummary = {
+      cells: [],
+      filled: 0,
+      skipped: 3,
+      skipped_detail: [
+        skip('2027-01-04', 'other-team'),
+        skip('2027-01-04', 'other-team'),
+        skip('2027-01-04', 'other-team'),
+      ],
+    }
+    expect(summaryNotice('Seeded', sum)).toBe(
+      'Seeded 0 cells, skipped 3 — 4 Jan project is outside their teams (3 cells).',
+    )
+  })
+
+  it('keeps the counters when the server reported no reasons', () => {
+    expect(summaryNotice('Filled', { cells: [], filled: 0, skipped: 8, skipped_detail: null })).toBe(
+      'Filled 0 cells, skipped 8.',
+    )
+    expect(summaryNotice('Filled', undefined)).toBe('Filled 0 cells, skipped 0.')
+  })
+
+  it('says one cell, not one cells', () => {
+    expect(summaryNotice('Filled', { cells: [], filled: 1, skipped: 0, skipped_detail: [] })).toBe(
+      'Filled 1 cell, skipped 0.',
+    )
   })
 })
 

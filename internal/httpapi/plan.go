@@ -107,10 +107,18 @@ type planSummaryCell struct {
 	Hours     int    `json:"hours"`
 }
 
+type planSummarySkip struct {
+	WeekStart string `json:"week_start"`
+	UserID    uint   `json:"user_id"`
+	ProjectID uint   `json:"project_id"`
+	Reason    string `json:"reason" doc:"One of occupied, frozen, forbidden, archived, inactive, hours, other-team."`
+}
+
 type planSummaryResponse struct {
-	Filled  int               `json:"filled"`
-	Skipped int               `json:"skipped"`
-	Cells   []planSummaryCell `json:"cells"`
+	Filled        int               `json:"filled"`
+	Skipped       int               `json:"skipped"`
+	Cells         []planSummaryCell `json:"cells"`
+	SkippedDetail []planSummarySkip `json:"skipped_detail"`
 }
 
 type planSummaryOutput struct {
@@ -309,6 +317,13 @@ func toPlanSummary(sum *plan.Summary) planSummaryResponse {
 		out.Cells[i] = planSummaryCell{
 			UserID: cell.UserID, ProjectID: cell.ProjectID,
 			WeekStart: cell.WeekStart.Format(dateLayout), Hours: cell.Hours,
+		}
+	}
+	out.SkippedDetail = make([]planSummarySkip, len(sum.Skips))
+	for i, skip := range sum.Skips {
+		out.SkippedDetail[i] = planSummarySkip{
+			UserID: skip.UserID, ProjectID: skip.ProjectID,
+			WeekStart: skip.WeekStart.Format(dateLayout), Reason: skip.Reason,
 		}
 	}
 	return out

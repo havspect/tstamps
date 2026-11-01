@@ -7,6 +7,47 @@ export type PlanPeriod = 'week' | 'month' | 'quarter'
 
 export type Project = components['schemas']['ProjectResponse']
 export type Person = components['schemas']['PlanPersonResponse']
+export type PlanSummary = components['schemas']['PlanSummaryResponse']
+export type PlanSkip = components['schemas']['PlanSummarySkip']
+
+// skipReasons is how the server's reason codes read to a user.
+const skipReasons: Record<string, string> = {
+  occupied: 'already planned',
+  frozen: 'week has ended',
+  inactive: 'person is deactivated',
+  archived: 'project is archived',
+  'other-team': 'project is outside their teams',
+  forbidden: 'not yours to plan',
+  hours: 'hours outside 0–168',
+}
+
+// skippedDetails names one entry per week and reason, so a week that was
+// skipped for several people is not repeated.
+function skippedDetails(skips: PlanSkip[]): string {
+  const groups = new Map<string, { week: string; reason: string; count: number }>()
+  for (const skip of skips) {
+    const key = `${skip.week_start} ${skip.reason}`
+    const group = groups.get(key)
+    if (group) group.count += 1
+    else groups.set(key, { week: skip.week_start, reason: skip.reason, count: 1 })
+  }
+  return [...groups.values()]
+    .map(({ week, reason, count }) => {
+      const clause = skipReasons[reason] ?? reason
+      return count > 1 ? `${weekLabel(week)} ${clause} (${count} cells)` : `${weekLabel(week)} ${clause}`
+    })
+    .join(', ')
+}
+
+// summaryNotice says what a bulk action did and why it left the rest alone, so
+// a run that wrote nothing explains itself instead of guessing.
+export function summaryNotice(verb: string, sum: PlanSummary | undefined): string {
+  const filled = sum?.filled ?? 0
+  const skipped = sum?.skipped ?? 0
+  const message = `${verb} ${filled} ${filled === 1 ? 'cell' : 'cells'}, skipped ${skipped}`
+  const detail = skippedDetails(sum?.skipped_detail ?? [])
+  return detail ? `${message} — ${detail}.` : `${message}.`
+}
 
 // assignableProjects is the plan editor's picker: a cell may only name a project
 // of the planned person's teams (ADR-0023), and an archived project can never

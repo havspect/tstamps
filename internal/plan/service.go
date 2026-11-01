@@ -495,7 +495,9 @@ func (s *Service) Seed(ctx context.Context, in SeedInput) (*Summary, error) {
 		for _, k := range keys {
 			hours := int(math.Round(float64(totals[k]) / 3600 / float64(len(weeks))))
 			if hours < 1 {
-				sum.Skipped += len(weeks)
+				for _, week := range weeks {
+					sum.skip(k.user, k.project, week, SkipHours)
+				}
 				continue
 			}
 			person := people[k.user]
@@ -583,9 +585,10 @@ func (s *Service) Repeat(ctx context.Context, in RepeatInput) (*Summary, error) 
 	return sum, nil
 }
 
-// fill writes one cell of a bulk, skipping frozen weeks, archived projects,
-// projects outside the person's teams, impossible hours, existing cells and
-// cells the caller may not write.
+// fill writes one cell of a bulk, skipping frozen weeks, deactivated people,
+// archived projects, projects outside the person's teams, impossible hours,
+// existing cells and cells the caller may not write. Every skip is recorded
+// with its reason.
 func (s *Service) fill(
 	ctx context.Context,
 	p *auth.Principal,
@@ -596,16 +599,20 @@ func (s *Service) fill(
 	dryRun bool,
 	sum *Summary,
 ) error {
-	if !ValidHours(hours) {
-		sum.Skipped++
+	if !person.Active {
+		sum.skip(userID, projectID, week, SkipInactive)
+		return nil
+	}
+	if !ValidHours(hours) || hours <= 0 {
+		sum.skip(userID, projectID, week, SkipHours)
 		return nil
 	}
 	if Ended(week, person.Timezone, s.clock.Now()) {
-		sum.Skipped++
+		sum.skip(userID, projectID, week, SkipFrozen)
 		return nil
 	}
 	if !mayPlanPerson(p, person) {
-		sum.Skipped++
+		sum.skip(userID, projectID, week, SkipForbidden)
 		return nil
 	}
 	project, err := s.repo.GetProject(ctx, projectID)
@@ -613,16 +620,16 @@ func (s *Service) fill(
 		return err
 	}
 	if project.ArchivedAt != nil {
-		sum.Skipped++
+		sum.skip(userID, projectID, week, SkipArchived)
 		return nil
 	}
 	if !hasTeam(*person, project.TeamID) {
-		sum.Skipped++
+		sum.skip(userID, projectID, week, SkipOtherTeam)
 		return nil
 	}
 	if err := s.authorizer.Check(ctx, p, authz.ActionManagePlan, authz.PlanResource{UserID: userID, TeamID: teamID}); err != nil {
 		if err == authz.ErrForbidden {
-			sum.Skipped++
+			sum.skip(userID, projectID, week, SkipForbidden)
 			return nil
 		}
 		return err
@@ -631,8 +638,8 @@ func (s *Service) fill(
 	if err != nil {
 		return err
 	}
-	if before != nil || hours <= 0 {
-		sum.Skipped++
+	if before != nil {
+		sum.skip(userID, projectID, week, SkipOccupied)
 		return nil
 	}
 

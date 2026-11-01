@@ -3,7 +3,7 @@
   import { api, problemMessage } from '../lib/api'
   import type { components } from '../lib/api/schema'
   import { deviceTimezone, todayIn } from '../lib/format'
-  import { assignableProjects, monthLabel, nextMonth, periodLabel, planRange, previousMonth, weekLabel } from '../lib/plan'
+  import { assignableProjects, monthLabel, nextMonth, periodLabel, planRange, previousMonth, summaryNotice, weekLabel } from '../lib/plan'
   import type { PlanPeriod, Project } from '../lib/plan'
   import { session } from '../lib/session.svelte'
   import { notifyError } from '../lib/toast'
@@ -45,6 +45,8 @@
   let actionError = $state('')
   let fieldError = $state('')
   let notice = $state('')
+  // jumpMonth is a month a bulk wrote into, out of sight; the notice offers it.
+  let jumpMonth = $state('')
 
   let editing = $state<{ userID: number; projectID: number | null; week: string } | null>(null)
   let formProject = $state('')
@@ -215,6 +217,7 @@
     const existing = projectID ? cellHours(personID, projectID, week) : 0
     formHours = existing > 0 ? String(existing) : ''
     notice = ''
+    jumpMonth = ''
     actionError = ''
     fieldError = ''
   }
@@ -268,6 +271,7 @@
       return
     }
     actionError = ''
+    jumpMonth = ''
     notice = `Saved ${hours}h.`
     await load(true)
   }
@@ -282,8 +286,25 @@
       actionFailed(problem, response)
       return
     }
-    notice = `Seeded ${data?.filled ?? 0} cells and skipped ${data?.skipped ?? 0}.`
-    await load()
+    jumpMonth = ''
+    notice = summaryNotice('Seeded', data)
+    await load(true)
+  }
+
+  // firstOutside names the month of the first written cell when it is off the
+  // board, so the notice can offer it without moving the range itself.
+  function firstOutside(written: string[]): string {
+    const { from, to } = planRange(period, day)
+    const first = [...written].sort()[0]
+    return first && (first < from || first >= to) ? first.slice(0, 7) : ''
+  }
+
+  function showJump() {
+    period = 'month'
+    day = `${jumpMonth}-01`
+    jumpMonth = ''
+    notice = ''
+    void load(true)
   }
 
   async function repeat() {
@@ -292,6 +313,7 @@
       (cell) => !editing?.projectID || cell.project_id === editing.projectID,
     )
     if (mine.length === 0) {
+      jumpMonth = ''
       notice = 'Nothing is planned in this week, so there is nothing to repeat.'
       return
     }
@@ -308,27 +330,9 @@
       return
     }
     actionError = ''
-    const filled = data?.filled ?? 0
-    const skipped = data?.skipped ?? 0
     const written = [...new Set((data?.cells ?? []).map((cell) => cell.week_start))]
-    if (filled === 0) {
-      notice = `Filled 0 cells, skipped ${skipped}: the following weeks are already planned.`
-      await load(true)
-      return
-    }
-    // If every filled week is outside the range on screen, show where the cells
-    // landed; otherwise the button looks like it did nothing.
-    const { from, to } = planRange(period, day)
-    if (!written.some((week) => week >= from && week < to)) {
-      day = written[0]
-      notice = `Filled ${filled} cells, skipped ${skipped}. Showing ${periodLabel(period, day)}.`
-      await load()
-      return
-    }
-    const later = [...new Set(written.filter((week) => week < from || week >= to).map((week) => week.slice(0, 7)))]
-      .map(monthLabel)
-    notice = `Filled ${filled} cells, skipped ${skipped}.`
-    if (later.length > 0) notice += ` Later weeks are in ${later.join(', ')}.`
+    jumpMonth = firstOutside(written)
+    notice = summaryNotice('Filled', data)
     await load(true)
   }
 
@@ -366,8 +370,13 @@
 {#if error}
   <p class="error" role="alert">{error}</p>
 {/if}
+{#snippet jump()}
+  {#if jumpMonth}
+    <Button variant="secondary" onclick={showJump}>Show {monthLabel(jumpMonth)}</Button>
+  {/if}
+{/snippet}
 {#if notice && !editing}
-  <p class="notice" role="status">{notice}</p>
+  <p class="notice" role="status">{notice} {@render jump()}</p>
 {/if}
 
 <form class="toolbar" onsubmit={(event) => { event.preventDefault(); void load() }}>
@@ -577,7 +586,7 @@
         {capacityOf(editing.userID, editing.week)}h.
       </p>
     {/if}
-    {#if notice}<p class="notice" role="status">{notice}</p>{/if}
+    {#if notice}<p class="notice" role="status">{notice} {@render jump()}</p>{/if}
   </section>
 {/if}
 
