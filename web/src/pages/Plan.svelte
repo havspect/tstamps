@@ -6,6 +6,7 @@
   import { assignableProjects, monthLabel, nextMonth, periodLabel, planRange, previousMonth, weekLabel } from '../lib/plan'
   import type { PlanPeriod, Project } from '../lib/plan'
   import { session } from '../lib/session.svelte'
+  import { notifyError } from '../lib/toast'
   import Button from '../lib/ui/Button.svelte'
   import Input from '../lib/ui/Input.svelte'
   import Select from '../lib/ui/Select.svelte'
@@ -39,7 +40,10 @@
   let projects = $state<Project[]>([])
   let open = $state<number[]>([])
   let loading = $state(true)
+  // error is the board's; a failed write or field check reports at the editor.
   let error = $state('')
+  let actionError = $state('')
+  let fieldError = $state('')
   let notice = $state('')
 
   let editing = $state<{ userID: number; projectID: number | null; week: string } | null>(null)
@@ -194,6 +198,8 @@
       board = null
     } else {
       board = planRes.data ?? null
+      // Without projects the board loses its names and colours; say why.
+      if (projectRes.error) error = problemMessage(projectRes.error, projectRes.response)
     }
     projects = projectRes.data ?? []
     if (!keepEditor) editing = null
@@ -207,6 +213,8 @@
     const existing = projectID ? cellHours(personID, projectID, week) : 0
     formHours = existing > 0 ? String(existing) : ''
     notice = ''
+    actionError = ''
+    fieldError = ''
   }
 
   function currentHours(projectID: number): number {
@@ -221,22 +229,30 @@
     if (id && formHours === '') formHours = String(currentHours(Number(id)))
   }
 
+  // A failed write reports where the write was made: a toast for sighted users,
+  // and actionError for the editor's alert region, which a missed toast is not.
+  function actionFailed(problem: unknown, response?: Response) {
+    actionError = problemMessage(problem, response)
+    notifyError(problem, response)
+  }
+
   async function save() {
     if (!editing) return
     const projectID = editing.projectID ?? Number(formProject)
     if (!projectID) {
-      error = 'Choose a project first.'
+      fieldError = 'Choose a project first.'
       return
     }
     if (formHours.trim() === '') {
-      error = 'Enter the hours, or 0 to clear this project from the week.'
+      fieldError = 'Enter the hours, or 0 to clear this project from the week.'
       return
     }
     const hours = Number(formHours)
     if (!Number.isInteger(hours) || hours < 0 || hours > 168) {
-      error = 'Hours must be a whole number from 0 to 168.'
+      fieldError = 'Hours must be a whole number from 0 to 168.'
       return
     }
+    fieldError = ''
     const { error: problem, response } = await api.PUT('/api/v1/plan', {
       body: {
         user_id: editing.userID,
@@ -246,22 +262,22 @@
       },
     })
     if (problem) {
-      error = problemMessage(problem, response)
+      actionFailed(problem, response)
       return
     }
-    error = ''
+    actionError = ''
     notice = `Saved ${hours}h.`
     await load(true)
   }
 
   async function seed() {
-    error = ''
+    actionError = ''
     const month = day.slice(0, 7)
     const { data, error: problem, response } = await api.POST('/api/v1/plan/seed', {
       body: { from_month: previousMonth(month), into_month: month },
     })
     if (problem) {
-      error = problemMessage(problem, response)
+      actionFailed(problem, response)
       return
     }
     notice = `Seeded ${data?.filled ?? 0} cells and skipped ${data?.skipped ?? 0}.`
@@ -286,10 +302,10 @@
       },
     })
     if (problem) {
-      error = problemMessage(problem, response)
+      actionFailed(problem, response)
       return
     }
-    error = ''
+    actionError = ''
     const filled = data?.filled ?? 0
     const skipped = data?.skipped ?? 0
     const written = [...new Set((data?.cells ?? []).map((cell) => cell.week_start))]
@@ -543,6 +559,8 @@
       <Button onclick={() => void save()}>Set</Button>
       <Button variant="secondary" onclick={() => void repeat()}>Repeat 4 weeks</Button>
     </div>
+    {#if fieldError}<p class="error" role="alert">{fieldError}</p>{/if}
+    <p class="wa-visually-hidden" role="alert">{actionError}</p>
     {#if !editing.projectID}
       <p class="hint">Set 0 to clear a project from this week.</p>
       <ul class="current">
