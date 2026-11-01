@@ -179,6 +179,8 @@
   </footer>
 {/if}
 
+<wa-toast placement="top-end"></wa-toast>
+
 <style>
   .demo-banner {
     padding: var(--space-2) var(--space-4);
