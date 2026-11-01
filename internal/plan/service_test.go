@@ -381,6 +381,84 @@ func TestRepeatRejectsWeekBounds(t *testing.T) {
 	}
 }
 
+func TestBulkSkipsArchivedProjectsAndImpossibleHours(t *testing.T) {
+	now := time.Date(2026, 10, 29, 12, 0, 0, 0, time.UTC)
+	week := time.Date(2026, 11, 2, 0, 0, 0, 0, time.UTC)
+
+	tests := []struct {
+		name        string
+		setup       func(f *fixture, ctx context.Context)
+		run         func(f *fixture, ctx context.Context) (*Summary, error)
+		wantFilled  int
+		wantSkipped int
+		wantCells   int
+	}{
+		{
+			name: "seed onto an archived project",
+			setup: func(f *fixture, _ context.Context) {
+				archived := now
+				f.repo.projects[10].ArchivedAt = &archived
+				f.svc.reports = fakeReports{rows: []report.Row{{UserID: 2, ProjectID: 10, Seconds: 40 * 3600}}}
+			},
+			run: func(f *fixture, ctx context.Context) (*Summary, error) {
+				return f.svc.Seed(ctx, SeedInput{FromMonth: "2026-10", IntoMonth: "2026-11"})
+			},
+			wantFilled: 0, wantSkipped: 5, wantCells: 0,
+		},
+		{
+			// 900 hours over five November weeks is 180 a week, past MaxHours.
+			name: "seed whose even split exceeds a week",
+			setup: func(f *fixture, _ context.Context) {
+				f.svc.reports = fakeReports{rows: []report.Row{{UserID: 2, ProjectID: 10, Seconds: 900 * 3600}}}
+			},
+			run: func(f *fixture, ctx context.Context) (*Summary, error) {
+				return f.svc.Seed(ctx, SeedInput{FromMonth: "2026-10", IntoMonth: "2026-11"})
+			},
+			wantFilled: 0, wantSkipped: 5, wantCells: 0,
+		},
+		{
+			name: "repeat from an archived source cell",
+			setup: func(f *fixture, ctx context.Context) {
+				if _, err := f.svc.Set(ctx, 2, 10, week, 6); err != nil {
+					t.Fatalf("set source: %v", err)
+				}
+				archived := now
+				f.repo.projects[10].ArchivedAt = &archived
+			},
+			run: func(f *fixture, ctx context.Context) (*Summary, error) {
+				return f.svc.Repeat(ctx, RepeatInput{WeekStart: week, Weeks: 2})
+			},
+			wantFilled: 0, wantSkipped: 2, wantCells: 1,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newFixture(now)
+			ctx := leadCtx(1, 1)
+			tc.setup(f, ctx)
+			events := f.audit.events
+
+			sum, err := tc.run(f, ctx)
+			if err != nil {
+				t.Fatalf("run: %v", err)
+			}
+			if sum.Filled != tc.wantFilled || sum.Skipped != tc.wantSkipped {
+				t.Fatalf("summary = %+v, want filled %d skipped %d", sum, tc.wantFilled, tc.wantSkipped)
+			}
+			if len(sum.Cells) != 0 {
+				t.Fatalf("reported cells = %+v", sum.Cells)
+			}
+			if len(f.repo.cells) != tc.wantCells {
+				t.Fatalf("stored %d cells, want %d", len(f.repo.cells), tc.wantCells)
+			}
+			if f.audit.events != events {
+				t.Fatalf("bulk writes audited %d events", f.audit.events-events)
+			}
+		})
+	}
+}
+
 func TestListNarrowsToTheLeadsTeamsAndSumsOtherLoad(t *testing.T) {
 	now := time.Date(2026, 10, 29, 12, 0, 0, 0, time.UTC)
 	f := newFixture(now)

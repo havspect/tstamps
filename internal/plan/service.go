@@ -573,8 +573,8 @@ func (s *Service) Repeat(ctx context.Context, in RepeatInput) (*Summary, error) 
 	return sum, nil
 }
 
-// fill writes one cell of a bulk, skipping frozen weeks, existing cells and
-// cells the caller may not write.
+// fill writes one cell of a bulk, skipping frozen weeks, archived projects,
+// impossible hours, existing cells and cells the caller may not write.
 func (s *Service) fill(
 	ctx context.Context,
 	p *auth.Principal,
@@ -585,11 +585,23 @@ func (s *Service) fill(
 	dryRun bool,
 	sum *Summary,
 ) error {
+	if !ValidHours(hours) {
+		sum.Skipped++
+		return nil
+	}
 	if Ended(week, person.Timezone, s.clock.Now()) {
 		sum.Skipped++
 		return nil
 	}
 	if !mayPlanPerson(p, person) {
+		sum.Skipped++
+		return nil
+	}
+	project, err := s.repo.GetProject(ctx, projectID)
+	if err != nil {
+		return err
+	}
+	if project.ArchivedAt != nil {
 		sum.Skipped++
 		return nil
 	}
