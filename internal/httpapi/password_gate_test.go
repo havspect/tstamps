@@ -99,14 +99,24 @@ func TestPasswordChangeGate(t *testing.T) {
 		t.Fatalf("session projects status=%d, want 403: %s", sessRec.Code, sessRec.Body.String())
 	}
 
-	// Changing the password lifts the restriction.
-	rec = call(http.MethodPost, "/api/v1/me/password",
-		`{"current_password":"secret123","new_password":"newsecret123"}`)
-	if rec.Code != http.StatusNoContent {
-		t.Fatalf("change password status=%d: %s", rec.Code, rec.Body.String())
+	// Changing the password lifts the restriction. The acting session survives
+	// the change; the bearer token used before it does not.
+	changeRec := httptest.NewRecorder()
+	changeReq := httptest.NewRequest(http.MethodPost, "/api/v1/me/password",
+		strings.NewReader(`{"current_password":"secret123","new_password":"newsecret123"}`))
+	changeReq.Header.Set("Content-Type", "application/json")
+	changeReq.Header.Set("Origin", "http://example.com")
+	changeReq.AddCookie(sessCookie)
+	handler.ServeHTTP(changeRec, changeReq)
+	if changeRec.Code != http.StatusNoContent {
+		t.Fatalf("change password status=%d: %s", changeRec.Code, changeRec.Body.String())
 	}
-	if rec := call(http.MethodGet, "/api/v1/projects", ""); rec.Code != http.StatusOK {
-		t.Fatalf("projects after change status=%d: %s", rec.Code, rec.Body.String())
+	afterRec := httptest.NewRecorder()
+	afterReq := httptest.NewRequest(http.MethodGet, "/api/v1/projects", nil)
+	afterReq.AddCookie(sessCookie)
+	handler.ServeHTTP(afterRec, afterReq)
+	if afterRec.Code != http.StatusOK {
+		t.Fatalf("projects after change status=%d: %s", afterRec.Code, afterRec.Body.String())
 	}
 }
 
