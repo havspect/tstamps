@@ -3,6 +3,7 @@ package httpapi
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net"
 	"net/http"
@@ -205,7 +206,7 @@ func (s *Server) withAuth(next http.Handler) http.Handler {
 		}
 
 		// Enforce password change restriction
-		if principal != nil && principalHasPasswordChangeRequired(principal, s.deps.DB) && !isPasswordChangeAllowedPath(r) {
+		if principal != nil && principalHasPasswordChangeRequired(principal, s.deps.DB.WithContext(r.Context())) && !isPasswordChangeAllowedPath(r) {
 			writeProblem(w, problem(http.StatusForbidden, urnPasswordChangeRequired, "change your password first"))
 			return
 		}
@@ -332,10 +333,13 @@ func principalHasPasswordChangeRequired(p *auth.Principal, db *gorm.DB) bool {
 		return false
 	}
 	var u gormrepo.User
-	if err := db.Select("must_change_password").First(&u, p.UserID).Error; err == nil {
+	err := db.Select("must_change_password").First(&u, p.UserID).Error
+	if err == nil {
 		return u.MustChangePassword
 	}
-	return false
+	// Fail closed: a query that cannot run (for example a missing workspace)
+	// must not let a temporary password through.
+	return !errors.Is(err, gorm.ErrRecordNotFound)
 }
 
 func isPasswordChangeAllowedPath(r *http.Request) bool {
