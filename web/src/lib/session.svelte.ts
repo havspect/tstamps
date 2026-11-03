@@ -34,7 +34,9 @@ export const session = {
   },
 
   async logout(): Promise<void> {
-    await api.POST('/api/v1/auth/logout')
+    const { error, response } = await api.POST('/api/v1/auth/logout')
+    // 401 means the session is already gone; that is a successful logout.
+    if (error && response.status !== 401) throw new Error(problemMessage(error, response))
     user = null
   },
 }

@@ -145,6 +145,7 @@ func BuildServer(cfg Config) (http.Handler, *gorm.DB, error) {
 	// Inbound Transport: HTTP API
 	httpHandler := httpapi.New(httpapi.Dependencies{
 		DB:                db,
+		UserRepo:          userRepo,
 		Clock:             clk,
 		UserService:       userSvc,
 		ProjectService:    projectSvc,

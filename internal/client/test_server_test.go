@@ -55,6 +55,7 @@ func buildTestServer(t *testing.T, dbPath string) (http.Handler, *gorm.DB) {
 
 	handler := httpapi.New(httpapi.Dependencies{
 		DB:                db,
+		UserRepo:          userRepo,
 		Clock:             clk,
 		UserService:       userSvc,
 		ProjectService:    projectSvc,
