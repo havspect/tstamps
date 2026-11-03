@@ -46,7 +46,7 @@ func buildTestServer(t *testing.T, dbPath string) (http.Handler, *gorm.DB) {
 
 	policy := authz.NewPolicyEngine()
 	auditSvc := audit.New(auditRepo, clk)
-	userSvc := user.New(userRepo, auditSvc, entryRepo, clk)
+	userSvc := user.New(userRepo, uow, auditSvc, entryRepo, clk)
 	teamSvc := team.New(teamRepo, teamRepo, auditSvc, clk)
 	projectSvc := project.NewService(projectRepo, uow, auditSvc, projectRepo, policy, clk)
 	entrySvc := entry.NewService(entryRepo, uow, auditSvc, entryRepo, policy, clk)

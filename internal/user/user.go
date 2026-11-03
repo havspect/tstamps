@@ -116,8 +116,14 @@ type Repository interface {
 	GetAPITokenByTokenHash(ctx context.Context, tokenHash string) (*APIToken, error)
 	TouchAPIToken(ctx context.Context, id uint, at time.Time) error
 	RevokeAPIToken(ctx context.Context, id uint, userID uint) error
+	RevokeAllAPITokens(ctx context.Context, userID uint) error
 	ListAPITokens(ctx context.Context, userID uint) ([]APIToken, error)
 	RevokeAllOAuthTokens(ctx context.Context, userID uint) error
+}
+
+// UnitOfWork runs a function inside one database transaction.
+type UnitOfWork interface {
+	Run(ctx context.Context, fn func(ctx context.Context) error) error
 }
 
 // TimerStopper handles stopping running entry timers when a user is deactivated.
