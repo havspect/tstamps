@@ -15,7 +15,6 @@
   type Cell = components['schemas']['PlanCellResponse']
   type Person = components['schemas']['PlanPersonResponse']
   type PersonWeek = components['schemas']['PlanPersonWeekResponse']
-  type Availability = components['schemas']['PlanAvailabilityResponse']
   type MemberRow = { userID: number; user: string; total: number; weeks: Record<string, number> }
   type ProjectRow = {
     projectID: number

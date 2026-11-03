@@ -236,4 +236,3 @@ func (r *EntryRepository) StopRunningTimer(ctx context.Context, userID uint, not
 	}
 	return nil
 }
-
