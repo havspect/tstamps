@@ -101,14 +101,15 @@ func (r *EntryRepository) List(ctx context.Context, filter entry.ListFilter) ([]
 	if filter.ProjectID != 0 {
 		q = q.Where("project_id = ?", filter.ProjectID)
 	}
-	if len(filter.ProjectIDs) > 0 {
-		q = q.Where("project_id IN ?", filter.ProjectIDs)
-	}
 	if filter.From != nil {
 		q = q.Where("end_at IS NULL OR end_at > ?", *filter.From)
 	}
 	if filter.To != nil {
 		q = q.Where("start_at < ?", *filter.To)
+	}
+	q, err := applyRowScope(db, q, filter.TeamIDs, filter.SelfUserID)
+	if err != nil {
+		return nil, err
 	}
 
 	var rows []Entry
@@ -236,4 +237,3 @@ func (r *EntryRepository) StopRunningTimer(ctx context.Context, userID uint, not
 	}
 	return nil
 }
-

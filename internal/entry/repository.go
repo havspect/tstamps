@@ -7,9 +7,15 @@ import (
 
 // ListFilter narrows entries listed by the repository.
 type ListFilter struct {
-	UserID         uint
-	ProjectID      uint
-	ProjectIDs     []uint
+	UserID    uint
+	ProjectID uint
+
+	// TeamIDs and SelfUserID are the service's row scope, never the caller's
+	// request: a lead reads entries on the projects of the teams they lead
+	// plus their own entries.
+	TeamIDs    []uint
+	SelfUserID uint
+
 	From           *time.Time
 	To             *time.Time
 	IncludeDeleted bool
