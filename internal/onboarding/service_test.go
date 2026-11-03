@@ -3,6 +3,8 @@ package onboarding
 import (
 	"context"
 	"errors"
+	"net/url"
+	"strings"
 	"testing"
 	"time"
 )
@@ -153,10 +155,31 @@ func TestService_CreateWorkspace(t *testing.T) {
 	}
 }
 
-type fakeMailer struct{}
+type fakeMailer struct {
+	to   string
+	text string
+}
 
-func (f *fakeMailer) Send(_ context.Context, _, _, _ string) error {
+func (f *fakeMailer) Send(_ context.Context, to, _, text string) error {
+	f.to = to
+	f.text = text
 	return nil
+}
+
+// tokenFromMail returns the signup token in the link of a verification email.
+func tokenFromMail(t *testing.T, text string) string {
+	t.Helper()
+	for _, field := range strings.Fields(text) {
+		u, err := url.Parse(field)
+		if err != nil || u.Path != "/signup/verify" {
+			continue
+		}
+		if token := u.Query().Get("token"); token != "" {
+			return token
+		}
+	}
+	t.Fatalf("no signup link in mail: %q", text)
+	return ""
 }
 
 func TestService_SignupFlow(t *testing.T) {
@@ -165,23 +188,24 @@ func TestService_SignupFlow(t *testing.T) {
 	ctx := context.Background()
 
 	// 0. Signup disabled without mailer
-	if _, err := svc.StartSignup(ctx, "signup@example.com"); !errors.Is(err, ErrSignupDisabled) {
+	if err := svc.StartSignup(ctx, "signup@example.com"); !errors.Is(err, ErrSignupDisabled) {
 		t.Fatalf("expected ErrSignupDisabled, got %v", err)
 	}
 
-	svc.WithMailer(&fakeMailer{}, "http://localhost:8080")
+	mailer := &fakeMailer{}
+	svc.WithMailer(mailer, "http://localhost:8080")
 
 	// 1. StartSignup
-	token, err := svc.StartSignup(ctx, "signup@example.com")
-	if err != nil {
+	if err := svc.StartSignup(ctx, "signup@example.com"); err != nil {
 		t.Fatalf("StartSignup: %v", err)
 	}
-	if len(token) == 0 {
-		t.Fatalf("expected non-empty token")
+	if mailer.to != "signup@example.com" {
+		t.Fatalf("mail to = %q, want signup@example.com", mailer.to)
 	}
+	token := tokenFromMail(t, mailer.text)
 
 	// Invalid email
-	if _, err := svc.StartSignup(ctx, "invalid-email"); !errors.Is(err, ErrInvalidEmail) {
+	if err := svc.StartSignup(ctx, "invalid-email"); !errors.Is(err, ErrInvalidEmail) {
 		t.Fatalf("expected ErrInvalidEmail, got %v", err)
 	}
 
@@ -237,9 +261,6 @@ func TestService_SignupFlow(t *testing.T) {
 	}
 	if res.Name != "Founder" {
 		t.Errorf("expected name 'Founder', got %q", res.Name)
-	}
-	if len(res.Token) == 0 {
-		t.Errorf("expected non-empty session token")
 	}
 	if res.UserID == 0 {
 		t.Errorf("expected positive user ID")

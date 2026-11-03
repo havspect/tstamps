@@ -21,6 +21,5 @@ type SignupResult struct {
 	WorkspaceSlug string
 	Email         string
 	Name          string
-	Token         string
 	UserID        uint
 }

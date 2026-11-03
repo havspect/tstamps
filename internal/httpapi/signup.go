@@ -31,9 +31,7 @@ type startSignupInput struct {
 }
 
 type startSignupOutput struct {
-	Body struct {
-		Token string `json:"token,omitempty"`
-	}
+	Body struct{}
 }
 
 type verifySignupInput struct {
@@ -62,7 +60,6 @@ type completeSignupOutput struct {
 		WorkspaceSlug string `json:"workspace_slug"`
 		Email         string `json:"email"`
 		Name          string `json:"name"`
-		Token         string `json:"token"`
 		UserID        uint   `json:"user_id"`
 	}
 }
@@ -133,14 +130,11 @@ func (s *Server) startSignup(ctx context.Context, in *startSignupInput) (*startS
 		return nil, problem(http.StatusServiceUnavailable, urnUnavailable, "onboarding service not available")
 	}
 
-	token, err := s.deps.OnboardingService.StartSignup(ctx, in.Body.Email)
-	if err != nil {
+	if err := s.deps.OnboardingService.StartSignup(ctx, in.Body.Email); err != nil {
 		return nil, fail(err)
 	}
 
-	out := &startSignupOutput{}
-	out.Body.Token = token
-	return out, nil
+	return &startSignupOutput{}, nil
 }
 
 func (s *Server) verifySignup(ctx context.Context, in *verifySignupInput) (*verifySignupOutput, error) {
@@ -211,7 +205,6 @@ func (s *Server) completeSignup(ctx context.Context, in *completeSignupInput) (*
 	out.Body.WorkspaceSlug = res.WorkspaceSlug
 	out.Body.Email = res.Email
 	out.Body.Name = res.Name
-	out.Body.Token = token
 	out.Body.UserID = res.UserID
 	return out, nil
 }
