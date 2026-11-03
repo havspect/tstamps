@@ -101,9 +101,6 @@ func (r *EntryRepository) List(ctx context.Context, filter entry.ListFilter) ([]
 	if filter.ProjectID != 0 {
 		q = q.Where("project_id = ?", filter.ProjectID)
 	}
-	if len(filter.ProjectIDs) > 0 {
-		q = q.Where("project_id IN ?", filter.ProjectIDs)
-	}
 	if filter.From != nil {
 		q = q.Where("end_at IS NULL OR end_at > ?", *filter.From)
 	}
