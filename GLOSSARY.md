@@ -81,7 +81,7 @@ An application — the CLI, the mobile app, or an MCP agent — that requests sc
 _Avoid_: app, integration, consumer, service account
 
 **Grant**:
-A user's revocable authorization letting an OAuth client act on their behalf in one workspace with specific scopes. The user revokes it on the Tokens page, which also revokes the personal tokens minted under it.
+A user's revocable authorization letting an OAuth client act on their behalf in one workspace with specific scopes. The user revokes it on the Tokens page, which also revokes the personal tokens that client minted for them.
 _Avoid_: consent record, connected app, OAuth session
 
 **Identity provider**:
