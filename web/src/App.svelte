@@ -3,6 +3,7 @@
   import type { Component } from 'svelte'
   import { router } from './lib/router.svelte'
   import { session } from './lib/session.svelte'
+  import { notify } from './lib/toast'
   import { demo } from './lib/demo'
   import Link from './lib/Link.svelte'
   import LegalLinks from './lib/LegalLinks.svelte'
@@ -120,8 +121,12 @@
   })
 
   async function logout() {
-    await session.logout()
-    router.navigate('/login', { replace: true })
+    try {
+      await session.logout()
+      router.navigate('/login', { replace: true })
+    } catch (error) {
+      notify(error instanceof Error ? error.message : 'Could not log out. Try again.', { variant: 'danger' })
+    }
   }
 </script>
 
