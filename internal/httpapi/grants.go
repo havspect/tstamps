@@ -53,6 +53,9 @@ func (s *Server) listGrants(ctx context.Context, _ *struct{}) (*grantListOutput,
 	if err != nil {
 		return nil, fail(err)
 	}
+	if grants == nil {
+		grants = []oauth.Grant{}
+	}
 	return &grantListOutput{Body: grants}, nil
 }
 

@@ -32,6 +32,21 @@ func mintDelegatedToken(t *testing.T, handler http.Handler, oauthAccessToken str
 	return out.Token
 }
 
+func TestListGrantsReturnsAnArrayWhenEmpty(t *testing.T) {
+	handler, _, adminAuth := setupDeviceTestServer(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/me/oauth/grants", nil)
+	req.Header.Set("Authorization", adminAuth)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("list grants status = %d, want 200: %s", rec.Code, rec.Body.String())
+	}
+	if got := strings.TrimSpace(rec.Body.String()); got != "[]" {
+		t.Fatalf("empty grants body = %q, want []", got)
+	}
+}
+
 func TestRevokeGrantCascadesToMintedTokens(t *testing.T) {
 	handler, _, adminAuth := setupDeviceTestServer(t)
 	tok := deviceOAuthToken(t, handler, adminAuth)
