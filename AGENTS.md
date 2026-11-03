@@ -7,8 +7,16 @@ Team time tracking in Go: one binary, SQLite, embedded Svelte timeline, REST API
 - Expensive-to-reverse decisions: [docs/adr](docs/adr)
 - Build, test and run through the just recipes, not raw `go build`/`go run`: `just build`, `just check`, `just serve`, `just build-prod`, `just dev`.
 - `just serve` takes `PORT` (default 8080): `PORT=8081 just serve --db ./tstamps.db`. The UI and the manual at `/docs` are embedded at compile time by `just build`; a binary built any other way, or before `pnpm --dir docs build`, serves a stub or 404s `/docs`.
-- Frontend toolchain: pnpm only — no npm, yarn or bun; `pnpm dlx`, not `npx`. Only `pnpm-lock.yaml` is committed.
+- Frontend toolchain: pnpm only — no npm, yarn or bun; `pnpm dlx`, not `npx`. Only `pnpm-lock.yaml` is committed. The pnpm version is pinned in the root `package.json` (`packageManager`) and Node in `.nvmrc`, and CI reads both.
 - Frontend uses webawesome as a design system.
+
+## Verifying a change
+
+- `just check` proves the code without a browser: vet, gofmt, a tidy `go.mod`, the Go tests with the race detector, and the frontend checks, tests and build.
+- An unused variable, an unused type, a Svelte warning or an unformatted Go file fails the same command, so fix it rather than adding an ignore.
+- If the change touches the UI (`web/src`, `web/index.html`, `web/public`), run `just e2e`. It builds the server, walks the product in a browser and writes one PNG per screen to `web/test-results/shots/`. Open the PNGs of the screens you changed and look at them.
+- A screen with no capture gets one in the same change: call `await shot(page, 'name')` in the test that reaches it.
+- A failed browser test leaves its own screenshot, and CI keeps the directory as the `screenshots` artifact.
 
 ## Pull requests
 

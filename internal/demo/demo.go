@@ -476,10 +476,15 @@ func buildPlans(now time.Time, workspaceID uint, userIDs, projectIDs map[string]
 	weekStart := utc.AddDate(0, 0, -((int(utc.Weekday()) + 6) % 7))
 	weekStart = time.Date(weekStart.Year(), weekStart.Month(), weekStart.Day(), 0, 0, 0, 0, time.UTC)
 
+	// The plan board opens on next month, so plan through the end of it: a
+	// default view of 0/40 everywhere shows the board but not what it does.
+	last := time.Date(utc.Year(), utc.Month()+2, 0, 0, 0, 0, 0, time.UTC)
+	ahead := int(last.Sub(weekStart).Hours() / (24 * 7))
+
 	var out []gormrepo.Plan
 	for pi, p := range people {
 		names := activeProjectNames(p.team)
-		for w := -4; w <= 2; w++ {
+		for w := -4; w <= ahead; w++ {
 			total := 24 + ((pi+w+8)%4)*4
 			first := total * 3 / 5
 			for i, name := range names {

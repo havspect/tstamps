@@ -1,25 +1,39 @@
 import { execFileSync, spawn, type ChildProcess } from 'node:child_process'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { createServer, type AddressInfo } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const server = process.env.TSTAMPS_SERVER ?? fileURLToPath(new URL('../../tstamps-server', import.meta.url))
 const statePath = fileURLToPath(new URL('./.state.json', import.meta.url))
-const port = Number(process.env.TSTAMPS_E2E_PORT ?? 8098)
-const hostedPort = Number(process.env.TSTAMPS_E2E_HOSTED_PORT ?? port + 1)
-const baseURL = `http://127.0.0.1:${port}`
-const hostedURL = `http://127.0.0.1:${hostedPort}`
 const workspaceSlug = 'example.com'
 
-// Bootstraps two throwaway databases with the real server binary: one with a
-// single workspace (the no-prompt path) and one with two (the workspace prompt).
+// Bootstraps three throwaway databases with the real server binary: one with a
+// single workspace (the no-prompt path), one with two (the workspace prompt) and
+// the seeded demo, whose plans and vacations no hand-written fixture reproduces.
 export default async function globalSetup() {
   const dir = mkdtempSync(join(tmpdir(), 'tstamps-e2e-'))
   const singleDB = join(dir, 'single.db')
   const hostedDB = join(dir, 'hosted.db')
+  const demoDB = join(dir, 'demo.db')
   let single: ChildProcess | undefined
   let hosted: ChildProcess | undefined
+  let demo: ChildProcess | undefined
+
+  // Free ports let two worktrees run the walk at the same time. A port can be
+  // taken between the probe and the listen; the window is small, and a clash
+  // fails on /healthz rather than driving another worktree's server. Ports set
+  // by env count as taken, so the probes never hand out one of them twice.
+  const ports = [process.env.TSTAMPS_E2E_PORT, process.env.TSTAMPS_E2E_HOSTED_PORT, process.env.TSTAMPS_E2E_DEMO_PORT]
+    .map((value) => Number(value))
+    .filter((value) => value > 0)
+  const port = Number(process.env.TSTAMPS_E2E_PORT ?? 0) || (await freePort(ports))
+  const hostedPort = Number(process.env.TSTAMPS_E2E_HOSTED_PORT ?? 0) || (await freePort(ports))
+  const demoPort = Number(process.env.TSTAMPS_E2E_DEMO_PORT ?? 0) || (await freePort(ports))
+  const baseURL = `http://127.0.0.1:${port}`
+  const hostedURL = `http://127.0.0.1:${hostedPort}`
+  const demoURL = `http://127.0.0.1:${demoPort}`
 
   try {
     const output = execFileSync(
@@ -64,21 +78,47 @@ export default async function globalSetup() {
       ['serve', '--addr', `127.0.0.1:${hostedPort}`, '--db', hostedDB, '--log-level', 'warn'],
       { stdio: 'ignore' },
     )
-    await Promise.all([waitForHealth(`${baseURL}/healthz`), waitForHealth(`${hostedURL}/healthz`)])
+    demo = spawn(
+      server,
+      ['serve', '--demo', '--addr', `127.0.0.1:${demoPort}`, '--db', demoDB, '--log-level', 'warn'],
+      { stdio: 'ignore' },
+    )
+    await Promise.all([
+      waitForHealth(`${baseURL}/healthz`),
+      waitForHealth(`${hostedURL}/healthz`),
+      waitForHealth(`${demoURL}/healthz`),
+    ])
     writeFileSync(
       statePath,
-      JSON.stringify({ port, password, hostedPort, hostedPassword, workspaceSlug }),
+      JSON.stringify({ port, password, hostedPort, hostedPassword, demoPort, workspaceSlug }),
     )
 
     return async () => {
-      await Promise.all([stop(single), stop(hosted)])
+      await Promise.all([stop(single), stop(hosted), stop(demo)])
       rmSync(dir, { recursive: true, force: true })
       rmSync(statePath, { force: true })
     }
   } catch (err) {
-    await Promise.all([stop(single), stop(hosted)])
+    await Promise.all([stop(single), stop(hosted), stop(demo)])
     rmSync(dir, { recursive: true, force: true })
     throw err
+  }
+}
+
+async function freePort(used: number[]): Promise<number> {
+  for (;;) {
+    const port = await new Promise<number>((resolve, reject) => {
+      const probe = createServer()
+      probe.once('error', reject)
+      probe.listen(0, '127.0.0.1', () => {
+        const { port } = probe.address() as AddressInfo
+        probe.close(() => resolve(port))
+      })
+    })
+    if (!used.includes(port)) {
+      used.push(port)
+      return port
+    }
   }
 }
 

@@ -94,6 +94,7 @@ type TokenSet struct {
 	TokenType    string `json:"token_type"`
 	ExpiresIn    int    `json:"expires_in"`
 }
+
 // Error is a non-2xx reply from the server. Type is the stable
 // urn:tstamps:error:* code from the problem document.
 type Error struct {

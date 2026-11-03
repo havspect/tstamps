@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "gen": "go run ../cmd/tstamps-server openapi > openapi.json && openapi-typescript openapi.json -o src/lib/api/schema.d.ts",
-    "check": "pnpm gen && svelte-check --tsconfig ./tsconfig.json && tsc --noEmit",
+    "check": "pnpm gen && svelte-check --tsconfig ./tsconfig.json --fail-on-warnings && tsc --noEmit",
     "build": "vite build",
     "dev": "vite",
     "test": "vitest run --passWithNoTests",

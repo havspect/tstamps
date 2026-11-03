@@ -19,18 +19,22 @@ jobs:
           go-version-file: go.mod
 
       - uses: pnpm/action-setup@v4
-        with:
-          version: 10
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version-file: .nvmrc
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
 
       - run: pnpm install --frozen-lockfile
 
+      - name: gofmt
+        run: |
+          files=$(gofmt -l $(git ls-files '*.go'))
+          if [ -n "$files" ]; then echo "not gofmt'd:"; echo "$files"; exit 1; fi
+
       - run: go vet ./...
+      - run: go mod tidy -diff
       - run: go test -race ./...
 
       - run: pnpm --dir web check
@@ -45,3 +49,10 @@ jobs:
       # One smoke walk of login, logging, reporting and CSV against the built server.
       - run: pnpm --dir web exec playwright install --with-deps chromium
       - run: pnpm --dir web e2e
+
+      # The screens and the failure shots, so a red PR still shows what broke.
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: screenshots
+          path: web/test-results/

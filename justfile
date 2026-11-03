@@ -6,13 +6,26 @@ default:
 types:
     pnpm --dir web gen
 
-# Run every check the build gate runs.
-check:
+# Run every check that needs no browser: vet, gofmt, a tidy go.mod, the Go
+# tests with the race detector, the frontend checks and build, and the manual.
+check: fmt-check
     go vet ./...
-    go test ./...
+    go mod tidy -diff
+    go test -race ./...
     pnpm --dir web check
     pnpm --dir web test
+    pnpm --dir web build
     pnpm --dir docs build
+
+# Fail when a Go file is not gofmt'd, and print the files.
+fmt-check:
+    #!/bin/sh
+    files=$(gofmt -l $(git ls-files '*.go'))
+    if [ -n "$files" ]; then
+        echo "not gofmt'd:"
+        echo "$files"
+        exit 1
+    fi
 
 # Build the user CLI: no UI, no database, no build tags.
 build-cli:
@@ -77,6 +90,9 @@ serve *args:
 workspace-create slug email name:
     go run ./cmd/tstamps-server workspace create {{slug}} --db ./tstamps.db --email {{email}} --name "{{name}}"
 
-# Run the browser smoke test against a freshly built server.
+# Run the browser smoke test against a freshly built server, and leave one
+# screenshot per screen in web/test-results/shots/.
 e2e: build
+    pnpm --dir web exec playwright install chromium
     pnpm --dir web e2e
+    @echo "screenshots: web/test-results/shots/"
