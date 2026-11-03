@@ -215,4 +215,10 @@ test('admin controls bind the custom elements to the forms', async ({ page }) =>
     .find((team) => team.name === teamName)
     ?.members?.find((entry) => entry.email === email)?.role
   expect(memberRole).toBe('lead')
+
+  await page.goto(`${workspace}/tokens`)
+  await expect(page.getByRole('heading', { name: 'Tokens & Connected Apps' })).toBeVisible()
+  // The page is only healthy when the grants request succeeds; a failed one shows an error instead.
+  await expect(page.getByText('No connected OAuth applications.')).toBeVisible()
+  await shot(page, 'tokens')
 })
