@@ -60,8 +60,9 @@ func (p *fakeProjects) IsProjectLoggable(ctx context.Context, projectID uint) (b
 }
 
 type fakeRepo struct {
-	entries map[uint]*Entry
-	nextID  uint
+	entries    map[uint]*Entry
+	nextID     uint
+	lastFilter ListFilter
 }
 
 func newFakeRepo() *fakeRepo {
@@ -91,6 +92,7 @@ func (r *fakeRepo) GetRunning(ctx context.Context, userID uint) (*Entry, error) 
 }
 
 func (r *fakeRepo) List(ctx context.Context, filter ListFilter) ([]Entry, error) {
+	r.lastFilter = filter
 	var out []Entry
 	for _, e := range r.entries {
 		if !filter.IncludeDeleted && e.DeletedAt != nil {
@@ -450,6 +452,15 @@ func TestListEntries(t *testing.T) {
 	}
 	if len(adminEntries) != 3 {
 		t.Errorf("expected 3 entries for admin, got %d", len(adminEntries))
+	}
+
+	// A lead hands the repository a team scope and their own ID.
+	lead := &auth.Principal{WorkspaceID: 1, UserID: 10, Roles: []string{"member", "lead"}, LedTeamIDs: []uint{1}}
+	if _, err := svc.ListEntries(testContext(lead), ListFilter{}); err != nil {
+		t.Fatalf("ListEntries lead: %v", err)
+	}
+	if len(repo.lastFilter.TeamIDs) != 1 || repo.lastFilter.TeamIDs[0] != 1 || repo.lastFilter.SelfUserID != 10 {
+		t.Errorf("lead scope = teams %v self %d, want team 1 and self 10", repo.lastFilter.TeamIDs, repo.lastFilter.SelfUserID)
 	}
 }
 

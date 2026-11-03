@@ -51,6 +51,8 @@ func TestListEntriesLeadScope(t *testing.T) {
 
 	start := time.Date(2026, 10, 19, 9, 0, 0, 0, time.UTC)
 	end := start.Add(time.Hour)
+	from := time.Date(2026, 10, 19, 0, 0, 0, 0, time.UTC)
+	to := from.AddDate(0, 0, 1)
 	ownLed := &Entry{UserID: lead.ID, ProjectID: ledProject.ID}
 	foreignUnled := &Entry{UserID: other.ID, ProjectID: otherProject.ID}
 	foreignLed := &Entry{UserID: other.ID, ProjectID: ledProject.ID}
@@ -84,29 +86,32 @@ func TestListEntriesLeadScope(t *testing.T) {
 		{
 			name:      "lead sees led projects and own entries",
 			principal: leadPrincipal,
+			filter:    entry.ListFilter{From: &from, To: &to},
 			want:      []uint{ownLed.ID, foreignLed.ID, ownUnled.ID},
 		},
 		{
 			name:      "lead cannot widen to another user",
 			principal: leadPrincipal,
-			filter:    entry.ListFilter{UserID: other.ID},
+			filter:    entry.ListFilter{UserID: other.ID, From: &from, To: &to},
 			want:      []uint{foreignLed.ID},
 		},
 		{
 			name:      "lead keeps own entries on an unled project",
 			principal: leadPrincipal,
-			filter:    entry.ListFilter{ProjectID: otherProject.ID},
+			filter:    entry.ListFilter{ProjectID: otherProject.ID, From: &from, To: &to},
 			want:      []uint{ownUnled.ID},
 		},
 		{
 			name:      "member sees own entries only",
 			principal: memberPrincipal,
+			filter:    entry.ListFilter{From: &from, To: &to},
 			want:      []uint{ownLed.ID, ownUnled.ID},
 		},
 		{
-			name:      "member cannot widen to another user",
+			// A member's caller filter is replaced by their own ID, as in reports.
+			name:      "member filter is replaced by own scope",
 			principal: memberPrincipal,
-			filter:    entry.ListFilter{UserID: other.ID},
+			filter:    entry.ListFilter{UserID: other.ID, From: &from, To: &to},
 			want:      []uint{ownLed.ID, ownUnled.ID},
 		},
 	}
