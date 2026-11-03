@@ -3,7 +3,6 @@ package user
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"strings"
 
 	"github.com/havspect/tstamps/internal/auth"
