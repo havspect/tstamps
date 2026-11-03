@@ -551,6 +551,9 @@ func TestPersonalTokens(t *testing.T) {
 		if tok.UserID != 42 {
 			t.Errorf("expected token UserID=42, got %d", tok.UserID)
 		}
+		if tok.Scopes != `["tstamps.read","tstamps.write"]` {
+			t.Errorf("session token scopes = %q, want full read+write", tok.Scopes)
+		}
 		if auditor.events[len(auditor.events)-1] != "token.create" {
 			t.Errorf("expected token.create audit, got %v", auditor.events)
 		}
@@ -571,6 +574,43 @@ func TestPersonalTokens(t *testing.T) {
 		}
 		if auditor.events[len(auditor.events)-1] != "token.revoke" {
 			t.Errorf("expected token.revoke audit, got %v", auditor.events)
+		}
+	})
+
+	t.Run("oauth principal binds client and inherits scopes", func(t *testing.T) {
+		ctx := auth.WithPrincipal(context.Background(), &auth.Principal{
+			WorkspaceID: 1,
+			UserID:      42,
+			Roles:       []string{"member"},
+			Scopes:      []string{"tstamps.read"},
+			ClientID:    "cli_x",
+			Source:      "oauth",
+		})
+
+		tok, _, err := svc.CreatePersonalToken(ctx, "delegated")
+		if err != nil {
+			t.Fatalf("CreatePersonalToken failed: %v", err)
+		}
+		got := repo.tokens[tok.ID]
+		if got.ClientID != "cli_x" {
+			t.Errorf("expected ClientID=cli_x, got %q", got.ClientID)
+		}
+		if got.Scopes != `["tstamps.read"]` {
+			t.Errorf("expected only the read scope, got %q", got.Scopes)
+		}
+	})
+
+	t.Run("oauth principal without a client is refused", func(t *testing.T) {
+		ctx := auth.WithPrincipal(context.Background(), &auth.Principal{
+			WorkspaceID: 1,
+			UserID:      42,
+			Roles:       []string{"member"},
+			Scopes:      []string{"tstamps.read"},
+			Source:      "oauth",
+		})
+
+		if _, _, err := svc.CreatePersonalToken(ctx, "unbound"); !errors.Is(err, authz.ErrForbidden) {
+			t.Errorf("expected ErrForbidden, got %v", err)
 		}
 	})
 }

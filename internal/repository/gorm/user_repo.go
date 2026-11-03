@@ -60,6 +60,8 @@ func toDomainAPIToken(t *APIToken) *user.APIToken {
 		ExpiresAt:   expiresAt,
 		LastUsedAt:  t.LastUsedAt,
 		RevokedAt:   t.RevokedAt,
+		ClientID:    t.ClientID,
+		Scopes:      t.Scopes,
 		CreatedAt:   t.CreatedAt,
 	}
 }
@@ -227,6 +229,8 @@ func (r *UserRepository) CreateAPIToken(ctx context.Context, t *user.APIToken) e
 		ExpiresAt:   expiresAt,
 		LastUsedAt:  t.LastUsedAt,
 		RevokedAt:   t.RevokedAt,
+		ClientID:    t.ClientID,
+		Scopes:      t.Scopes,
 		CreatedAt:   t.CreatedAt,
 	}
 

@@ -11,7 +11,7 @@ type Principal struct {
 	Scopes      []string // "tstamps.read", "tstamps.write"
 	ClientID    string
 	TokenID     string // Identifier only, never the secret value
-	Source      string // "http", "mcp", "cli", "local"
+	Source      string // "session", "bearer", "oauth"
 	LedTeamIDs  []uint // Team IDs where user is a lead
 }
 

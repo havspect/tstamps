@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"context"
+	"encoding/json"
 	"log/slog"
 	"net"
 	"net/http"
@@ -185,8 +186,8 @@ func (s *Server) withAuth(next http.Handler) http.Handler {
 			return
 		}
 
-		// OAuth scope verification
-		if principal != nil && principal.Source == "oauth" {
+		// Scope verification: reads and MCP need tstamps.read, mutations need tstamps.write.
+		if principal != nil {
 			hasRead := principal.HasScope("tstamps.read")
 			hasWrite := principal.HasScope("tstamps.write")
 			isMCP := r.URL.Path == "/mcp" || r.URL.Path == apiPrefix+"/mcp"
@@ -227,7 +228,13 @@ func (s *Server) authenticateBearer(ctx context.Context, rawToken string) (*auth
 		var u gormrepo.User
 		if err := s.deps.DB.WithContext(bypassCtx).First(&u, tok.UserID).Error; err == nil && u.Active {
 			_ = s.deps.DB.WithContext(bypassCtx).Model(&tok).Update("last_used_at", time.Now())
-			p := s.buildPrincipal(&u, "bearer", strconv.FormatUint(uint64(tok.ID), 10), []string{"tstamps.read", "tstamps.write"}, "")
+			scopes := []string{"tstamps.read", "tstamps.write"}
+			if tok.Scopes != "" {
+				if err := json.Unmarshal([]byte(tok.Scopes), &scopes); err != nil || scopes == nil {
+					return nil, 0 // fail closed: an unreadable scope list must not grant full access
+				}
+			}
+			p := s.buildPrincipal(&u, "bearer", strconv.FormatUint(uint64(tok.ID), 10), scopes, "")
 			return p, tok.WorkspaceID
 		}
 	}
