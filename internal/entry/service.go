@@ -405,7 +405,12 @@ func (s *Service) ListEntries(ctx context.Context, filter ListFilter) ([]Entry, 
 		return nil, authz.ErrForbidden
 	}
 
-	if !p.IsAdmin() && !p.HasRole("lead") {
+	switch {
+	case p.IsAdmin():
+	case p.HasRole("lead"):
+		filter.TeamIDs = p.LedTeamIDs
+		filter.SelfUserID = p.UserID
+	default:
 		filter.UserID = p.UserID
 	}
 

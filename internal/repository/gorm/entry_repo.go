@@ -110,6 +110,10 @@ func (r *EntryRepository) List(ctx context.Context, filter entry.ListFilter) ([]
 	if filter.To != nil {
 		q = q.Where("start_at < ?", *filter.To)
 	}
+	q, err := applyRowScope(db, q, filter.TeamIDs, filter.SelfUserID)
+	if err != nil {
+		return nil, err
+	}
 
 	var rows []Entry
 	if err := q.Order("start_at ASC, id ASC").Find(&rows).Error; err != nil {
@@ -236,4 +240,3 @@ func (r *EntryRepository) StopRunningTimer(ctx context.Context, userID uint, not
 	}
 	return nil
 }
-
