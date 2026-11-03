@@ -2,7 +2,6 @@ package user
 
 import (
 	"context"
-	"errors"
 	"strings"
 
 	"github.com/havspect/tstamps/internal/auth"
@@ -13,18 +12,20 @@ import (
 // Service coordinates user lifecycle, credentials, personal tokens, and authorization invariants.
 type Service struct {
 	repo         Repository
+	uow          UnitOfWork
 	auditor      Auditor
 	timerStopper TimerStopper
 	clock        clock.Clock
 }
 
 // New creates a new user Service.
-func New(repo Repository, auditor Auditor, stopper TimerStopper, clk clock.Clock) *Service {
+func New(repo Repository, uow UnitOfWork, auditor Auditor, stopper TimerStopper, clk clock.Clock) *Service {
 	if clk == nil {
 		clk = clock.System{}
 	}
 	return &Service{
 		repo:         repo,
+		uow:          uow,
 		auditor:      auditor,
 		timerStopper: stopper,
 		clock:        clk,
@@ -130,82 +131,93 @@ func (s *Service) CreateUser(ctx context.Context, in CreateInput) (*User, string
 }
 
 // UpdateUser applies modifications to a user account, enforcing the last active admin invariant
-// and cascading deactivation (stopping running timers and revoking OAuth tokens). Requires administrator role.
+// and cascading deactivation (stopping running timers and revoking OAuth and personal tokens). Requires administrator role.
 func (s *Service) UpdateUser(ctx context.Context, in UpdateInput) (*User, error) {
 	if _, err := requireAdmin(ctx); err != nil {
 		return nil, err
 	}
 
-	before, err := s.repo.GetByID(ctx, in.ID)
+	var result *User
+	err := s.uow.Run(ctx, func(ctx context.Context) error {
+		before, err := s.repo.GetByID(ctx, in.ID)
+		if err != nil {
+			return err
+		}
+
+		after := *before
+		if in.Name != nil {
+			name := strings.TrimSpace(*in.Name)
+			if name == "" {
+				return ErrInvalidName
+			}
+			after.Name = name
+		}
+		if in.Timezone != nil {
+			tz := strings.TrimSpace(*in.Timezone)
+			if tz == "" {
+				tz = "UTC"
+			}
+			after.Timezone = tz
+		}
+		if in.IsAdmin != nil {
+			after.IsAdmin = *in.IsAdmin
+		}
+		if in.WeeklyHours != nil {
+			if *in.WeeklyHours < 0 || *in.WeeklyHours > 168 {
+				return ErrInvalidWeeklyHours
+			}
+			after.WeeklyHours = *in.WeeklyHours
+		}
+		if in.Active != nil {
+			after.Active = *in.Active
+		}
+
+		// Enforce invariant: cannot demote or deactivate the last active admin
+		if before.IsAdmin && before.Active && (!after.IsAdmin || !after.Active) {
+			count, err := s.repo.CountActiveAdmins(ctx)
+			if err != nil {
+				return err
+			}
+			if count <= 1 {
+				return ErrLastAdmin
+			}
+		}
+
+		// Handle deactivation cascades
+		if before.Active && !after.Active {
+			if s.timerStopper != nil {
+				if err := s.timerStopper.StopRunningTimer(ctx, in.ID, "stopped on deactivation"); err != nil {
+					return err
+				}
+			}
+			if err := s.repo.RevokeAllOAuthTokens(ctx, in.ID); err != nil {
+				return err
+			}
+			if err := s.repo.RevokeAllAPITokens(ctx, in.ID); err != nil {
+				return err
+			}
+		}
+
+		after.UpdatedAt = s.clock.Now()
+		if err := s.repo.Update(ctx, &after); err != nil {
+			return err
+		}
+
+		if s.auditor != nil {
+			_ = s.auditor.Record(ctx, "user.update", "user", in.ID, map[string]any{
+				"before": auditFields(before),
+				"after":  auditFields(&after),
+			})
+		}
+
+		result = &after
+		return nil
+	})
 	if err != nil {
 		return nil, err
 	}
 
-	after := *before
-	if in.Name != nil {
-		name := strings.TrimSpace(*in.Name)
-		if name == "" {
-			return nil, ErrInvalidName
-		}
-		after.Name = name
-	}
-	if in.Timezone != nil {
-		tz := strings.TrimSpace(*in.Timezone)
-		if tz == "" {
-			tz = "UTC"
-		}
-		after.Timezone = tz
-	}
-	if in.IsAdmin != nil {
-		after.IsAdmin = *in.IsAdmin
-	}
-	if in.WeeklyHours != nil {
-		if *in.WeeklyHours < 0 || *in.WeeklyHours > 168 {
-			return nil, ErrInvalidWeeklyHours
-		}
-		after.WeeklyHours = *in.WeeklyHours
-	}
-	if in.Active != nil {
-		after.Active = *in.Active
-	}
-
-	// Enforce invariant: cannot demote or deactivate the last active admin
-	if before.IsAdmin && before.Active && (!after.IsAdmin || !after.Active) {
-		count, err := s.repo.CountActiveAdmins(ctx)
-		if err != nil {
-			return nil, err
-		}
-		if count <= 1 {
-			return nil, ErrLastAdmin
-		}
-	}
-
-	// Handle deactivation cascades
-	if before.Active && !after.Active {
-		if s.timerStopper != nil {
-			err := s.timerStopper.StopRunningTimer(ctx, in.ID, "stopped on deactivation")
-			if err != nil && !errors.Is(err, ErrNotFound) {
-				return nil, err
-			}
-		}
-		if err := s.repo.RevokeAllOAuthTokens(ctx, in.ID); err != nil {
-			return nil, err
-		}
-	}
-
-	after.UpdatedAt = s.clock.Now()
-	if err := s.repo.Update(ctx, &after); err != nil {
-		return nil, err
-	}
-
-	if s.auditor != nil {
-		_ = s.auditor.Record(ctx, "user.update", "user", in.ID, map[string]any{
-			"before": auditFields(before),
-			"after":  auditFields(&after),
-		})
-	}
-
-	return &after, nil
+	return result, nil
 }
 
 // ResetPassword resets a user's password, invalidates all sessions and tokens, and marks must_change_password=true. Requires administrator role.
@@ -214,42 +226,54 @@ func (s *Service) ResetPassword(ctx context.Context, id uint) (string, error) {
 		return "", err
 	}
 
-	u, err := s.repo.GetByID(ctx, id)
+	var newPassword string
+	err := s.uow.Run(ctx, func(ctx context.Context) error {
+		u, err := s.repo.GetByID(ctx, id)
+		if err != nil {
+			return err
+		}
+		before := auditFields(u)
+
+		newPassword, err = auth.GeneratePassword()
+		if err != nil {
+			return err
+		}
+
+		hash, err := auth.HashPassword(newPassword)
+		if err != nil {
+			return err
+		}
+
+		u.PasswordHash = hash
+		u.MustChangePassword = true
+		u.UpdatedAt = s.clock.Now()
+
+		if err := s.repo.Update(ctx, u); err != nil {
+			return err
+		}
+
+		if err := s.repo.DeleteUserSessionsExcept(ctx, id, ""); err != nil {
+			return err
+		}
+
+		if err := s.repo.RevokeAllOAuthTokens(ctx, id); err != nil {
+			return err
+		}
+
+		if err := s.repo.RevokeAllAPITokens(ctx, id); err != nil {
+			return err
+		}
+
+		if s.auditor != nil {
+			_ = s.auditor.Record(ctx, "user.password.reset", "user", id, map[string]any{
+				"before": before,
+			})
+		}
+
+		return nil
+	})
 	if err != nil {
 		return "", err
-	}
-
-	newPassword, err := auth.GeneratePassword()
-	if err != nil {
-		return "", err
-	}
-
-	hash, err := auth.HashPassword(newPassword)
-	if err != nil {
-		return "", err
-	}
-
-	now := s.clock.Now()
-	u.PasswordHash = hash
-	u.MustChangePassword = true
-	u.UpdatedAt = now
-
-	if err := s.repo.Update(ctx, u); err != nil {
-		return "", err
-	}
-
-	if err := s.repo.DeleteUserSessionsExcept(ctx, id, ""); err != nil {
-		return "", err
-	}
-
-	if err := s.repo.RevokeAllOAuthTokens(ctx, id); err != nil {
-		return "", err
-	}
-
-	if s.auditor != nil {
-		_ = s.auditor.Record(ctx, "user.password.reset", "user", id, map[string]any{
-			"before": auditFields(u),
-		})
 	}
 
 	return newPassword, nil
@@ -262,44 +286,53 @@ func (s *Service) ChangeOwnPassword(ctx context.Context, currentPass, newPass st
 		return authz.ErrUnauthorized
 	}
 
-	u, err := s.repo.GetByID(ctx, p.UserID)
-	if err != nil {
-		return err
-	}
+	return s.uow.Run(ctx, func(ctx context.Context) error {
+		u, err := s.repo.GetByID(ctx, p.UserID)
+		if err != nil {
+			return err
+		}
 
-	if !auth.VerifyPassword(u.PasswordHash, currentPass) {
-		return ErrInvalidPassword
-	}
+		if !auth.VerifyPassword(u.PasswordHash, currentPass) {
+			return ErrInvalidPassword
+		}
 
-	if len(newPass) < 8 {
-		return ErrPasswordTooShort
-	}
+		if len(newPass) < 8 {
+			return ErrPasswordTooShort
+		}
 
-	hash, err := auth.HashPassword(newPass)
-	if err != nil {
-		return err
-	}
+		hash, err := auth.HashPassword(newPass)
+		if err != nil {
+			return err
+		}
 
-	now := s.clock.Now()
-	u.PasswordHash = hash
-	u.MustChangePassword = false
-	u.UpdatedAt = now
+		u.PasswordHash = hash
+		u.MustChangePassword = false
+		u.UpdatedAt = s.clock.Now()
 
-	if err := s.repo.Update(ctx, u); err != nil {
-		return err
-	}
+		if err := s.repo.Update(ctx, u); err != nil {
+			return err
+		}
 
-	if err := s.repo.DeleteUserSessionsExcept(ctx, u.ID, p.TokenID); err != nil {
-		return err
-	}
+		if err := s.repo.DeleteUserSessionsExcept(ctx, u.ID, p.TokenID); err != nil {
+			return err
+		}
 
-	if s.auditor != nil {
-		_ = s.auditor.Record(ctx, "user.password.change", "user", u.ID, map[string]any{
-			"after": auditFields(u),
-		})
-	}
+		if err := s.repo.RevokeAllOAuthTokens(ctx, u.ID); err != nil {
+			return err
+		}
 
-	return nil
+		if err := s.repo.RevokeAllAPITokens(ctx, u.ID); err != nil {
+			return err
+		}
+
+		if s.auditor != nil {
+			_ = s.auditor.Record(ctx, "user.password.change", "user", u.ID, map[string]any{
+				"after": auditFields(u),
+			})
+		}
+
+		return nil
+	})
 }
 
 // GetProfile returns the profile of the current authenticated user along with their led team IDs.

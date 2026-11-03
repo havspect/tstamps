@@ -26,7 +26,9 @@ type mockRepo struct {
 	nextUserID          uint
 	nextTokenID         uint
 	revokedOAuthUsers   []uint
+	revokedAPIUsers     []uint
 	deletedSessionUsers []uint
+	updateErr           error
 }
 
 func newMockRepo() *mockRepo {
@@ -75,6 +77,9 @@ func (m *mockRepo) Create(ctx context.Context, u *user.User) error {
 }
 
 func (m *mockRepo) Update(ctx context.Context, u *user.User) error {
+	if m.updateErr != nil {
+		return m.updateErr
+	}
 	if _, ok := m.users[u.ID]; !ok {
 		return user.ErrNotFound
 	}
@@ -172,6 +177,23 @@ func (m *mockRepo) RevokeAllOAuthTokens(ctx context.Context, userID uint) error 
 	return nil
 }
 
+func (m *mockRepo) RevokeAllAPITokens(ctx context.Context, userID uint) error {
+	m.revokedAPIUsers = append(m.revokedAPIUsers, userID)
+	for _, t := range m.tokens {
+		if t.UserID == userID && t.RevokedAt == nil {
+			now := time.Now()
+			t.RevokedAt = &now
+		}
+	}
+	return nil
+}
+
+type mockUoW struct{}
+
+func (mockUoW) Run(ctx context.Context, fn func(ctx context.Context) error) error {
+	return fn(ctx)
+}
+
 type mockAuditor struct {
 	events []string
 }
@@ -215,7 +237,7 @@ func TestCreateUser(t *testing.T) {
 	now := time.Now()
 	repo := newMockRepo()
 	auditor := &mockAuditor{}
-	svc := user.New(repo, auditor, nil, mockClock{now: now})
+	svc := user.New(repo, mockUoW{}, auditor, nil, mockClock{now: now})
 
 	t.Run("admin authorization and input validation", func(t *testing.T) {
 		// Unauthorized without principal
@@ -284,7 +306,7 @@ func TestUpdateUser(t *testing.T) {
 	repo := newMockRepo()
 	auditor := &mockAuditor{}
 	stopper := &mockTimerStopper{}
-	svc := user.New(repo, auditor, stopper, mockClock{now: now})
+	svc := user.New(repo, mockUoW{}, auditor, stopper, mockClock{now: now})
 
 	// Create initial admin
 	admin, _, _ := svc.CreateUser(adminCtx(), user.CreateInput{
@@ -353,7 +375,7 @@ func TestResetPassword(t *testing.T) {
 	now := time.Now()
 	repo := newMockRepo()
 	auditor := &mockAuditor{}
-	svc := user.New(repo, auditor, nil, mockClock{now: now})
+	svc := user.New(repo, mockUoW{}, auditor, nil, mockClock{now: now})
 
 	u, _, _ := svc.CreateUser(adminCtx(), user.CreateInput{
 		Email: "target@example.com",
@@ -378,6 +400,9 @@ func TestResetPassword(t *testing.T) {
 	if len(repo.revokedOAuthUsers) != 1 || repo.revokedOAuthUsers[0] != u.ID {
 		t.Errorf("expected OAuth revocation for user %d", u.ID)
 	}
+	if len(repo.revokedAPIUsers) != 1 || repo.revokedAPIUsers[0] != u.ID {
+		t.Errorf("expected personal token revocation for user %d", u.ID)
+	}
 	if auditor.events[len(auditor.events)-1] != "user.password.reset" {
 		t.Errorf("expected user.password.reset audit event, got %v", auditor.events)
 	}
@@ -387,7 +412,7 @@ func TestChangeOwnPassword(t *testing.T) {
 	now := time.Now()
 	repo := newMockRepo()
 	auditor := &mockAuditor{}
-	svc := user.New(repo, auditor, nil, mockClock{now: now})
+	svc := user.New(repo, mockUoW{}, auditor, nil, mockClock{now: now})
 
 	u, rawPass, _ := svc.CreateUser(adminCtx(), user.CreateInput{
 		Email: "self@example.com",
@@ -411,6 +436,9 @@ func TestChangeOwnPassword(t *testing.T) {
 	})
 
 	t.Run("success changes password and invalidates other sessions", func(t *testing.T) {
+		repo.sessions["sess_user"] = &user.Session{UserID: u.ID, TokenHash: "sess_user"}
+		repo.sessions["sess_other"] = &user.Session{UserID: u.ID, TokenHash: "sess_other"}
+
 		err := svc.ChangeOwnPassword(ctx, rawPass, "valid-new-password-123")
 		if err != nil {
 			t.Fatalf("ChangeOwnPassword failed: %v", err)
@@ -425,8 +453,43 @@ func TestChangeOwnPassword(t *testing.T) {
 		if len(repo.deletedSessionUsers) == 0 {
 			t.Errorf("expected other sessions deleted")
 		}
+		if _, ok := repo.sessions["sess_user"]; !ok {
+			t.Errorf("expected the acting session to survive")
+		}
+		if _, ok := repo.sessions["sess_other"]; ok {
+			t.Errorf("expected the other session to be deleted")
+		}
+		if len(repo.revokedAPIUsers) != 1 || repo.revokedAPIUsers[0] != u.ID {
+			t.Errorf("expected personal token revocation for user %d, got %v", u.ID, repo.revokedAPIUsers)
+		}
 		if auditor.events[len(auditor.events)-1] != "user.password.change" {
 			t.Errorf("expected user.password.change audit, got %v", auditor.events)
+		}
+	})
+
+	t.Run("a failed write revokes nothing", func(t *testing.T) {
+		failRepo := newMockRepo()
+		failSvc := user.New(failRepo, mockUoW{}, nil, nil, mockClock{now: now})
+		target, targetPass, err := failSvc.CreateUser(adminCtx(), user.CreateInput{
+			Email: "atomic@example.com",
+			Name:  "Atomic User",
+		})
+		if err != nil {
+			t.Fatalf("CreateUser failed: %v", err)
+		}
+		failRepo.updateErr = errors.New("write failed")
+
+		err = failSvc.ChangeOwnPassword(userCtx(target.ID), targetPass, "valid-new-password-123")
+		if err == nil {
+			t.Fatal("expected the write error")
+		}
+		if len(failRepo.revokedAPIUsers) != 0 || len(failRepo.revokedOAuthUsers) != 0 {
+			t.Errorf("expected no revocation after a failed write, got api=%v oauth=%v",
+				failRepo.revokedAPIUsers, failRepo.revokedOAuthUsers)
+		}
+		stored, _ := failRepo.GetByID(context.Background(), target.ID)
+		if !auth.VerifyPassword(stored.PasswordHash, targetPass) {
+			t.Errorf("password changed despite the failed write")
 		}
 	})
 }
@@ -434,7 +497,7 @@ func TestChangeOwnPassword(t *testing.T) {
 func TestProfileAndList(t *testing.T) {
 	now := time.Now()
 	repo := newMockRepo()
-	svc := user.New(repo, nil, nil, mockClock{now: now})
+	svc := user.New(repo, mockUoW{}, nil, nil, mockClock{now: now})
 
 	u, _, _ := svc.CreateUser(adminCtx(), user.CreateInput{
 		Email: "profile@example.com",
@@ -469,7 +532,7 @@ func TestPersonalTokens(t *testing.T) {
 	now := time.Now()
 	repo := newMockRepo()
 	auditor := &mockAuditor{}
-	svc := user.New(repo, auditor, nil, mockClock{now: now})
+	svc := user.New(repo, mockUoW{}, auditor, nil, mockClock{now: now})
 
 	ctx := userCtx(42)
 

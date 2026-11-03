@@ -284,6 +284,13 @@ func (r *UserRepository) ListAPITokens(ctx context.Context, userID uint) ([]user
 	return out, nil
 }
 
+// RevokeAllAPITokens marks every live personal API token of userID revoked.
+func (r *UserRepository) RevokeAllAPITokens(ctx context.Context, userID uint) error {
+	return DBFrom(ctx, r.db).Model(&APIToken{}).
+		Where("user_id = ? AND revoked_at IS NULL", userID).
+		Update("revoked_at", time.Now()).Error
+}
+
 // RevokeAllOAuthTokens invalidates all active OAuth tokens, codes, and device authorizations for userID.
 func (r *UserRepository) RevokeAllOAuthTokens(ctx context.Context, userID uint) error {
 	db := DBFrom(ctx, r.db)

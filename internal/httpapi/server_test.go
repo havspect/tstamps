@@ -49,7 +49,7 @@ func setupTestServer(t *testing.T) (http.Handler, *Dependencies) {
 
 	policy := authz.NewPolicyEngine()
 	auditSvc := audit.New(auditRepo, clk)
-	userSvc := user.New(userRepo, auditSvc, entryRepo, clk)
+	userSvc := user.New(userRepo, uow, auditSvc, entryRepo, clk)
 	teamSvc := team.New(teamRepo, teamRepo, auditSvc, clk)
 	projectSvc := project.NewService(projectRepo, uow, auditSvc, projectRepo, policy, clk)
 	entrySvc := entry.NewService(entryRepo, uow, auditSvc, entryRepo, policy, clk)
@@ -259,6 +259,80 @@ func TestAuthSessionAndPersonalToken(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("projects status = %d, want 200, body: %s", rec.Code, rec.Body.String())
 	}
+}
+
+// TestPasswordRotationRevokesPersonalTokens is the regression test for issue 32:
+// a password change, a reset, or a deactivation ends every live personal token of that user.
+func TestPasswordRotationRevokesPersonalTokens(t *testing.T) {
+	handler, deps := setupTestServer(t)
+
+	ws := &gormrepo.Workspace{Slug: "acme"}
+	if err := deps.DB.Create(ws).Error; err != nil {
+		t.Fatalf("create workspace: %v", err)
+	}
+	ctxWs := gormrepo.WithWorkspaceID(context.Background(), ws.ID)
+
+	call := func(method, path, authHeader, body string) *httptest.ResponseRecorder {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(method, path, strings.NewReader(body))
+		if body != "" {
+			req.Header.Set("Content-Type", "application/json")
+		}
+		req.Header.Set("Authorization", authHeader)
+		handler.ServeHTTP(rec, req)
+		return rec
+	}
+	liveTokens := func(userID uint) int64 {
+		var n int64
+		deps.DB.WithContext(ctxWs).Model(&gormrepo.APIToken{}).
+			Where("user_id = ? AND revoked_at IS NULL", userID).Count(&n)
+		return n
+	}
+
+	_, adminAuth := seedToken(t, deps, ws.ID, "admin@acme.com", true)
+
+	t.Run("self change made with a personal token revokes it", func(t *testing.T) {
+		member, memberAuth := seedToken(t, deps, ws.ID, "member@acme.com", false)
+		body := `{"current_password":"secret123","new_password":"newsecret456"}`
+		if rec := call(http.MethodPost, "/api/v1/me/password", memberAuth, body); rec.Code != http.StatusNoContent {
+			t.Fatalf("change password status = %d, want 204, body: %s", rec.Code, rec.Body.String())
+		}
+		if rec := call(http.MethodGet, "/api/v1/me", memberAuth, ""); rec.Code != http.StatusUnauthorized {
+			t.Errorf("stale token status = %d, want 401", rec.Code)
+		}
+		if n := liveTokens(member.ID); n != 0 {
+			t.Errorf("live tokens after self change = %d, want 0", n)
+		}
+	})
+
+	t.Run("admin reset revokes the victim tokens only", func(t *testing.T) {
+		victim, victimAuth := seedToken(t, deps, ws.ID, "victim@acme.com", false)
+		if rec := call(http.MethodPost, "/api/v1/users/"+jsonNum(victim.ID)+"/password", adminAuth, "{}"); rec.Code != http.StatusOK {
+			t.Fatalf("reset password status = %d, want 200, body: %s", rec.Code, rec.Body.String())
+		}
+		if rec := call(http.MethodGet, "/api/v1/me", victimAuth, ""); rec.Code != http.StatusUnauthorized {
+			t.Errorf("stale token status = %d, want 401", rec.Code)
+		}
+		if rec := call(http.MethodGet, "/api/v1/me", adminAuth, ""); rec.Code != http.StatusOK {
+			t.Errorf("admin token status = %d, want 200, body: %s", rec.Code, rec.Body.String())
+		}
+		if n := liveTokens(victim.ID); n != 0 {
+			t.Errorf("live tokens after reset = %d, want 0", n)
+		}
+	})
+
+	t.Run("deactivation revokes the victim tokens", func(t *testing.T) {
+		leaver, leaverAuth := seedToken(t, deps, ws.ID, "leaver@acme.com", false)
+		if rec := call(http.MethodPatch, "/api/v1/users/"+jsonNum(leaver.ID), adminAuth, `{"active":false}`); rec.Code != http.StatusOK {
+			t.Fatalf("deactivate status = %d, want 200, body: %s", rec.Code, rec.Body.String())
+		}
+		if rec := call(http.MethodGet, "/api/v1/me", leaverAuth, ""); rec.Code != http.StatusUnauthorized {
+			t.Errorf("stale token status = %d, want 401", rec.Code)
+		}
+		if n := liveTokens(leaver.ID); n != 0 {
+			t.Errorf("live tokens after deactivation = %d, want 0", n)
+		}
+	})
 }
 
 func TestRobotsAndSitemap(t *testing.T) {

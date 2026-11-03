@@ -215,6 +215,7 @@ func (r *EntryRepository) IsProjectLoggable(ctx context.Context, projectID uint)
 }
 
 // StopRunningTimer stops a running timer for the specified user (satisfies user.TimerStopper).
+// A user with no running timer is not an error: deactivation only stops what runs.
 func (r *EntryRepository) StopRunningTimer(ctx context.Context, userID uint, note string) error {
 	db := DBFrom(ctx, r.db)
 	now := time.Now()
@@ -225,15 +226,7 @@ func (r *EntryRepository) StopRunningTimer(ctx context.Context, userID uint, not
 	if note != "" {
 		updates["note"] = note
 	}
-	res := db.Model(&Entry{}).
+	return db.Model(&Entry{}).
 		Where("user_id = ? AND end_at IS NULL AND deleted_at IS NULL", userID).
-		Updates(updates)
-	if res.Error != nil {
-		return res.Error
-	}
-	if res.RowsAffected == 0 {
-		return entry.ErrNotFound
-	}
-	return nil
+		Updates(updates).Error
 }
-
