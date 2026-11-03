@@ -23,8 +23,11 @@ export default async function globalSetup() {
 
   // Free ports let two worktrees run the walk at the same time. A port can be
   // taken between the probe and the listen; the window is small, and a clash
-  // fails on /healthz rather than driving another worktree's server.
-  const ports: number[] = []
+  // fails on /healthz rather than driving another worktree's server. Ports set
+  // by env count as taken, so the probes never hand out one of them twice.
+  const ports = [process.env.TSTAMPS_E2E_PORT, process.env.TSTAMPS_E2E_HOSTED_PORT, process.env.TSTAMPS_E2E_DEMO_PORT]
+    .map((value) => Number(value))
+    .filter((value) => value > 0)
   const port = Number(process.env.TSTAMPS_E2E_PORT ?? 0) || (await freePort(ports))
   const hostedPort = Number(process.env.TSTAMPS_E2E_HOSTED_PORT ?? 0) || (await freePort(ports))
   const demoPort = Number(process.env.TSTAMPS_E2E_DEMO_PORT ?? 0) || (await freePort(ports))
