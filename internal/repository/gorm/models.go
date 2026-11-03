@@ -66,6 +66,8 @@ type APIToken struct {
 	ExpiresAt   time.Time `gorm:"not null"`
 	LastUsedAt  *time.Time
 	RevokedAt   *time.Time `gorm:"index"`
+	ClientID    string     `gorm:"index"` // OAuth client that minted the token; empty for session or bearer
+	Scopes      string     // JSON array; empty means read+write for legacy rows
 	CreatedAt   time.Time
 }
 

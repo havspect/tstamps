@@ -2,6 +2,7 @@ package user
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 
 	"github.com/havspect/tstamps/internal/auth"
@@ -374,6 +375,23 @@ func (s *Service) CreatePersonalToken(ctx context.Context, name string) (*APITok
 		return nil, "", ErrInvalidTokenName
 	}
 
+	// A delegated token stays bound to its OAuth client and inherits the grant's scopes.
+	clientID := ""
+	scopes := []string{"tstamps.read", "tstamps.write"}
+	if p.Source == "oauth" {
+		if p.ClientID == "" {
+			return nil, "", authz.ErrForbidden
+		}
+		clientID = p.ClientID
+		scopes = []string{}
+		for _, s := range []string{"tstamps.read", "tstamps.write"} {
+			if p.HasScope(s) {
+				scopes = append(scopes, s)
+			}
+		}
+	}
+	scopesJSON, _ := json.Marshal(scopes)
+
 	token, hash, err := auth.NewAPIToken()
 	if err != nil {
 		return nil, "", err
@@ -385,6 +403,8 @@ func (s *Service) CreatePersonalToken(ctx context.Context, name string) (*APITok
 		UserID:      p.UserID,
 		Name:        name,
 		TokenHash:   hash,
+		ClientID:    clientID,
+		Scopes:      string(scopesJSON),
 		CreatedAt:   now,
 	}
 

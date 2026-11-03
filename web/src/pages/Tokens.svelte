@@ -14,7 +14,7 @@
   }
 
   type OAuthGrant = {
-    id: number
+    id: string
     client_id: string
     client_name?: string
     scopes: string[]
@@ -47,23 +47,16 @@
         tokens = data
       } else if (data) {
         tokens = data.tokens ?? data.personal_tokens ?? []
-        grants = data.grants ?? data.oauth_grants ?? []
       }
 
-      // Also try fetching /api/v1/oauth/grants if grants not populated or separate
-      if (grants.length === 0) {
-        const gRes = await fetch(`${router.base}/api/v1/oauth/grants`, {
-          credentials: 'same-origin',
-        })
-        if (gRes.ok) {
-          const gData = await gRes.json()
-          if (Array.isArray(gData)) {
-            grants = gData
-          } else if (gData?.grants) {
-            grants = gData.grants
-          }
-        }
+      const gRes = await fetch(`${router.base}/api/v1/me/oauth/grants`, {
+        credentials: 'same-origin',
+      })
+      if (!gRes.ok) {
+        const body = await gRes.json().catch(() => null)
+        throw new Error(body ? problemMessage(body, gRes) : `Failed to load grants (${gRes.status})`)
       }
+      grants = await gRes.json()
     } catch (err) {
       error = err instanceof Error ? err.message : String(err)
     } finally {
@@ -121,10 +114,10 @@
     }
   }
 
-  async function revokeGrant(id: number) {
+  async function revokeGrant(id: string) {
     error = ''
     try {
-      const res = await fetch(`${router.base}/api/v1/oauth/grants/${id}`, {
+      const res = await fetch(`${router.base}/api/v1/me/oauth/grants/${encodeURIComponent(id)}`, {
         method: 'DELETE',
         credentials: 'same-origin',
       })

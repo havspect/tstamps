@@ -2,6 +2,8 @@ package httpapi
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"log/slog"
 	"net"
 	"net/http"
@@ -185,8 +187,8 @@ func (s *Server) withAuth(next http.Handler) http.Handler {
 			return
 		}
 
-		// OAuth scope verification
-		if principal != nil && principal.Source == "oauth" {
+		// Scope verification: reads and MCP need tstamps.read, mutations need tstamps.write.
+		if principal != nil {
 			hasRead := principal.HasScope("tstamps.read")
 			hasWrite := principal.HasScope("tstamps.write")
 			isMCP := r.URL.Path == "/mcp" || r.URL.Path == apiPrefix+"/mcp"
@@ -204,7 +206,7 @@ func (s *Server) withAuth(next http.Handler) http.Handler {
 		}
 
 		// Enforce password change restriction
-		if principal != nil && principalHasPasswordChangeRequired(principal, s.deps.DB) && !isPasswordChangeAllowedPath(r) {
+		if principal != nil && principalHasPasswordChangeRequired(principal, s.deps.DB.WithContext(r.Context())) && !isPasswordChangeAllowedPath(r) {
 			writeProblem(w, problem(http.StatusForbidden, urnPasswordChangeRequired, "change your password first"))
 			return
 		}
@@ -227,7 +229,13 @@ func (s *Server) authenticateBearer(ctx context.Context, rawToken string) (*auth
 		var u gormrepo.User
 		if err := s.deps.DB.WithContext(bypassCtx).First(&u, tok.UserID).Error; err == nil && u.Active {
 			_ = s.deps.DB.WithContext(bypassCtx).Model(&tok).Update("last_used_at", time.Now())
-			p := s.buildPrincipal(&u, "bearer", strconv.FormatUint(uint64(tok.ID), 10), []string{"tstamps.read", "tstamps.write"}, "")
+			scopes := []string{"tstamps.read", "tstamps.write"}
+			if tok.Scopes != "" {
+				if err := json.Unmarshal([]byte(tok.Scopes), &scopes); err != nil || scopes == nil {
+					return nil, 0 // fail closed: an unreadable scope list must not grant full access
+				}
+			}
+			p := s.buildPrincipal(&u, "bearer", strconv.FormatUint(uint64(tok.ID), 10), scopes, "")
 			return p, tok.WorkspaceID
 		}
 	}
@@ -325,10 +333,13 @@ func principalHasPasswordChangeRequired(p *auth.Principal, db *gorm.DB) bool {
 		return false
 	}
 	var u gormrepo.User
-	if err := db.Select("must_change_password").First(&u, p.UserID).Error; err == nil {
+	err := db.Select("must_change_password").First(&u, p.UserID).Error
+	if err == nil {
 		return u.MustChangePassword
 	}
-	return false
+	// Fail closed: a query that cannot run (for example a missing workspace)
+	// must not let a temporary password through.
+	return !errors.Is(err, gorm.ErrRecordNotFound)
 }
 
 func isPasswordChangeAllowedPath(r *http.Request) bool {

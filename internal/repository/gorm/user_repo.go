@@ -60,6 +60,8 @@ func toDomainAPIToken(t *APIToken) *user.APIToken {
 		ExpiresAt:   expiresAt,
 		LastUsedAt:  t.LastUsedAt,
 		RevokedAt:   t.RevokedAt,
+		ClientID:    t.ClientID,
+		Scopes:      t.Scopes,
 		CreatedAt:   t.CreatedAt,
 	}
 }
@@ -227,6 +229,8 @@ func (r *UserRepository) CreateAPIToken(ctx context.Context, t *user.APIToken) e
 		ExpiresAt:   expiresAt,
 		LastUsedAt:  t.LastUsedAt,
 		RevokedAt:   t.RevokedAt,
+		ClientID:    t.ClientID,
+		Scopes:      t.Scopes,
 		CreatedAt:   t.CreatedAt,
 	}
 
@@ -317,6 +321,12 @@ func (r *UserRepository) RevokeAllOAuthTokens(ctx context.Context, userID uint) 
 	if err := db.Model(&OAuthDeviceCode{}).
 		Where("user_id = ?", userID).
 		Update("status", 2).Error; err != nil {
+		return err
+	}
+
+	if err := db.Model(&APIToken{}).
+		Where("user_id = ? AND client_id <> '' AND revoked_at IS NULL", userID).
+		Update("revoked_at", now).Error; err != nil {
 		return err
 	}
 

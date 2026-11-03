@@ -5,12 +5,15 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/ory/fosite"
 
 	"github.com/havspect/tstamps/internal/auth"
 	"github.com/havspect/tstamps/internal/oauth"
@@ -295,8 +298,42 @@ func (s *Server) registerOAuthRoutes(mux *http.ServeMux) {
 
 	// Revoke endpoint
 	mux.HandleFunc("POST "+apiPrefix+"/oauth/revoke", func(w http.ResponseWriter, r *http.Request) {
-		err := s.deps.OAuthProvider.NewRevocationRequest(r.Context(), r)
-		s.deps.OAuthProvider.WriteRevocationResponse(r.Context(), w, err)
+		_ = r.ParseForm()
+
+		// The token is the only hint at its workspace, so bind it before fosite reads the token.
+		ctx := r.Context()
+		var tokenUserID uint
+		var tokenClientID string
+		if _, ok := gormrepo.WorkspaceIDFrom(ctx); !ok && s.deps.DB != nil {
+			strategy := s.deps.OAuthProvider.Strategy()
+			token := r.PostForm.Get("token")
+			var at gormrepo.OAuthAccessToken
+			var rt gormrepo.OAuthRefreshToken
+			if err := s.deps.DB.WithContext(gormrepo.WithBypassTenancy(ctx)).Where("signature_hash = ?", strategy.AccessTokenSignature(ctx, token)).First(&at).Error; err == nil && at.WorkspaceID > 0 {
+				ctx = gormrepo.WithWorkspaceID(ctx, at.WorkspaceID)
+				tokenUserID, tokenClientID = at.UserID, at.ClientID
+			} else if err := s.deps.DB.WithContext(gormrepo.WithBypassTenancy(ctx)).Where("signature_hash = ?", strategy.RefreshTokenSignature(ctx, token)).First(&rt).Error; err == nil && rt.WorkspaceID > 0 {
+				ctx = gormrepo.WithWorkspaceID(ctx, rt.WorkspaceID)
+				tokenUserID, tokenClientID = rt.UserID, rt.ClientID
+			}
+			r = r.WithContext(ctx)
+		}
+
+		err := s.deps.OAuthProvider.NewRevocationRequest(ctx, r)
+		if errors.Is(err, fosite.ErrTemporarilyUnavailable) {
+			writeProblem(w, problem(http.StatusServiceUnavailable, urnUnavailable, "revocation is temporarily unavailable"))
+			return
+		}
+		// Tokens minted under this grant go with it.
+		if err == nil && tokenUserID > 0 && tokenClientID != "" && s.deps.DB != nil {
+			if err := s.deps.DB.WithContext(ctx).Model(&gormrepo.APIToken{}).
+				Where("user_id = ? AND client_id = ? AND revoked_at IS NULL", tokenUserID, tokenClientID).
+				Update("revoked_at", time.Now()).Error; err != nil {
+				writeProblem(w, problem(http.StatusServiceUnavailable, urnUnavailable, "revocation is temporarily unavailable"))
+				return
+			}
+		}
+		s.deps.OAuthProvider.WriteRevocationResponse(ctx, w, err)
 	})
 
 	// Device code endpoints

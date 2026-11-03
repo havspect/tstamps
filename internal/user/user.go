@@ -62,6 +62,8 @@ type APIToken struct {
 	ExpiresAt   *time.Time
 	LastUsedAt  *time.Time
 	RevokedAt   *time.Time
+	ClientID    string
+	Scopes      string // JSON array; empty means read+write for legacy rows
 	CreatedAt   time.Time
 }
 

@@ -706,23 +706,50 @@ func (s *OAuthStore) GetGrants(ctx context.Context, userID uint) ([]oauth.Grant,
 func (s *OAuthStore) RevokeGrant(ctx context.Context, userID uint, requestID string, at time.Time) error {
 	db := s.dbFrom(ctx)
 	return db.Transaction(func(tx *gorm.DB) error {
-		res1 := tx.Model(&OAuthAccessToken{}).
-			Where("user_id = ? AND request_id = ? AND revoked_at IS NULL", userID, requestID).
-			Update("revoked_at", &at)
-		if res1.Error != nil {
-			return res1.Error
+		var grantAT OAuthAccessToken
+		err := tx.Where("user_id = ? AND request_id = ?", userID, requestID).First(&grantAT).Error
+		clientID := grantAT.ClientID
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			var grantRT OAuthRefreshToken
+			err = tx.Where("user_id = ? AND request_id = ?", userID, requestID).First(&grantRT).Error
+			clientID = grantRT.ClientID
 		}
-		res2 := tx.Model(&OAuthRefreshToken{}).
+		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+			return err
+		}
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return oauth.ErrNotFound
+		}
+
+		if err := tx.Model(&OAuthAccessToken{}).
+			Where("user_id = ? AND request_id = ? AND revoked_at IS NULL", userID, requestID).
+			Update("revoked_at", &at).Error; err != nil {
+			return err
+		}
+		if err := tx.Model(&OAuthRefreshToken{}).
 			Where("user_id = ? AND request_id = ? AND revoked_at IS NULL", userID, requestID).
 			Updates(map[string]any{
 				"active":     false,
 				"revoked_at": &at,
-			})
-		if res2.Error != nil {
-			return res2.Error
+			}).Error; err != nil {
+			return err
 		}
-		if res1.RowsAffected == 0 && res2.RowsAffected == 0 {
-			return oauth.ErrNotFound
+		if err := tx.Model(&OAuthCode{}).
+			Where("user_id = ? AND request_id = ? AND used = ?", userID, requestID, false).
+			Update("used", true).Error; err != nil {
+			return err
+		}
+		if err := tx.Model(&OAuthDeviceCode{}).
+			Where("user_id = ? AND request_id = ? AND status = ?", userID, requestID, oauth.DeviceStatusPending).
+			Update("status", 2).Error; err != nil {
+			return err
+		}
+		if clientID != "" {
+			if err := tx.Model(&APIToken{}).
+				Where("user_id = ? AND client_id = ? AND revoked_at IS NULL", userID, clientID).
+				Update("revoked_at", &at).Error; err != nil {
+				return err
+			}
 		}
 		return nil
 	})

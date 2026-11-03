@@ -447,8 +447,27 @@ func TestUserRepository(t *testing.T) {
 		}
 	}
 
+	clientToken := &user.APIToken{UserID: regularUser.ID, Name: "delegated", TokenHash: "tok_hash_client", ClientID: "cid", CreatedAt: now}
+	sessionToken := &user.APIToken{UserID: regularUser.ID, Name: "session", TokenHash: "tok_hash_session", CreatedAt: now}
+	for _, tok := range []*user.APIToken{clientToken, sessionToken} {
+		if err := repo.CreateAPIToken(ctxWs1, tok); err != nil {
+			t.Fatalf("CreateAPIToken %s: %v", tok.Name, err)
+		}
+	}
+
 	if err := repo.RevokeAllOAuthTokens(ctxWs1, regularUser.ID); err != nil {
 		t.Fatalf("RevokeAllOAuthTokens: %v", err)
+	}
+
+	var checkClientTok APIToken
+	db.WithContext(ctxWs1).Where("token_hash = ?", "tok_hash_client").First(&checkClientTok)
+	if checkClientTok.RevokedAt == nil {
+		t.Errorf("expected client-bound API token to be revoked")
+	}
+	var checkSessionTok APIToken
+	db.WithContext(ctxWs1).Where("token_hash = ?", "tok_hash_session").First(&checkSessionTok)
+	if checkSessionTok.RevokedAt != nil {
+		t.Errorf("expected session-minted API token to stay active")
 	}
 
 	var checkAT OAuthAccessToken

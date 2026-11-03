@@ -108,36 +108,36 @@ func (s *Service) CreateWorkspace(ctx context.Context, slug, email, name string)
 }
 
 // StartSignup initiates email verification for a new workspace signup.
-// It generates a secure signup token, stores its hash, and returns the raw token.
-func (s *Service) StartSignup(ctx context.Context, email string) (string, error) {
+// It generates a secure signup token, stores its hash, and mails the link.
+func (s *Service) StartSignup(ctx context.Context, email string) error {
 	if s.mailer == nil {
-		return "", ErrSignupDisabled
+		return ErrSignupDisabled
 	}
 
 	normEmail, err := normalizeEmail(email)
 	if err != nil {
-		return "", err
+		return err
 	}
 
 	token, hash, err := auth.NewSessionToken()
 	if err != nil {
-		return "", err
+		return err
 	}
 
 	if err := s.repo.CreatePendingSignup(ctx, normEmail, hash); err != nil {
-		return "", err
+		return err
 	}
 
 	if s.mailer != nil {
 		link := s.publicURL + "/signup/verify?token=" + url.QueryEscape(token)
 		subject := "Confirm your Tstamps workspace"
-		text := "Open this link to set up your workspace and choose a password:\n\n" + link + "\n\nIt expires in 24 hours. If you did not ask for this, ignore this email."
+		text := "Open this link to set up your workspace and choose a password:\n\n" + link + "\n\nIt does not expire. If you did not ask for this, ignore this email."
 		if err := s.mailer.Send(ctx, normEmail, subject, text); err != nil {
-			return "", fmt.Errorf("send email: %w", err)
+			return fmt.Errorf("send email: %w", err)
 		}
 	}
 
-	return token, nil
+	return nil
 }
 
 // VerifySignup checks whether a signup token is valid and returns the associated email.
@@ -156,8 +156,7 @@ func (s *Service) VerifySignup(ctx context.Context, token string) (string, error
 	return pending.Email, nil
 }
 
-// CompleteSignup finalizes signup: consumes the token, creates the workspace and admin,
-// and returns a SignupResult with an initial session token.
+// CompleteSignup finalizes signup: consumes the token and creates the workspace and admin.
 func (s *Service) CompleteSignup(ctx context.Context, token, slug, name, password string) (*SignupResult, error) {
 	token = strings.TrimSpace(token)
 	if token == "" {
@@ -201,16 +200,10 @@ func (s *Service) CompleteSignup(ctx context.Context, token, slug, name, passwor
 
 	_ = s.repo.DeletePendingSignup(ctx, hash)
 
-	sessionToken, _, err := auth.NewSessionToken()
-	if err != nil {
-		return nil, err
-	}
-
 	return &SignupResult{
 		WorkspaceSlug: ws.Slug,
 		Email:         pending.Email,
 		Name:          trimmedName,
-		Token:         sessionToken,
 		UserID:        adminID,
 	}, nil
 }
