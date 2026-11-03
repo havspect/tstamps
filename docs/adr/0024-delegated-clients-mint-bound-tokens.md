@@ -1,0 +1,11 @@
+# A delegated client may mint tokens, and the grant owns them
+
+Status: accepted, 2026-11-03. Amends [ADR-0017](0017-workspace-sso-and-oauth.md) (personal API tokens and OAuth tokens coexist under `/me/tokens`).
+
+A personal token minted over OAuth records the client that minted it and inherits the grant's scopes. Revoking the grant revokes those tokens too — from the Tokens page, over RFC 7009, or through all-token revocation. A session or personal-token caller still mints a full-access token with no client.
+
+Why: `tstamps login` uses the device grant, and `tstamps tokens create` runs as an OAuth principal; once a workspace turns on SSO, password login is refused, so rejecting delegated minting would leave the CLI with no way to make a long-lived token. Binding the token to its client and scopes keeps the grant as the one place a user revokes access, and stops a read-only grant from minting a write token. Existing rows have no client, so they keep full access; treating an empty client as a delegated one would silently narrow every token already in use. Discovery URLs stay unprefixed because the issuer is the origin, not a path, and a token flow that moved under `/w/{slug}` would break clients registered against the old document.
+
+Considered and rejected: refusing delegated minting outright, for the CLI reason above; a client-wide grant key instead of the authorization request, because a user can authorize the same client twice and should be able to revoke one without the other; minting a fresh OAuth token instead of a personal one, because a personal token outlives a refresh window and is what scripts store.
+
+Consequences: a personal token's authority is the intersection of its grant and the client's registration, so revoking a client or narrowing the grant now takes effect on tokens already handed out. Token rows carry a `client_id` and `scopes`, and the scope gate applies to every bearer principal, not only OAuth ones. Existing tokens keep working until revoked and cannot be retroactively bound. The cascade runs in the revocation transaction, so a partial failure cannot leave a grant revoked but its tokens alive. Session-minted tokens are out of scope here; the password-reset path handles them.

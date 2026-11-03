@@ -50,6 +50,7 @@ func revokeToken(t *testing.T, handler http.Handler, token, hint string) *httpte
 func TestRevokeAccessTokenStopsBearerAuth(t *testing.T) {
 	handler, _, adminAuth := setupDeviceTestServer(t)
 	tok := deviceOAuthToken(t, handler, adminAuth)
+	minted := mintDelegatedToken(t, handler, tok.AccessToken)
 
 	rec := revokeToken(t, handler, tok.AccessToken, "access_token")
 	if rec.Code != http.StatusOK {
@@ -62,6 +63,14 @@ func TestRevokeAccessTokenStopsBearerAuth(t *testing.T) {
 	handler.ServeHTTP(meRec, meReq)
 	if meRec.Code != http.StatusUnauthorized {
 		t.Fatalf("GET /api/v1/me after revoke status = %d, want 401: %s", meRec.Code, meRec.Body.String())
+	}
+
+	mintedReq := httptest.NewRequest(http.MethodGet, "/api/v1/me", nil)
+	mintedReq.Header.Set("Authorization", "Bearer "+minted)
+	mintedRec := httptest.NewRecorder()
+	handler.ServeHTTP(mintedRec, mintedReq)
+	if mintedRec.Code != http.StatusUnauthorized {
+		t.Fatalf("minted token after revoke status = %d, want 401: %s", mintedRec.Code, mintedRec.Body.String())
 	}
 }
 

@@ -324,5 +324,11 @@ func (r *UserRepository) RevokeAllOAuthTokens(ctx context.Context, userID uint) 
 		return err
 	}
 
+	if err := db.Model(&APIToken{}).
+		Where("user_id = ? AND client_id <> '' AND revoked_at IS NULL", userID).
+		Update("revoked_at", now).Error; err != nil {
+		return err
+	}
+
 	return nil
 }

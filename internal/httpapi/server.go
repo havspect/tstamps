@@ -103,6 +103,7 @@ func New(deps Dependencies) http.Handler {
 	s.authRoutes(api)
 	s.userRoutes(api)
 	s.tokenRoutes(api)
+	s.grantRoutes(api)
 	s.teamRoutes(api)
 	s.projectRoutes(api)
 	s.entryRoutes(api)

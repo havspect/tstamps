@@ -73,7 +73,7 @@ A user who can no longer log in; their hours stay in reports.
 _Avoid_: deleted user, disabled user
 
 **Personal token**:
-A user-created bearer credential with the user's full access in one workspace, used by scripts and local tools until revoked.
+A user-created bearer credential for one workspace, used by scripts and local tools until revoked. Created over OAuth, it stays bound to the client that minted it and inherits its grant's scopes; otherwise it has full access.
 _Avoid_: API key, pat, static token
 
 **OAuth client**:
@@ -81,7 +81,7 @@ An application — the CLI, the mobile app, or an MCP agent — that requests sc
 _Avoid_: app, integration, consumer, service account
 
 **Grant**:
-A user's revocable authorization letting an OAuth client act on their behalf in one workspace with specific scopes.
+A user's revocable authorization letting an OAuth client act on their behalf in one workspace with specific scopes. The user revokes it on the Tokens page, which also revokes the personal tokens minted under it.
 _Avoid_: consent record, connected app, OAuth session
 
 **Identity provider**:
