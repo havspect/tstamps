@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"strings"
 	"time"
@@ -159,7 +160,10 @@ func (s *Server) logout(ctx context.Context, _ *struct{}) (*LogoutOutput, error)
 		return nil, authz.ErrUnauthorized
 	}
 
-	if s.deps.UserRepo != nil && p.Source == "session" && p.TokenID != "" {
+	if p.Source == "session" && p.TokenID != "" {
+		if s.deps.UserRepo == nil {
+			return nil, internal(errors.New("user repository not configured"))
+		}
 		if err := s.deps.UserRepo.DeleteSession(gormrepo.WithWorkspaceID(ctx, p.WorkspaceID), p.TokenID); err != nil {
 			return nil, internal(err)
 		}

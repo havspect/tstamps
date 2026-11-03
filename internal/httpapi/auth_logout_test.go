@@ -8,7 +8,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/havspect/tstamps/internal/auth"
 	gormrepo "github.com/havspect/tstamps/internal/repository/gorm"
 )
 
@@ -20,24 +19,10 @@ func TestLogoutDeletesSession(t *testing.T) {
 		t.Fatalf("create workspace: %v", err)
 	}
 	ctxWs := gormrepo.WithWorkspaceID(context.Background(), ws.ID)
-	hash, _ := auth.HashPassword("secretpass123")
-	u := &gormrepo.User{
-		WorkspaceID:  ws.ID,
-		Email:        "admin@logout.com",
-		Name:         "Admin",
-		PasswordHash: hash,
-		Timezone:     "UTC",
-		IsAdmin:      true,
-		Active:       true,
-		CreatedAt:    time.Now(),
-		UpdatedAt:    time.Now(),
-	}
-	if err := deps.DB.WithContext(ctxWs).Create(u).Error; err != nil {
-		t.Fatalf("create user: %v", err)
-	}
+	seedToken(t, deps, ws.ID, "admin@logout.com", true)
 
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", strings.NewReader(`{"email":"admin@logout.com","password":"secretpass123"}`))
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", strings.NewReader(`{"email":"admin@logout.com","password":"secret123"}`))
 	req.Header.Set("Content-Type", "application/json")
 	handler.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
