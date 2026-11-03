@@ -80,3 +80,7 @@ workspace-create slug email name:
 # Run the browser smoke test against a freshly built server.
 e2e: build
     pnpm --dir web e2e
+
+# Build the OpenShell sandbox image (opencode + agy) if needed, create the sandbox, forward 4096/5173/5174/8080/8098/8099.
+sandbox:
+    openshell/run.sh
