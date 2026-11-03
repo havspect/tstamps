@@ -68,6 +68,7 @@ func setupTestServer(t *testing.T) (http.Handler, *Dependencies) {
 
 	deps := &Dependencies{
 		DB:                db,
+		UserRepo:          userRepo,
 		Clock:             clk,
 		UserService:       userSvc,
 		ProjectService:    projectSvc,

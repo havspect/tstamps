@@ -159,8 +159,10 @@ func (s *Server) logout(ctx context.Context, _ *struct{}) (*LogoutOutput, error)
 		return nil, authz.ErrUnauthorized
 	}
 
-	if s.deps.DB != nil && p.Source == "session" && p.TokenID != "" {
-		_ = s.deps.DB.Where("token_hash = ?", p.TokenID).Delete(&gormrepo.Session{})
+	if s.deps.UserRepo != nil && p.Source == "session" && p.TokenID != "" {
+		if err := s.deps.UserRepo.DeleteSession(gormrepo.WithWorkspaceID(ctx, p.WorkspaceID), p.TokenID); err != nil {
+			return nil, internal(err)
+		}
 	}
 
 	clearCookie := (&http.Cookie{

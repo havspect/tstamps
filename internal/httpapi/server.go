@@ -43,6 +43,7 @@ const (
 // Dependencies bundles the composition root inputs needed by the HTTP layer.
 type Dependencies struct {
 	DB                *gorm.DB
+	UserRepo          *gormrepo.UserRepository
 	Clock             clock.Clock
 	UserService       *user.Service
 	ProjectService    *project.Service
