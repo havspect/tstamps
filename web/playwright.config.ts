@@ -7,4 +7,6 @@ export default defineConfig({
   workers: 1,
   reporter: 'list',
   globalSetup: './e2e/global-setup.ts',
+  // A failed screen leaves a picture for the agent and for CI.
+  use: { screenshot: 'only-on-failure' },
 })

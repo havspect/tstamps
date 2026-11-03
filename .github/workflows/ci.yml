@@ -45,3 +45,10 @@ jobs:
       # One smoke walk of login, logging, reporting and CSV against the built server.
       - run: pnpm --dir web exec playwright install --with-deps chromium
       - run: pnpm --dir web e2e
+
+      # The screens and the failure shots, so a red PR still shows what broke.
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: screenshots
+          path: web/test-results/

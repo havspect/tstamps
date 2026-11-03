@@ -139,6 +139,17 @@ func TestSeedFillsTheDemoWorkspace(t *testing.T) {
 		t.Errorf("plans do not span past and future: past=%d future=%d", past, future)
 	}
 
+	// The board opens on next month: every week of it must carry hours, or the
+	// default view reads as an empty board.
+	next := time.Date(2026, time.November, 1, 0, 0, 0, 0, time.UTC)
+	var inNextMonth int64
+	db.WithContext(ctx).Model(&gormrepo.Plan{}).
+		Where("week_start >= ? AND week_start < ?", next, next.AddDate(0, 1, 0)).
+		Count(&inNextMonth)
+	if inNextMonth == 0 {
+		t.Error("no plans in the month the board opens on")
+	}
+
 	// The plan board opens on the next month, so the seeded vacation sits in a
 	// Monday-to-Friday week there and takes Mia's whole 32-hour week.
 	var vacation gormrepo.Vacation

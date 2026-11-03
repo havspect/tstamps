@@ -1,6 +1,7 @@
 import { expect, test, type Page } from '@playwright/test'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
+import { shot } from './shot'
 
 const state = JSON.parse(
   readFileSync(fileURLToPath(new URL('./.state.json', import.meta.url)), 'utf8'),
@@ -22,6 +23,7 @@ test('homepage introduces the product and links to sign in', async ({ page }) =>
   await page.goto('/')
   await expect(page.getByRole('heading', { level: 1 })).toContainText('Plan it')
   await expect(page).toHaveTitle(/Tstamps/)
+  await shot(page, 'home')
 
   // The static tags ship in index.html: crawlers that never run JS still get them.
   const description = page.locator('meta[name="description"]')
@@ -51,6 +53,7 @@ test('homepage introduces the product and links to sign in', async ({ page }) =>
   expect(login.headers()['x-robots-tag']).toContain('noindex')
   await page.getByRole('link', { name: 'Sign in' }).first().click()
   await expect(page.getByRole('heading', { name: 'Sign in' })).toBeVisible()
+  await shot(page, 'login')
 })
 
 test('the manual is public at /docs', async ({ page }) => {
@@ -115,11 +118,13 @@ test('login, log an entry, read the report and export CSV', async ({ page }) => 
   const block = page.locator('[aria-label*="smoke note"]')
   await block.scrollIntoViewIfNeeded()
   await expect(block).toBeVisible()
+  await shot(page, 'timeline')
 
   await page.goto(`${workspace}/reports`)
   await expect(page.getByRole('rowheader', { name: /Smoke Project/ })).toBeVisible()
   // The selected period is announced even though wa-button drops aria-pressed.
   await expect(page.getByRole('button', { name: /Day.*selected/ })).toBeVisible()
+  await shot(page, 'reports')
 
   const download = page.waitForEvent('download')
   await page.getByRole('link', { name: 'Download CSV' }).click()
@@ -147,6 +152,7 @@ test('login, log an entry, read the report and export CSV', async ({ page }) => 
   await page.getByRole('button', { name: 'Week' }).click()
   await expect(page.getByRole('columnheader', { name: /^W\d+$/ })).toBeVisible()
   expect(await chartHash()).not.toBe(daily)
+  await shot(page, 'my-hours')
 })
 
 test('admin controls bind the custom elements to the forms', async ({ page }) => {
@@ -170,6 +176,7 @@ test('admin controls bind the custom elements to the forms', async ({ page }) =>
   const row = page.locator('tr', { hasText: email })
   await expect(row).toBeVisible()
   await expect(row.locator('td').nth(4)).toHaveText('yes')
+  await shot(page, 'admin-users')
 
   const teamName = `Admin Check ${stamp}`
   const created = await page.request.post(`${workspace}/api/v1/teams`, {

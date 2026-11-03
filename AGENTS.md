@@ -10,6 +10,13 @@ Team time tracking in Go: one binary, SQLite, embedded Svelte timeline, REST API
 - Frontend toolchain: pnpm only — no npm, yarn or bun; `pnpm dlx`, not `npx`. Only `pnpm-lock.yaml` is committed.
 - Frontend uses webawesome as a design system.
 
+## Verifying a change
+
+- `just check` proves the code without a browser: vet, the Go tests with the race detector, the frontend checks and the manual build.
+- If the change touches the UI (`web/src`, `web/index.html`, `web/public`), run `just e2e`. It builds the server, walks the product in a browser and writes one PNG per screen to `web/test-results/shots/`. Open the PNGs of the screens you changed and look at them.
+- A screen with no capture gets one in the same change: call `await shot(page, 'name')` in the test that reaches it.
+- A failed browser test leaves its own screenshot, and CI keeps the directory as the `screenshots` artifact.
+
 ## Pull requests
 
 - Write the title and body in STE-100 (Simplified Technical English). Use short sentences, one idea per sentence, and simple words. Do not use marketing language.
